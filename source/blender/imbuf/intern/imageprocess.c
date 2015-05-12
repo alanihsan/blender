@@ -287,6 +287,102 @@ void nearest_interpolation(ImBuf *in, ImBuf *out, float x, float y, int xout, in
 	nearest_interpolation_color(in, outI, outF, x, y);
 }
 
+/*********************** CubicBSpline Prefilter ****************************/
+
+/* This function creates a prefilter in the frequency domain. It can be
+ * viewed as a compliment to a traditional bicubic filter. */
+void create_prefilter(ImBuf *in, ImBuf *out)
+{
+	int x, y;
+
+	/* A row of float coefficients. */
+	float *coeff = out->rect_float;
+
+	if (in == NULL || in->rect_float == NULL || out == NULL ||
+	    out->rect_float == NULL || in->x <= 2 || in->y <= 2)
+		return;
+
+	/* Initialize */
+	memcpy(coeff, in->rect_float, in->x * in->y * 4 * sizeof(float));
+
+	/* X Recursion */
+	for (y = 0; y < in->y; y++) {
+		prefilter_doRecursion(&coeff[y * in->x * 4], in->x, 4);
+	}
+
+	/* Y Recursion */
+	for (x = 0; x < in->x; x++) {
+		prefilter_doRecursion(&coeff[x * 4], in->y, in->x * 4);
+	}
+
+	/* Copy to the out ImBuf. */
+	memcpy(out->rect_float, coeff, (in->x * in->y * 4 * sizeof(float)));
+}
+
+/* Get the initial causual coefficient for a given run of floats at stride count of floats. */
+void prefilter_initInitialCausal(float *coeffIn, float *sum, unsigned int length)
+{
+	const float Zp = sqrt(3.0f) - 2.0f;
+	const float lambda = 6.0f; // (1.0f - Zp) * (1.0f - 1.0f / Zp);
+	unsigned int count = 0, horizon = MIN2(12, length) * 4;
+	float Zn = Zp;
+
+	copy_v4_v4(sum, coeffIn);
+
+	for (count = 0; count < horizon; count += 4) {
+		sum[0] += Zn * coeffIn[count];    /* R */
+		sum[1] += Zn * coeffIn[count+1];  /* G */
+		sum[2] += Zn * coeffIn[count+2];  /* B */
+		sum[3] += Zn * coeffIn[count+3];  /* A */
+
+		Zn *= Zp;
+	}
+
+	mul_v4_v4fl(coeffIn, sum, lambda);
+}
+
+/* Set the initial anti-causual coefficient at the end of the given run of floats at stride count of floats. */
+void prefilter_initInitialAntiCausal(float *coeffIn)
+{
+	const float Zp  = sqrt(3.0f) - 2.0f;
+	const float iZp = (Zp / (Zp - 1.0f));
+
+	mul_v4_v4fl(coeffIn, coeffIn, iZp);
+}
+
+void prefilter_doRecursion(float *coeffIn, unsigned int length, unsigned int stride)
+{
+	const float Zp  = sqrt(3.0f) - 2.0f;
+	const float lambda = 6.0f; // (1.0f - Zp) * (1.0f - 1.0f / Zp);
+	float prevcoeff[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	float sum[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	int count = 0;
+	unsigned int total_floats = length * 4;
+
+	prefilter_initInitialCausal(coeffIn, sum, length);
+
+	copy_v4_v4(prevcoeff, coeffIn);
+
+	for (count = stride; count < total_floats; count += stride) {
+		coeffIn[count]     = prevcoeff[0] = (lambda * coeffIn[count])     + (Zp * prevcoeff[0]); /* R */
+		coeffIn[count + 1] = prevcoeff[1] = (lambda * coeffIn[count + 1]) + (Zp * prevcoeff[1]); /* G */
+		coeffIn[count + 2] = prevcoeff[2] = (lambda * coeffIn[count + 2]) + (Zp * prevcoeff[2]); /* B */
+		coeffIn[count + 3] = prevcoeff[3] = (lambda * coeffIn[count + 3]) + (Zp * prevcoeff[3]); /* A */
+	}
+
+	count -= stride;
+	prefilter_initInitialAntiCausal(&coeffIn[count]);
+
+	copy_v4_v4(prevcoeff, &coeffIn[count]);
+
+	for (count -= stride; count >= 0; count -= stride) {
+		coeffIn[count]     = prevcoeff[0] = Zp * (prevcoeff[0] - coeffIn[count]);     /* R */
+		coeffIn[count + 1] = prevcoeff[1] = Zp * (prevcoeff[1] - coeffIn[count + 1]); /* G */
+		coeffIn[count + 2] = prevcoeff[2] = Zp * (prevcoeff[2] - coeffIn[count + 2]); /* B */
+		coeffIn[count + 3] = prevcoeff[3] = Zp * (prevcoeff[3] - coeffIn[count + 3]); /* A */
+	}
+}
+
 /*********************** Threaded image processing *************************/
 
 static void processor_apply_func(TaskPool *pool, void *taskdata, int UNUSED(threadid))
