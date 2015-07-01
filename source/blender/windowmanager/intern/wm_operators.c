@@ -4256,8 +4256,7 @@ static int radial_control_invoke(bContext *C, wmOperator *op, const wmEvent *eve
 {
 	wmWindowManager *wm;
 	RadialControl *rc;
-	int min_value_int, max_value_int, step_int;
-	float step_float, precision;
+
 
 	if (!(op->customdata = rc = MEM_callocN(sizeof(RadialControl), "RadialControl")))
 		return OPERATOR_CANCELLED;
@@ -4270,17 +4269,29 @@ static int radial_control_invoke(bContext *C, wmOperator *op, const wmEvent *eve
 	/* get type, initial, min, and max values of the property */
 	switch ((rc->type = RNA_property_type(rc->prop))) {
 		case PROP_INT:
-			rc->initial_value = RNA_property_int_get(&rc->ptr, rc->prop);
-			RNA_property_int_ui_range(&rc->ptr, rc->prop, &min_value_int,
-			                          &max_value_int, &step_int);
-			rc->min_value = min_value_int;
-			rc->max_value = max_value_int;
+		{
+			int value, min, max, step;
+
+			value = RNA_property_int_get(&rc->ptr, rc->prop);
+			RNA_property_int_ui_range(&rc->ptr, rc->prop, &min, &max, &step);
+
+			rc->initial_value = value;
+			rc->min_value = min_ii(value, min);
+			rc->max_value = max_ii(value, max);
 			break;
+		}
 		case PROP_FLOAT:
-			rc->initial_value = RNA_property_float_get(&rc->ptr, rc->prop);
-			RNA_property_float_ui_range(&rc->ptr, rc->prop, &rc->min_value,
-			                            &rc->max_value, &step_float, &precision);
+		{
+			float value, min, max, step, precision;
+
+			value = RNA_property_float_get(&rc->ptr, rc->prop);
+			RNA_property_float_ui_range(&rc->ptr, rc->prop, &min, &max, &step, &precision);
+
+			rc->initial_value = value;
+			rc->min_value = min_ff(value, min);
+			rc->max_value = max_ff(value, max);
 			break;
+		}
 		default:
 			BKE_report(op->reports, RPT_ERROR, "Property must be an integer or a float");
 			MEM_freeN(rc);
@@ -4610,14 +4621,24 @@ static void redraw_timer_window_swap(bContext *C)
 	CTX_wm_window_set(C, win);  /* XXX context manipulation warning! */
 }
 
+enum eRedrawTimerItems {
+	eRTDrawRegion = 0,
+	eRTDrawRegionSwap = 1,
+	eRTDrawWindow = 2,
+	eRTDrawWindowSwap = 3,
+	eRTAnimationStep = 4,
+	eRTAnimationPlay = 5,
+	eRTUndo = 6,
+};
+
 static EnumPropertyItem redraw_timer_type_items[] = {
-	{0, "DRAW", 0, "Draw Region", "Draw Region"},
-	{1, "DRAW_SWAP", 0, "Draw Region + Swap", "Draw Region and Swap"},
-	{2, "DRAW_WIN", 0, "Draw Window", "Draw Window"},
-	{3, "DRAW_WIN_SWAP", 0, "Draw Window + Swap", "Draw Window and Swap"},
-	{4, "ANIM_STEP", 0, "Anim Step", "Animation Steps"},
-	{5, "ANIM_PLAY", 0, "Anim Play", "Animation Playback"},
-	{6, "UNDO", 0, "Undo/Redo", "Undo/Redo"},
+	{eRTDrawRegion, "DRAW", 0, "Draw Region", "Draw Region"},
+	{eRTDrawRegionSwap, "DRAW_SWAP", 0, "Draw Region + Swap", "Draw Region and Swap"},
+	{eRTDrawWindow, "DRAW_WIN", 0, "Draw Window", "Draw Window"},
+	{eRTDrawWindowSwap, "DRAW_WIN_SWAP", 0, "Draw Window + Swap", "Draw Window and Swap"},
+	{eRTAnimationStep, "ANIM_STEP", 0, "Anim Step", "Animation Steps"},
+	{eRTAnimationPlay, "ANIM_PLAY", 0, "Anim Play", "Animation Playback"},
+	{eRTUndo, "UNDO", 0, "Undo/Redo", "Undo/Redo"},
 	{0, NULL, 0, NULL, NULL}
 };
 
@@ -4634,13 +4655,13 @@ static int redraw_timer_exec(bContext *C, wmOperator *op)
 	WM_cursor_wait(1);
 
 	for (a = 0; a < iter; a++) {
-		if (type == 0) {
+		if (type == eRTDrawRegion) {
 			if (ar) {
 				ED_region_do_draw(C, ar);
 				ar->do_draw = false;
 			}
 		}
-		else if (type == 1) {
+		else if (type == eRTDrawRegionSwap) {
 			wmWindow *win = CTX_wm_window(C);
 			CTX_wm_menu_set(C, NULL);
 		
@@ -4649,7 +4670,7 @@ static int redraw_timer_exec(bContext *C, wmOperator *op)
 			
 			CTX_wm_window_set(C, win);  /* XXX context manipulation warning! */
 		}
-		else if (type == 2) {
+		else if (type == eRTDrawWindow) {
 			wmWindow *win = CTX_wm_window(C);
 			ScrArea *sa;
 			
@@ -4676,10 +4697,10 @@ static int redraw_timer_exec(bContext *C, wmOperator *op)
 			CTX_wm_area_set(C, sa_back);
 			CTX_wm_region_set(C, ar_back);
 		}
-		else if (type == 3) {
+		else if (type == eRTDrawWindowSwap) {
 			redraw_timer_window_swap(C);
 		}
-		else if (type == 4) {
+		else if (type == eRTAnimationStep) {
 			Main *bmain = CTX_data_main(C);
 			Scene *scene = CTX_data_scene(C);
 			
@@ -4687,7 +4708,7 @@ static int redraw_timer_exec(bContext *C, wmOperator *op)
 			else scene->r.cfra++;
 			BKE_scene_update_for_newframe(bmain->eval_ctx, bmain, scene, scene->lay);
 		}
-		else if (type == 5) {
+		else if (type == eRTAnimationPlay) {
 
 			/* play anim, return on same frame as started with */
 			Main *bmain = CTX_data_main(C);
@@ -4704,7 +4725,7 @@ static int redraw_timer_exec(bContext *C, wmOperator *op)
 				redraw_timer_window_swap(C);
 			}
 		}
-		else { /* 6 */
+		else { /* eRTUndo */
 			ED_undo_pop(C);
 			ED_undo_redo(C);
 		}
@@ -4731,7 +4752,7 @@ static void WM_OT_redraw_timer(wmOperatorType *ot)
 	ot->exec = redraw_timer_exec;
 	ot->poll = WM_operator_winactive;
 
-	ot->prop = RNA_def_enum(ot->srna, "type", redraw_timer_type_items, 0, "Type", "");
+	ot->prop = RNA_def_enum(ot->srna, "type", redraw_timer_type_items, eRTDrawRegion, "Type", "");
 	RNA_def_int(ot->srna, "iterations", 10, 1, INT_MAX, "Iterations", "Number of times to redraw", 1, 1000);
 
 }
