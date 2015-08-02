@@ -851,4 +851,15 @@ void blo_do_versions_270(FileData *fd, Library *UNUSED(lib), Main *main)
 		}
 #undef BRUSH_TORUS
 	}
+
+	if (!MAIN_VERSION_ATLEAST(main, 275, 5)) {
+		Lamp *lamp;
+
+		for (lamp = main->lamp.first; lamp; lamp = lamp->id.next) {
+			if (lamp->type == LA_SUN) {
+				const float sun_angle = atanf(lamp->area_size) * 2.0f;
+				lamp->sun_angle = RAD2DEGF(sun_angle);
+			}
+		}
+	}
 }

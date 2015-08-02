@@ -825,8 +825,10 @@ class CyclesLamp_PT_lamp(CyclesButtonsPanel, Panel):
         split = layout.split()
         col = split.column(align=True)
 
-        if lamp.type in {'POINT', 'SUN', 'SPOT'}:
+        if lamp.type in {'POINT', 'SPOT'}:
             col.prop(lamp, "shadow_soft_size", text="Size")
+        elif lamp.type == 'SUN':
+            col.prop(lamp, "sun_angle")
         elif lamp.type == 'AREA':
             col.prop(lamp, "shape", text="")
             sub = col.column(align=True)

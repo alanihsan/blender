@@ -1096,6 +1096,9 @@ static void xml_read_light(const XMLReadState& state, pugi::xml_node node)
 	/* Portal? (Area light only) */
 	xml_read_bool(&light->is_portal, node, "is_portal");
 
+	/* Sun */
+	xml_read_float(&light->sun_angle, node, "sun_angle");
+
 	/* Generic */
 	xml_read_float(&light->size, node, "size");
 	xml_read_float3(&light->dir, node, "dir");

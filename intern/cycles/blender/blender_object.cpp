@@ -127,7 +127,7 @@ void BlenderSync::sync_light(BL::Object b_parent, int persistent_id[OBJECT_PERSI
 		}
 		case BL::Lamp::type_SUN: {
 			BL::SunLamp b_sun_lamp(b_lamp);
-			light->size = b_sun_lamp.shadow_soft_size();
+			light->sun_angle = b_sun_lamp.sun_angle() * M_PI_F / 180.0f;
 			light->type = LIGHT_DISTANT;
 			break;
 		}

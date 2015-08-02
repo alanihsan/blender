@@ -3715,6 +3715,7 @@ static GroupObject *add_render_lamp(Render *re, Object *ob)
 	lar->area_size= la->area_size;
 	lar->area_sizey= la->area_sizey;
 	lar->area_sizez= la->area_sizez;
+	lar->sun_angle= la->sun_angle;
 
 	lar->area_shape= la->area_shape;
 	

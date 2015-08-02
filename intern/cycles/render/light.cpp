@@ -617,8 +617,8 @@ void LightManager::device_update_points(Device *device, DeviceScene *dscene, Sce
 		else if(light->type == LIGHT_DISTANT) {
 			shader_id &= ~SHADER_AREA_LIGHT;
 
-			float radius = light->size;
-			float angle = atanf(radius);
+			float angle = light->sun_angle / 2.0f;
+			float radius = tanf(angle);
 			float cosangle = cosf(angle);
 			float area = M_PI_F*radius*radius;
 			float invarea = (area > 0.0f)? 1.0f/area: 1.0f;

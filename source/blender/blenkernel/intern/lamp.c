@@ -98,6 +98,9 @@ Lamp *BKE_lamp_add(Main *bmain, const char *name)
 	la->sky_colorspace = BLI_XYZ_CIE;
 	la->sky_exposure = 1.0f;
 	la->shadow_frustum_size = 10.0f;
+
+	/* the angular size of the sun varies over the year but is on average 30 degrees */
+	la->sun_angle = DEG2RADF(30.0f);
 	
 	curvemapping_initialize(la->curfalloff);
 	return la;

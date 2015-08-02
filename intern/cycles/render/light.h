@@ -38,6 +38,7 @@ public:
 
 	float3 dir;
 	float size;
+	float sun_angle;
 
 	float3 axisu;
 	float sizeu;

@@ -594,6 +594,7 @@ typedef struct LampRen {
 	short ray_samp, ray_sampy, ray_sampz, ray_samp_method, ray_samp_type, area_shape, ray_totsamp;
 	short xold[BLENDER_MAX_THREADS], yold[BLENDER_MAX_THREADS];	/* last jitter table for area lights */
 	float area_size, area_sizey, area_sizez;
+	float sun_angle;
 	float adapt_thresh;
 
 	/* sun/sky */

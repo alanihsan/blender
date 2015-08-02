@@ -74,6 +74,7 @@ typedef struct Lamp {
 	short ray_samp_type;
 	short area_shape;
 	float area_size, area_sizey, area_sizez;
+	float sun_angle, pad;
 	float adapt_thresh;
 	short ray_samp_method;
 	short shadowmap_type;

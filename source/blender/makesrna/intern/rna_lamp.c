@@ -664,6 +664,13 @@ static void rna_def_lamp_shadow(StructRNA *srna, int spot, int area)
 	RNA_def_property_ui_text(prop, "Shadow Soft Size", "Light size for ray shadow sampling (Raytraced shadows)");
 	RNA_def_property_update(prop, 0, "rna_Lamp_update");
 
+	prop = RNA_def_property(srna, "sun_angle", PROP_FLOAT, PROP_ANGLE);
+	RNA_def_property_float_sdna(prop, NULL, "sun_angle");
+	RNA_def_property_range(prop, 0.0, DEG2RAD(360.0));
+	RNA_def_property_ui_range(prop, 0.0, DEG2RAD(360.0), 0.1, 3);
+	RNA_def_property_ui_text(prop, "Anglular Size", "Angular diameter of the Sun as seen from the Earth");
+	RNA_def_property_update(prop, 0, "rna_Lamp_update");
+
 	prop = RNA_def_property(srna, "use_shadow_layer", PROP_BOOLEAN, PROP_NONE);
 	RNA_def_property_boolean_sdna(prop, NULL, "mode", LA_LAYER_SHADOW);
 	RNA_def_property_ui_text(prop, "Shadow Layer", "Objects on the same layers only cast shadows");
