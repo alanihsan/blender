@@ -21,6 +21,7 @@
 #include "osl.h"
 #include "scene.h"
 #include "shader.h"
+#include "volume.h"
 
 #include "blender_texture.h"
 #include "blender_sync.h"
@@ -787,6 +788,7 @@ static ShaderNode *add_node(Scene *scene,
 			frame.insert(frame.begin(), 4 - frame.size(), '0');
 
 			vdb_node->filename = ustring::format("%s%s.vdb", basename, frame);
+			vdb_node->animated = true;
 		}
 
 		BL::Node::outputs_iterator b_output;
@@ -1274,8 +1276,10 @@ void BlenderSync::sync_shaders()
 
 	if(preview) {
 		ImageManager *image_manager = scene->image_manager;
+		VolumeManager *volume_manager = scene->volume_manager;
 		int frame = b_scene.frame_current();
 		auto_refresh_update = image_manager->set_animation_frame_update(frame);
+		auto_refresh_update |= volume_manager->set_animation_frame_update(frame);
 	}
 
 	shader_map.pre_sync();

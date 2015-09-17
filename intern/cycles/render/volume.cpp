@@ -61,20 +61,20 @@ static inline void catch_exceptions()
 #endif
 }
 
-int VolumeManager::add_volume(const string& filename, const string& name, int sampling, int grid_type)
+int VolumeManager::add_volume(const string& filename, const string& name, int sampling, int grid_type, bool animated)
 {
 	size_t slot = -1;
 
-	if((slot = find_existing_slot(filename, name, sampling, grid_type)) != -1) {
+	if((slot = find_existing_slot(filename, name, grid_type, false)) != -1) {
 		return slot;
 	}
 
 	try {
 		if(is_openvdb_file(filename)) {
-			slot = add_openvdb_volume(filename, name, sampling, grid_type);
+			slot = add_openvdb_volume(filename, name, grid_type);
 		}
 
-		add_grid_description(filename, name, sampling, slot);
+		add_grid_description(filename, name, sampling, slot, animated);
 
 		need_update = true;
 	}
@@ -87,35 +87,33 @@ int VolumeManager::add_volume(const string& filename, const string& name, int sa
 	return slot;
 }
 
-int VolumeManager::find_existing_slot(const string& filename, const string& name, int sampling, int grid_type)
+int VolumeManager::find_existing_slot(const string& filename, const string& name, int grid_type, bool to_remove)
 {
-	for(size_t i = 0; i < current_grids.size(); ++i) {
+	size_t i, slot = -1;
+
+	for(i = 0; i < current_grids.size(); ++i) {
 		GridDescription grid = current_grids[i];
 
-		if(grid.filename == filename && grid.name == name) {
-			if(grid.sampling == sampling) {
-				return grid.slot;
-			}
-			else {
-				/* sampling was changed, remove the sampler */
-				if(grid_type == NODE_VDB_FLOAT) {
-					delete float_volumes[grid.slot];
-					float_volumes[grid.slot] = NULL;
-				}
-				else {
-					delete float3_volumes[grid.slot];
-					float3_volumes[grid.slot] = NULL;
-				}
+		if(grid.filename != filename)
+			continue;
 
-				/* remove the grid description too */
-				std::swap(current_grids[i], current_grids.back());
-				current_grids.pop_back();
-				break;
-			}
-		}
+		if(grid.name != name)
+			continue;
+
+		if(grid.type != grid_type)
+			continue;
+
+		slot = grid.slot;
+		break;
 	}
 
-	return -1;
+	/* remove the grid description too */
+	if (slot != -1 && to_remove) {
+		std::swap(current_grids[i], current_grids.back());
+		current_grids.pop_back();
+	}
+
+	return slot;
 }
 
 int VolumeManager::find_density_slot()
@@ -165,7 +163,7 @@ size_t find_empty_slot(Container container)
 	return slot;
 }
 
-size_t VolumeManager::add_openvdb_volume(const std::string& filename, const std::string& name, int /*sampling*/, int grid_type)
+size_t VolumeManager::add_openvdb_volume(const std::string& filename, const std::string& name, int grid_type)
 {
 	size_t slot = -1;
 
@@ -211,15 +209,35 @@ size_t VolumeManager::add_openvdb_volume(const std::string& filename, const std:
 	return slot;
 }
 
-void VolumeManager::add_grid_description(const string& filename, const string& name, int sampling, int slot)
+void VolumeManager::add_grid_description(const string& filename, const string& name, int slot, int type, bool animated)
 {
 	GridDescription descr;
+
 	descr.filename = filename;
 	descr.name = name;
-	descr.sampling = sampling;
+	descr.type = type;
 	descr.slot = slot;
+	descr.animated = animated;
 
 	current_grids.push_back(descr);
+}
+
+void VolumeManager::remove_volume(const string& filename, const string& name, int grid_type)
+{
+	printf("%s\n", __func__);
+
+	size_t slot = find_existing_slot(filename, name, grid_type, true);
+
+	if(grid_type == NODE_VDB_FLOAT) {
+		delete float_volumes[slot];
+		float_volumes[slot] = NULL;
+	}
+	else {
+		delete float3_volumes[slot];
+		float3_volumes[slot] = NULL;
+	}
+
+	need_update = true;
 }
 
 void VolumeManager::device_update(Device *device, DeviceScene *dscene, Scene *scene, Progress& progress)
@@ -229,6 +247,7 @@ void VolumeManager::device_update(Device *device, DeviceScene *dscene, Scene *sc
 	if(!need_update) {
 		return;
 	}
+	printf("%s\n", __func__);
 
 	device_free(device, dscene);
 	progress.set_status("Updating OpenVDB volumes", "Sending samplers to device.");
@@ -272,6 +291,21 @@ void VolumeManager::device_update(Device *device, DeviceScene *dscene, Scene *sc
 
 void VolumeManager::device_free(Device */*device*/, DeviceScene */*dscene*/)
 {
+}
+
+bool VolumeManager::set_animation_frame_update(int frame)
+{
+	if(frame != animation_frame) {
+		animation_frame = frame;
+
+		for(size_t slot = 0; slot < current_grids.size(); ++slot) {
+			if(current_grids[slot].animated) {
+				return true;
+			}
+		}
+	}
+
+	return false;
 }
 
 CCL_NAMESPACE_END

@@ -762,6 +762,7 @@ public:
 class OpenVDBNode : public ShaderNode {
 public:
 	SHADER_NODE_CLASS(OpenVDBNode)
+	~OpenVDBNode();
 	void attributes(Shader *shader, AttributeRequestSet *attributes);
 	bool has_spatial_varying() { return true; }
 
@@ -770,6 +771,7 @@ public:
 
 	int grid_slot;
 	int sampling;
+	bool animated;
 	vector<ustring> output_names;
 };
 

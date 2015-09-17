@@ -32,34 +32,36 @@ class VolumeManager {
 	struct GridDescription {
 		string filename;
 		string name;
-		int sampling;
+		int type;
 		int slot;
+		bool animated;
 	};
 
 	vector<GridDescription> current_grids;
+	int animation_frame;
 
 #ifdef WITH_OPENVDB
 	vector<openvdb::FloatGrid::Ptr> scalar_grids;
 	vector<openvdb::Vec3SGrid::Ptr> vector_grids;
 #endif
 
-	void delete_volume(int grid_type, int sampling, size_t slot);
-
-	void add_grid_description(const string& filename, const string& name, int sampling, int slot);
-	int find_existing_slot(const string& filename, const string& name, int sampling, int grid_type);
+	void add_grid_description(const string& filename, const string& name, int slot, int type, bool animated);
+	int find_existing_slot(const string& filename, const string& name, int grid_type, bool to_remove);
 
 	bool is_openvdb_file(const string& filename) const;
-	size_t add_openvdb_volume(const string& filename, const string& name, int sampling, int grid_type);
+	size_t add_openvdb_volume(const string& filename, const string& name, int grid_type);
 
 public:
 	VolumeManager();
 	~VolumeManager();
 
-	int add_volume(const string& filename, const string& name, int sampling, int grid_type);
+	int add_volume(const string& filename, const string& name, int sampling, int grid_type, bool animated);
+	void remove_volume(const string& filename, const string& name, int grid_type);
 	int find_density_slot();
 
 	void device_update(Device *device, DeviceScene *dscene, Scene *scene, Progress& progress);
 	void device_free(Device *device, DeviceScene *dscene);
+	bool set_animation_frame_update(int frame);
 
 	bool need_update;
 

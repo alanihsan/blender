@@ -4578,6 +4578,30 @@ OpenVDBNode::OpenVDBNode()
 	filename = "";
 	volume_manager = NULL;
 	sampling = OPENVDB_SAMPLE_POINT;
+	animated = false;
+}
+
+OpenVDBNode::~OpenVDBNode()
+{
+	if(volume_manager) {
+		for(size_t i = 0; i < outputs.size(); ++i) {
+			ShaderOutput *out = outputs[i];
+
+			if(out->links.empty()) {
+				continue;
+			}
+
+			int type = NODE_VDB_FLOAT;
+
+			if(out->type == SHADER_SOCKET_VECTOR || out->type == SHADER_SOCKET_COLOR) {
+				type = NODE_VDB_FLOAT3;
+			}
+
+			volume_manager->remove_volume(filename.string(),
+			                              output_names[i].string(),
+			                              type);
+		}
+	}
 }
 
 void OpenVDBNode::attributes(Shader *shader, AttributeRequestSet *attributes)
@@ -4604,7 +4628,7 @@ void OpenVDBNode::compile(SVMCompiler& compiler)
 
 		grid_slot = volume_manager->add_volume(filename.string(),
 		                                       output_names[i].string(),
-		                                       sampling, type);
+		                                       sampling, type, animated);
 
 		if(grid_slot == -1) {
 			continue;
