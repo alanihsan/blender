@@ -158,6 +158,7 @@ option_defaults_init(
 	_init_SDL
 	_init_FFTW3
 	_init_GAMEENGINE
+	_init_OPENSUBDIV
 )
 
 # customize...
@@ -174,11 +175,13 @@ if (UNIX AND NOT APPLE)
 	set(_init_OPENCOLORIO                    OFF)
 	set(_init_SDL                            OFF)
 	set(_init_FFTW3                          OFF)
+	set(_init_OPENSUBDIV                     OFF)
 elseif(WIN32)
 	set(_init_JACK                           OFF)
 elseif(APPLE)
 	set(_init_INPUT_NDOF                     OFF)
 	set(_init_JACK                           OFF)
+	set(_init_OPENSUBDIV                     OFF)
 endif()
 
 
@@ -229,7 +232,7 @@ option(WITH_COMPOSITOR         "Enable the tile based nodal compositor" ON)
 option(WITH_COMPOSITOR_WERROR  "Treat warnings as errors in compositor code" OFF)
 mark_as_advanced(WITH_COMPOSITOR_WERROR)
 
-option(WITH_OPENSUBDIV    "Enable OpenSubdiv for surface subdivision" OFF)
+option(WITH_OPENSUBDIV    "Enable OpenSubdiv for surface subdivision" _init_OPENSUBDIV)
 option(WITH_SUBSURF_WERROR  "Treat warnings as errors in subsurf code" OFF)
 mark_as_advanced(WITH_COMPOSITOR_WERROR)
 
@@ -1147,7 +1150,7 @@ if(UNIX AND NOT APPLE)
 
 		if(NOT OPENSUBDIV_FOUND)
 			set(WITH_OPENSUBDIV OFF)
-			message(STATUS "OpenSundiv not found")
+			message(STATUS "OpenSubdiv not found")
 		endif()
 	endif()
 
@@ -2317,9 +2320,14 @@ endif()
 if(WITH_IMAGE_OPENJPEG)
 	if(WITH_SYSTEM_OPENJPEG)
 		# dealt with above
+		set(OPENJPEG_DEFINES "")
 	else()
 		set(OPENJPEG_INCLUDE_DIRS "${CMAKE_SOURCE_DIR}/extern/libopenjpeg")
-		add_definitions(-DOPJ_STATIC)
+		set(OPENJPEG_DEFINES "-DOPJ_STATIC")
+	endif()
+	# Special handling of Windows platform where openjpeg is always static.
+	if(WIN32)
+		set(OPENJPEG_DEFINES "-DOPJ_STATIC")
 	endif()
 endif()
 
