@@ -420,7 +420,7 @@ void prefilter_doRecursion(float *coeffIn, unsigned int length, unsigned int str
 
 /*********************** Threaded image processing *************************/
 
-static void processor_apply_func(TaskPool *pool, void *taskdata, int UNUSED(threadid))
+static void processor_apply_func(TaskPool * __restrict pool, void *taskdata, int UNUSED(threadid))
 {
 	void (*do_thread) (void *) = (void (*) (void *)) BLI_task_pool_userdata(pool);
 	do_thread(taskdata);
