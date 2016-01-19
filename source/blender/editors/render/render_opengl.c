@@ -581,9 +581,15 @@ static bool screen_opengl_render_init(bContext *C, wmOperator *op)
 	return true;
 }
 
-static void screen_opengl_render_end(bContext *C, OGLRender *oglrender)
+static void screen_opengl_free(void *data)
 {
-	Main *bmain = CTX_data_main(C);
+	MEM_freeN(data);
+}
+
+static void screen_opengl_render_end(void *data)
+{
+	OGLRender *oglrender = data;
+	Main *bmain = oglrender->bmain;
 	Scene *scene = oglrender->scene;
 	int i;
 
@@ -620,13 +626,15 @@ static void screen_opengl_render_end(bContext *C, OGLRender *oglrender)
 
 	CTX_wm_area_set(C, oglrender->prevsa);
 	CTX_wm_region_set(C, oglrender->prevar);
-
-	MEM_freeN(oglrender);
 }
 
 static void screen_opengl_render_cancel(bContext *C, wmOperator *op)
 {
-	screen_opengl_render_end(C, op->customdata);
+	wmWindowManager *wm = CTX_wm_manager(C);
+	Scene *scene = (Scene *) op->customdata;
+
+	/* kill on cancel, because job is using op->reports */
+	WM_jobs_kill_type(wm, scene, WM_JOB_TYPE_RENDER);
 }
 
 /* share between invoke and exec */
@@ -677,10 +685,10 @@ static bool screen_opengl_render_anim_initialize(bContext *C, wmOperator *op)
 	return true;
 }
 
-static bool screen_opengl_render_anim_step(bContext *C, wmOperator *op)
+static bool screen_opengl_render_anim_step(wmOperator *op)
 {
-	Main *bmain = CTX_data_main(C);
 	OGLRender *oglrender = op->customdata;
+	Main *bmain = oglrender->bmain;
 	Scene *scene = oglrender->scene;
 	char name[FILE_MAX];
 	bool ok = false;
@@ -773,7 +781,6 @@ finally:  /* Step the frame and bail early if needed */
 
 	/* stop at the end or on error */
 	if (CFRA >= PEFRA || !ok) {
-		screen_opengl_render_end(C, op->customdata);
 		return 0;
 	}
 
@@ -783,6 +790,7 @@ finally:  /* Step the frame and bail early if needed */
 
 static int screen_opengl_render_modal(bContext *C, wmOperator *op, const wmEvent *event)
 {
+#if 0
 	OGLRender *oglrender = op->customdata;
 	const bool anim = RNA_boolean_get(op->ptr, "animation");
 	bool ret;
@@ -820,6 +828,20 @@ static int screen_opengl_render_modal(bContext *C, wmOperator *op, const wmEvent
 	}
 
 	return OPERATOR_RUNNING_MODAL;
+#endif
+	Scene *scene = (Scene *) op->customdata;
+
+	/* no running blender, remove handler and pass through */
+	if (0 == WM_jobs_test(CTX_wm_manager(C), scene, WM_JOB_TYPE_RENDER)) {
+		return OPERATOR_FINISHED | OPERATOR_PASS_THROUGH;
+	}
+
+	/* running render */
+	switch (event->type) {
+		case ESCKEY:
+			return OPERATOR_RUNNING_MODAL;
+	}
+	return OPERATOR_PASS_THROUGH;
 }
 
 static int screen_opengl_render_invoke(bContext *C, wmOperator *op, const wmEvent *event)
@@ -858,7 +880,7 @@ static int screen_opengl_render_exec(bContext *C, wmOperator *op)
 	if (!is_animation) { /* same as invoke */
 		/* render image */
 		screen_opengl_render_apply(op->customdata);
-		screen_opengl_render_end(C, op->customdata);
+		screen_opengl_render_end(op->customdata);
 
 		return OPERATOR_FINISHED;
 	}
@@ -869,8 +891,10 @@ static int screen_opengl_render_exec(bContext *C, wmOperator *op)
 			return OPERATOR_CANCELLED;
 
 		while (ret) {
-			ret = screen_opengl_render_anim_step(C, op);
+			ret = screen_opengl_render_anim_step(op);
 		}
+
+		screen_opengl_render_end(op->customdata);
 	}
 
 	/* no redraw needed, we leave state as we entered it */
