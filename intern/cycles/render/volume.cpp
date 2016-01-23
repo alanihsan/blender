@@ -18,6 +18,7 @@
 #include "scene.h"
 #include "util_logging.h"
 #include "util_progress.h"
+#include "util_task.h"
 
 CCL_NAMESPACE_BEGIN
 
@@ -158,7 +159,7 @@ size_t find_empty_slot(Container container)
 
 	if(slot == container.size()) {
 		if(slot == MAX_VOLUME) {
-			printf("VolumeManager::add_volume: volume sampler limit reached %d!\n",
+			printf("VolumeManager::add_volume: volume limit reached %d!\n",
 			       MAX_VOLUME);
 			return -1;
 		}
@@ -191,8 +192,9 @@ size_t VolumeManager::add_openvdb_volume(const std::string& filename, const std:
 
 		FloatGrid::Ptr fgrid = gridPtrCast<FloatGrid>(grid);
 
-		vdb_float_volume *sampler = new vdb_float_volume(fgrid);
-		float_volumes.insert(float_volumes.begin() + slot, sampler);
+		vdb_float_volume *volume = new vdb_float_volume(fgrid);
+		volume->create_threads_utils(TaskScheduler::thread_ids());
+		float_volumes.insert(float_volumes.begin() + slot, volume);
 		scalar_grids.push_back(fgrid);
 	}
 	else if(grid_type == NODE_VDB_FLOAT3) {
@@ -202,8 +204,9 @@ size_t VolumeManager::add_openvdb_volume(const std::string& filename, const std:
 
 		Vec3SGrid::Ptr vgrid = gridPtrCast<Vec3SGrid>(grid);
 
-		vdb_float3_volume *sampler = new vdb_float3_volume(vgrid);
-		float3_volumes.insert(float3_volumes.begin() + slot, sampler);
+		vdb_float3_volume *volume = new vdb_float3_volume(vgrid);
+		volume->create_threads_utils(TaskScheduler::thread_ids());
+		float3_volumes.insert(float3_volumes.begin() + slot, volume);
 		vector_grids.push_back(vgrid);
 	}
 #else
@@ -228,6 +231,7 @@ void VolumeManager::add_grid_description(const string& filename, const string& n
 	current_grids.push_back(descr);
 }
 
+<<<<<<< HEAD
 void VolumeManager::remove_volume(const string& filename, const string& name, int grid_type)
 {
 	printf("%s\n", __func__);
@@ -247,16 +251,17 @@ void VolumeManager::remove_volume(const string& filename, const string& name, in
 }
 
 void VolumeManager::device_update(Device *device, DeviceScene *dscene, Scene *scene, Progress& progress)
+=======
+void VolumeManager::device_update(Device *device, DeviceScene *dscene, Scene */*scene*/, Progress& progress)
+>>>>>>> openvdb
 {
-	(void)scene;
-
 	if(!need_update) {
 		return;
 	}
 	printf("%s\n", __func__);
 
 	device_free(device, dscene);
-	progress.set_status("Updating OpenVDB volumes", "Sending samplers to device.");
+	progress.set_status("Updating OpenVDB volumes", "Sending volumes to device.");
 
 	for(size_t i = 0; i < float_volumes.size(); ++i) {
 		if(!float_volumes[i]) {
@@ -279,8 +284,8 @@ void VolumeManager::device_update(Device *device, DeviceScene *dscene, Scene *sc
 	dscene->data.tables.num_volumes = float_volumes.size() + float3_volumes.size();
 	dscene->data.tables.density_index = find_density_slot();
 
-	VLOG(1) << "Volume samplers allocate: __float_volume, " << float_volumes.size() * sizeof(float_volume) << " bytes";
-	VLOG(1) << "Volume samplers allocate: __float3_volume, " << float3_volumes.size() * sizeof(float3_volume) << " bytes";
+	VLOG(1) << "Volume allocate: __float_volume, " << float_volumes.size() * sizeof(float_volume) << " bytes";
+	VLOG(1) << "Volume allocate: __float3_volume, " << float3_volumes.size() * sizeof(float3_volume) << " bytes";
 
 #ifdef WITH_OPENVDB
 	for(size_t i = 0; i < scalar_grids.size(); ++i) {
