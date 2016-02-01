@@ -28,10 +28,43 @@
 #include "util_time.h"
 #include "util_types.h"
 #include "util_vector.h"
+#include "util_string.h"
 
 CCL_NAMESPACE_BEGIN
 
+bool Device::need_types_update = true;
+bool Device::need_devices_update = true;
+
+/* Device Requested Features */
+
+std::ostream& operator <<(std::ostream &os,
+                          const DeviceRequestedFeatures& requested_features)
+{
+	os << "Experimental features: "
+	   << (requested_features.experimental ? "On" : "Off") << std::endl;
+	os << "Max closure count: " << requested_features.max_closure << std::endl;
+	os << "Max nodes group: " << requested_features.max_nodes_group << std::endl;
+	/* TODO(sergey): Decode bitflag into list of names. */
+	os << "Nodes features: " << requested_features.nodes_features << std::endl;
+	os << "Use hair: "
+	   << string_from_bool(requested_features.use_hair)  << std::endl;
+	os << "Use object motion: "
+	   << string_from_bool(requested_features.use_object_motion)  << std::endl;
+	os << "Use camera motion: "
+	   << string_from_bool(requested_features.use_camera_motion)  << std::endl;
+	os << "Use Baking: "
+	   << string_from_bool(requested_features.use_baking)  << std::endl;
+	return os;
+}
+
 /* Device */
+
+Device::~Device()
+{
+	if(!background && vertex_buffer != 0) {
+		glDeleteBuffers(1, &vertex_buffer);
+	}
+}
 
 void Device::pixels_alloc(device_memory& mem)
 {
@@ -51,7 +84,7 @@ void Device::pixels_free(device_memory& mem)
 	mem_free(mem);
 }
 
-void Device::draw_pixels(device_memory& rgba, int y, int w, int h, int dy, int width, int height, bool transparent,
+void Device::draw_pixels(device_memory& rgba, int y, int w, int h, int dx, int dy, int width, int height, bool transparent,
 	const DeviceDrawParams &draw_params)
 {
 	pixels_copy_from(rgba, y, w, h);
@@ -67,6 +100,9 @@ void Device::draw_pixels(device_memory& rgba, int y, int w, int h, int dy, int w
 		/* for multi devices, this assumes the inefficient method that we allocate
 		 * all pixels on the device even though we only render to a subset */
 		GLhalf *data_pointer = (GLhalf*)rgba.data_pointer;
+		float vbuffer[16], *basep;
+		float *vp = NULL;
+
 		data_pointer += 4*y*w;
 
 		/* draw half float texture, GLSL shader for display transform assumed to be bound */
@@ -83,23 +119,63 @@ void Device::draw_pixels(device_memory& rgba, int y, int w, int h, int dy, int w
 			draw_params.bind_display_space_shader_cb();
 		}
 
-		glPushMatrix();
-		glTranslatef(0.0f, (float)dy, 0.0f);
+		if(GLEW_VERSION_1_5) {
+			if(!vertex_buffer)
+				glGenBuffers(1, &vertex_buffer);
 
-		glBegin(GL_QUADS);
-		
-		glTexCoord2f(0.0f, 0.0f);
-		glVertex2f(0.0f, 0.0f);
-		glTexCoord2f(1.0f, 0.0f);
-		glVertex2f((float)width, 0.0f);
-		glTexCoord2f(1.0f, 1.0f);
-		glVertex2f((float)width, (float)height);
-		glTexCoord2f(0.0f, 1.0f);
-		glVertex2f(0.0f, (float)height);
+			glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+			/* invalidate old contents - avoids stalling if buffer is still waiting in queue to be rendered */
+			glBufferData(GL_ARRAY_BUFFER, 16 * sizeof(float), NULL, GL_STREAM_DRAW);
 
-		glEnd();
+			vp = (float *)glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY);
 
-		glPopMatrix();
+			basep = NULL;
+		}
+		else {
+			basep = vbuffer;
+			vp = vbuffer;
+		}
+
+		if(vp) {
+			/* texture coordinate - vertex pair */
+			vp[0] = 0.0f;
+			vp[1] = 0.0f;
+			vp[2] = dx;
+			vp[3] = dy;
+
+			vp[4] = 1.0f;
+			vp[5] = 0.0f;
+			vp[6] = (float)width + dx;
+			vp[7] = dy;
+
+			vp[8] = 1.0f;
+			vp[9] = 1.0f;
+			vp[10] = (float)width + dx;
+			vp[11] = (float)height + dy;
+
+			vp[12] = 0.0f;
+			vp[13] = 1.0f;
+			vp[14] = dx;
+			vp[15] = (float)height + dy;
+
+			if(vertex_buffer)
+				glUnmapBuffer(GL_ARRAY_BUFFER);
+		}
+
+		glTexCoordPointer(2, GL_FLOAT, 4 * sizeof(float), basep);
+		glVertexPointer(2, GL_FLOAT, 4 * sizeof(float), ((char *)basep) + 2 * sizeof(float));
+
+		glEnableClientState(GL_VERTEX_ARRAY);
+		glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+
+		glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+		glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+		glDisableClientState(GL_VERTEX_ARRAY);
+
+		if(vertex_buffer) {
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+		}
 
 		if(draw_params.unbind_display_space_shader_cb) {
 			draw_params.unbind_display_space_shader_cb();
@@ -113,7 +189,7 @@ void Device::draw_pixels(device_memory& rgba, int y, int w, int h, int dy, int w
 		/* fallback for old graphics cards that don't support GLSL, half float,
 		 * and non-power-of-two textures */
 		glPixelZoom((float)width/(float)w, (float)height/(float)h);
-		glRasterPos2f(0, dy);
+		glRasterPos2f(dx, dy);
 
 		uint8_t *pixels = (uint8_t*)rgba.data_pointer;
 
@@ -205,9 +281,9 @@ string Device::string_from_type(DeviceType type)
 vector<DeviceType>& Device::available_types()
 {
 	static vector<DeviceType> types;
-	static bool types_init = false;
 
-	if(!types_init) {
+	if(need_types_update) {
+		types.clear();
 		types.push_back(DEVICE_CPU);
 
 #ifdef WITH_CUDA
@@ -227,7 +303,7 @@ vector<DeviceType>& Device::available_types()
 		types.push_back(DEVICE_MULTI);
 #endif
 
-		types_init = true;
+		need_types_update = false;
 	}
 
 	return types;
@@ -236,9 +312,9 @@ vector<DeviceType>& Device::available_types()
 vector<DeviceInfo>& Device::available_devices()
 {
 	static vector<DeviceInfo> devices;
-	static bool devices_init = false;
 
-	if(!devices_init) {
+	if(need_devices_update) {
+		devices.clear();
 #ifdef WITH_CUDA
 		if(device_cuda_init())
 			device_cuda_info(devices);
@@ -259,7 +335,7 @@ vector<DeviceInfo>& Device::available_devices()
 		device_network_info(devices);
 #endif
 
-		devices_init = true;
+		need_devices_update = false;
 	}
 
 	return devices;
@@ -277,16 +353,19 @@ string Device::device_capabilities()
 #endif
 
 #ifdef WITH_OPENCL
-	/* TODO(sergey): Needs proper usable implementation. */
-	/*
 	if(device_opencl_init()) {
 		capabilities += "\nOpenCL device capabilities:\n";
 		capabilities += device_opencl_capabilities();
 	}
-	*/
 #endif
 
 	return capabilities;
+}
+
+void Device::tag_update()
+{
+	need_types_update = true;
+	need_devices_update = true;
 }
 
 CCL_NAMESPACE_END

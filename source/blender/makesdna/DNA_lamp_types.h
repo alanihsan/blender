@@ -127,8 +127,6 @@ typedef struct Lamp {
 #define LA_SPOT			2
 #define LA_HEMI			3
 #define LA_AREA			4
-/* yafray: extra lamp type used for caustic photonmap */
-#define LA_YF_PHOTON	5
 
 /* mode */
 #define LA_SHAD_BUF		(1 << 0)
@@ -151,6 +149,7 @@ typedef struct Lamp {
 #define LA_LAYER_SHADOW	(1 << 15)
 #define LA_SHAD_TEX     (1 << 16)
 #define LA_SHOW_CONE    (1 << 17)
+#define LA_SHOW_SHADOW_BOX (1 << 18)
 
 /* layer_shadow */
 #define LA_LAYER_SHADOW_BOTH	0

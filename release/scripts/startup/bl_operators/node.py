@@ -124,8 +124,8 @@ class NodeAddOperator:
         result = self.execute(context)
 
         if self.use_transform and ('FINISHED' in result):
-            # removes the node again if transform is cancelled
-            bpy.ops.transform.translate('INVOKE_DEFAULT', remove_on_cancel=True)
+            # removes the node again if transform is canceled
+            bpy.ops.node.translate_attach_remove_on_cancel('INVOKE_DEFAULT')
 
         return result
 
@@ -220,7 +220,7 @@ class NODE_OT_add_search(NodeAddOperator, Operator):
             self.create_node(context, item.nodetype)
 
             if self.use_transform:
-                bpy.ops.transform.translate('INVOKE_DEFAULT', remove_on_cancel=True)
+                bpy.ops.node.translate_attach_remove_on_cancel('INVOKE_DEFAULT')
 
             return {'FINISHED'}
         else:

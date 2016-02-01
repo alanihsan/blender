@@ -33,19 +33,17 @@
 struct ID;
 struct ListBase;
 struct bContext;
-struct bScreen;
 struct ScrArea;
 struct ARegion;
 struct View3D;
-struct SpaceNode;
-struct SpaceSeq;
 struct Object;
 struct bGPdata;
 struct bGPDlayer;
 struct bGPDframe;
 struct bGPDstroke;
+struct bAnimContext;
 struct PointerRNA;
-struct ImBuf;
+struct wmWindowManager;
 struct wmKeyConfig;
 
 
@@ -81,6 +79,8 @@ struct bGPdata *ED_gpencil_data_get_active_direct(struct ID *screen_id, struct S
 /* 3D View */
 struct bGPdata  *ED_gpencil_data_get_active_v3d(struct Scene *scene, struct View3D *v3d);
 
+bool ED_gpencil_has_keyframe_v3d(struct Scene *scene, struct Object *ob, int cfra);
+
 /* ----------- Stroke Editing Utilities ---------------- */
 
 bool ED_gpencil_stroke_can_use_direct(const struct ScrArea *sa, const struct bGPDstroke *gps);
@@ -104,7 +104,7 @@ void ED_gpencil_strokes_copybuf_free(void);
 
 void ED_gpencil_draw_2dimage(const struct bContext *C);
 void ED_gpencil_draw_view2d(const struct bContext *C, bool onlyv2d);
-void ED_gpencil_draw_view3d(struct Scene *scene, struct View3D *v3d, struct ARegion *ar, bool only3d);
+void ED_gpencil_draw_view3d(struct wmWindowManager *wm, struct Scene *scene, struct View3D *v3d, struct ARegion *ar, bool only3d);
 void ED_gpencil_draw_ex(struct Scene *scene, struct bGPdata *gpd, int winx, int winy,
                         const int cfra, const char spacetype);
 
@@ -125,14 +125,12 @@ void  ED_gplayer_frames_duplicate(struct bGPDlayer *gpl);
 void ED_gplayer_frames_keytype_set(struct bGPDlayer *gpl, short type);
 
 void  ED_gplayer_snap_frames(struct bGPDlayer *gpl, struct Scene *scene, short mode);
+void  ED_gplayer_mirror_frames(struct bGPDlayer *gpl, struct Scene *scene, short mode);
 
-#if 0
-void free_gpcopybuf(void);
-void copy_gpdata(void);
-void paste_gpdata(void);
+void ED_gpencil_anim_copybuf_free(void);
+bool ED_gpencil_anim_copybuf_copy(struct bAnimContext *ac);
+bool ED_gpencil_anim_copybuf_paste(struct bAnimContext *ac, const short copy_mode);
 
-void mirror_gplayer_frames(struct bGPDlayer *gpl, short mode);
-#endif
 
 /* ------------ Grease-Pencil Undo System ------------------ */
 int ED_gpencil_session_active(void);

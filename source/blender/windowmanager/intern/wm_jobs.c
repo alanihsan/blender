@@ -103,7 +103,7 @@ struct wmJob {
 	unsigned int note, endnote;
 	
 	
-/* internal */
+	/* internal */
 	void *owner;
 	int flag;
 	short suspended, running, ready, do_update, stop, job_type;
@@ -111,7 +111,7 @@ struct wmJob {
 
 	/* for display in header, identification */
 	char name[128];
-	
+
 	/* once running, we store this separately */
 	void *run_customdata;
 	void (*run_free)(void *);
@@ -157,8 +157,8 @@ static void wm_job_main_thread_yield(wmJob *wm_job, bool ending)
 	BLI_ticket_mutex_lock(wm_job->main_thread_mutex);
 }
 
-/* finds:
- * if type or owner, compare for it, otherwise any matching job
+/**
+ * Finds if type or owner, compare for it, otherwise any matching job.
  */
 static wmJob *wm_job_find(wmWindowManager *wm, void *owner, const int job_type)
 {
@@ -185,9 +185,12 @@ static wmJob *wm_job_find(wmWindowManager *wm, void *owner, const int job_type)
 
 /* ******************* public API ***************** */
 
-/* returns current or adds new job, but doesnt run it */
-/* every owner only gets a single job, adding a new one will stop running job and 
- * when stopped it starts the new one */
+/**
+ * \return current job or adds new job, but doesnt run it.
+ *
+ * \note every owner only gets a single job,
+ * adding a new one will stop running job and when stopped it starts the new one.
+ */
 wmJob *WM_jobs_get(wmWindowManager *wm, wmWindow *win, void *owner, const char *name, int flag, int job_type)
 {
 	wmJob *wm_job = wm_job_find(wm, owner, job_type);
@@ -242,6 +245,17 @@ float WM_jobs_progress(wmWindowManager *wm, void *owner)
 	return 0.0;
 }
 
+/* time that job started */
+double WM_jobs_starttime(wmWindowManager *wm, void *owner)
+{
+	wmJob *wm_job = wm_job_find(wm, owner, WM_JOB_TYPE_ANY);
+
+	if (wm_job && wm_job->flag & WM_JOB_PROGRESS)
+		return wm_job->start_time;
+
+	return 0;
+}
+
 char *WM_jobs_name(wmWindowManager *wm, void *owner)
 {
 	wmJob *wm_job = wm_job_find(wm, owner, WM_JOB_TYPE_ANY);
@@ -275,6 +289,12 @@ void *WM_jobs_customdata_from_type(wmWindowManager *wm, int job_type)
 bool WM_jobs_is_running(wmJob *wm_job)
 {
 	return wm_job->running;
+}
+
+bool WM_jobs_is_stopped(wmWindowManager *wm, void *owner)
+{
+	wmJob *wm_job = wm_job_find(wm, owner, WM_JOB_TYPE_ANY);
+	return wm_job ? wm_job->stop : true; /* XXX to be redesigned properly. */
 }
 
 void *WM_jobs_customdata_get(wmJob *wm_job)
@@ -375,8 +395,10 @@ static void wm_jobs_test_suspend_stop(wmWindowManager *wm, wmJob *test)
 	// if (suspend) printf("job suspended: %s\n", test->name);
 }
 
-/* if job running, the same owner gave it a new job */
-/* if different owner starts existing startjob, it suspends itself */
+/**
+ * if job running, the same owner gave it a new job.
+ * if different owner starts existing startjob, it suspends itself
+ */
 void WM_jobs_start(wmWindowManager *wm, wmJob *wm_job)
 {
 	if (wm_job->running) {
@@ -415,8 +437,7 @@ void WM_jobs_start(wmWindowManager *wm, wmJob *wm_job)
 			if (wm_job->wt == NULL)
 				wm_job->wt = WM_event_add_timer(wm, wm_job->win, TIMERJOBS, wm_job->timestep);
 
-			if (G.debug & G_DEBUG_JOBS)
-				wm_job->start_time = PIL_check_seconds_timer();
+			wm_job->start_time = PIL_check_seconds_timer();
 		}
 		else {
 			printf("job fails, not initialized\n");

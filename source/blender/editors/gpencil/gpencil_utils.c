@@ -32,8 +32,6 @@
 #include <stddef.h>
 #include <math.h>
 
-#include "MEM_guardedalloc.h"
-
 #include "BLI_math.h"
 #include "BLI_blenlib.h"
 #include "BLI_utildefines.h"
@@ -46,30 +44,319 @@
 #include "DNA_view3d_types.h"
 
 #include "BKE_context.h"
-#include "BKE_global.h"
 #include "BKE_gpencil.h"
-#include "BKE_library.h"
-#include "BKE_object.h"
-#include "BKE_report.h"
-#include "BKE_scene.h"
-#include "BKE_screen.h"
-
-#include "UI_interface.h"
+#include "BKE_tracking.h"
 
 #include "WM_api.h"
-#include "WM_types.h"
 
 #include "RNA_access.h"
 #include "RNA_define.h"
+#include "RNA_enum_types.h"
 
+#include "UI_resources.h"
 #include "UI_view2d.h"
 
 #include "ED_gpencil.h"
+#include "ED_clip.h"
 #include "ED_view3d.h"
 
 #include "gpencil_intern.h"
 
 /* ******************************************************** */
+/* Context Wrangling... */
+
+/* Get pointer to active Grease Pencil datablock, and an RNA-pointer to trace back to whatever owns it,
+ * when context info is not available.
+ */
+bGPdata **ED_gpencil_data_get_pointers_direct(ID *screen_id, Scene *scene, ScrArea *sa, Object *ob, PointerRNA *ptr)
+{
+	/* if there's an active area, check if the particular editor may
+	 * have defined any special Grease Pencil context for editing...
+	 */
+	if (sa) {
+		SpaceLink *sl = sa->spacedata.first;
+		
+		switch (sa->spacetype) {
+			case SPACE_VIEW3D: /* 3D-View */
+			{
+				BLI_assert(scene && ELEM(scene->toolsettings->gpencil_src,
+				                         GP_TOOL_SOURCE_SCENE, GP_TOOL_SOURCE_OBJECT));
+				
+				if (scene->toolsettings->gpencil_src == GP_TOOL_SOURCE_OBJECT) {
+					/* legacy behaviour for usage with old addons requiring object-linked to objects */
+					
+					/* just in case no active/selected object... */
+					if (ob && (ob->flag & SELECT)) {
+						/* for now, as long as there's an object, default to using that in 3D-View */
+						if (ptr) RNA_id_pointer_create(&ob->id, ptr);
+						return &ob->gpd;
+					}
+					/* else: defaults to scene... */
+				}
+				else {
+					if (ptr) RNA_id_pointer_create(&scene->id, ptr);
+					return &scene->gpd;
+				}
+				break;
+			}
+			case SPACE_NODE: /* Nodes Editor */
+			{
+				SpaceNode *snode = (SpaceNode *)sl;
+				
+				/* return the GP data for the active node block/node */
+				if (snode && snode->nodetree) {
+					/* for now, as long as there's an active node tree, default to using that in the Nodes Editor */
+					if (ptr) RNA_id_pointer_create(&snode->nodetree->id, ptr);
+					return &snode->nodetree->gpd;
+				}
+				
+				/* even when there is no node-tree, don't allow this to flow to scene */
+				return NULL;
+			}
+			case SPACE_SEQ: /* Sequencer */
+			{
+				SpaceSeq *sseq = (SpaceSeq *)sl;
+			
+				/* for now, Grease Pencil data is associated with the space (actually preview region only) */
+				/* XXX our convention for everything else is to link to data though... */
+				if (ptr) RNA_pointer_create(screen_id, &RNA_SpaceSequenceEditor, sseq, ptr);
+				return &sseq->gpd;
+			}
+			case SPACE_IMAGE: /* Image/UV Editor */
+			{
+				SpaceImage *sima = (SpaceImage *)sl;
+				
+				/* for now, Grease Pencil data is associated with the space... */
+				/* XXX our convention for everything else is to link to data though... */
+				if (ptr) RNA_pointer_create(screen_id, &RNA_SpaceImageEditor, sima, ptr);
+				return &sima->gpd;
+			}
+			case SPACE_CLIP: /* Nodes Editor */
+			{
+				SpaceClip *sc = (SpaceClip *)sl;
+				MovieClip *clip = ED_space_clip_get_clip(sc);
+				
+				if (clip) {
+					if (sc->gpencil_src == SC_GPENCIL_SRC_TRACK) {
+						MovieTrackingTrack *track = BKE_tracking_track_get_active(&clip->tracking);
+						
+						if (!track)
+							return NULL;
+						
+						if (ptr)
+							RNA_pointer_create(&clip->id, &RNA_MovieTrackingTrack, track, ptr);
+						
+						return &track->gpd;
+					}
+					else {
+						if (ptr)
+							RNA_id_pointer_create(&clip->id, ptr);
+						
+						return &clip->gpd;
+					}
+				}
+				break;
+			}
+			default: /* unsupported space */
+				return NULL;
+		}
+	}
+	
+	/* just fall back on the scene's GP data */
+	if (ptr) RNA_id_pointer_create((ID *)scene, ptr);
+	return (scene) ? &scene->gpd : NULL;
+}
+
+/* Get pointer to active Grease Pencil datablock, and an RNA-pointer to trace back to whatever owns it */
+bGPdata **ED_gpencil_data_get_pointers(const bContext *C, PointerRNA *ptr)
+{
+	ID *screen_id = (ID *)CTX_wm_screen(C);
+	Scene *scene = CTX_data_scene(C);
+	ScrArea *sa = CTX_wm_area(C);
+	Object *ob = CTX_data_active_object(C);
+	
+	return ED_gpencil_data_get_pointers_direct(screen_id, scene, sa, ob, ptr);
+}
+
+/* -------------------------------------------------------- */
+
+/* Get the active Grease Pencil datablock, when context is not available */
+bGPdata *ED_gpencil_data_get_active_direct(ID *screen_id, Scene *scene, ScrArea *sa, Object *ob)
+{
+	bGPdata **gpd_ptr = ED_gpencil_data_get_pointers_direct(screen_id, scene, sa, ob, NULL);
+	return (gpd_ptr) ? *(gpd_ptr) : NULL;
+}
+
+/* Get the active Grease Pencil datablock */
+bGPdata *ED_gpencil_data_get_active(const bContext *C)
+{
+	bGPdata **gpd_ptr = ED_gpencil_data_get_pointers(C, NULL);
+	return (gpd_ptr) ? *(gpd_ptr) : NULL;
+}
+
+/* -------------------------------------------------------- */
+
+// XXX: this should be removed... We really shouldn't duplicate logic like this!
+bGPdata *ED_gpencil_data_get_active_v3d(Scene *scene, View3D *v3d)
+{
+	Base *base = scene->basact;
+	bGPdata *gpd = NULL;
+	/* We have to make sure active object is actually visible and selected, else we must use default scene gpd,
+	 * to be consistent with ED_gpencil_data_get_active's behavior.
+	 */
+	
+	if (base && TESTBASE(v3d, base)) {
+		gpd = base->object->gpd;
+	}
+	return gpd ? gpd : scene->gpd;
+}
+
+/* ******************************************************** */
+/* Keyframe Indicator Checks */
+
+/* Check whether there's an active GP keyframe on the current frame */
+bool ED_gpencil_has_keyframe_v3d(Scene *scene, Object *ob, int cfra)
+{
+	/* just check both for now... */
+	// XXX: this could get confusing (e.g. if only on the object, but other places don't show this)
+	if (scene->gpd) {
+		bGPDlayer *gpl = gpencil_layer_getactive(scene->gpd);
+		if (gpl) {
+			if (gpl->actframe) {
+				// XXX: assumes that frame has been fetched already
+				return (gpl->actframe->framenum == cfra);
+			}
+			else {
+				/* XXX: disabled as could be too much of a penalty */
+				/* return BKE_gpencil_layer_find_frame(gpl, cfra); */
+			}
+		}
+	}
+	
+	if (ob && ob->gpd) {
+		bGPDlayer *gpl = gpencil_layer_getactive(ob->gpd);
+		if (gpl) {
+			if (gpl->actframe) {
+				// XXX: assumes that frame has been fetched already
+				return (gpl->actframe->framenum == cfra);
+			}
+			else {
+				/* XXX: disabled as could be too much of a penalty */
+				/* return BKE_gpencil_layer_find_frame(gpl, cfra); */
+			}
+		}
+	}
+	
+	return false;
+}
+
+/* ******************************************************** */
+/* Poll Callbacks */
+
+/* poll callback for adding data/layers - special */
+int gp_add_poll(bContext *C)
+{
+	/* the base line we have is that we have somewhere to add Grease Pencil data */
+	return ED_gpencil_data_get_pointers(C, NULL) != NULL;
+}
+
+/* poll callback for checking if there is an active layer */
+int gp_active_layer_poll(bContext *C)
+{
+	bGPdata *gpd = ED_gpencil_data_get_active(C);
+	bGPDlayer *gpl = gpencil_layer_getactive(gpd);
+	
+	return (gpl != NULL);
+}
+
+/* ******************************************************** */
+/* Dynamic Enums of GP Layers */
+/* NOTE: These include an option to create a new layer and use that... */
+
+/* Just existing layers */
+EnumPropertyItem *ED_gpencil_layers_enum_itemf(bContext *C, PointerRNA *UNUSED(ptr), PropertyRNA *UNUSED(prop), bool *r_free)
+{
+	bGPdata *gpd = CTX_data_gpencil_data(C);
+	bGPDlayer *gpl;
+	EnumPropertyItem *item = NULL, item_tmp = {0};
+	int totitem = 0;
+	int i = 0;
+	
+	if (ELEM(NULL, C, gpd)) {
+		return DummyRNA_DEFAULT_items;
+	}
+	
+	/* Existing layers */
+	for (gpl = gpd->layers.first; gpl; gpl = gpl->next, i++) {
+		item_tmp.identifier = gpl->info;
+		item_tmp.name = gpl->info;
+		item_tmp.value = i;
+		
+		if (gpl->flag & GP_LAYER_ACTIVE)
+			item_tmp.icon = ICON_GREASEPENCIL;
+		else 
+			item_tmp.icon = ICON_NONE;
+		
+		RNA_enum_item_add(&item, &totitem, &item_tmp);
+	}
+	
+	RNA_enum_item_end(&item, &totitem);
+	*r_free = true;
+
+	return item;
+}
+
+/* Existing + Option to add/use new layer */
+EnumPropertyItem *ED_gpencil_layers_with_new_enum_itemf(bContext *C, PointerRNA *UNUSED(ptr), PropertyRNA *UNUSED(prop), bool *r_free)
+{
+	bGPdata *gpd = CTX_data_gpencil_data(C);
+	bGPDlayer *gpl;
+	EnumPropertyItem *item = NULL, item_tmp = {0};
+	int totitem = 0;
+	int i = 0;
+	
+	if (ELEM(NULL, C, gpd)) {
+		return DummyRNA_DEFAULT_items;
+	}
+	
+	/* Create new layer */
+	/* TODO: have some way of specifying that we don't want this? */
+	{
+		/* active Keying Set */
+		item_tmp.identifier = "__CREATE__";
+		item_tmp.name = "New Layer";
+		item_tmp.value = -1;
+		item_tmp.icon = ICON_ZOOMIN;
+		RNA_enum_item_add(&item, &totitem, &item_tmp);
+		
+		/* separator */
+		RNA_enum_item_add_separator(&item, &totitem);
+	}
+	
+	/* Existing layers */
+	for (gpl = gpd->layers.first, i = 0; gpl; gpl = gpl->next, i++) {
+		item_tmp.identifier = gpl->info;
+		item_tmp.name = gpl->info;
+		item_tmp.value = i;
+		
+		if (gpl->flag & GP_LAYER_ACTIVE)
+			item_tmp.icon = ICON_GREASEPENCIL;
+		else 
+			item_tmp.icon = ICON_NONE;
+		
+		RNA_enum_item_add(&item, &totitem, &item_tmp);
+	}
+	
+	RNA_enum_item_end(&item, &totitem);
+	*r_free = true;
+
+	return item;
+}
+
+
+
+/* ******************************************************** */
+/* Brush Tool Core */
 
 /* Check if part of stroke occurs within last segment drawn by eraser */
 bool gp_stroke_inside_circle(const int mval[2], const int UNUSED(mvalo[2]),
@@ -89,6 +376,7 @@ bool gp_stroke_inside_circle(const int mval[2], const int UNUSED(mvalo[2]),
 }
 
 /* ******************************************************** */
+/* Stroke Validity Testing */
 
 /* Check whether given stroke can be edited given the supplied context */
 // XXX: do we need additional flags for screenspace vs dataspace?
@@ -125,6 +413,7 @@ bool ED_gpencil_stroke_can_use(const bContext *C, const bGPDstroke *gps)
 }
 
 /* ******************************************************** */
+/* Space Conversion */
 
 /* Init handling for space-conversion function (from passed-in parameters) */
 void gp_point_conversion_init(bContext *C, GP_SpaceConversion *r_gsc)
@@ -205,6 +494,42 @@ void gp_point_to_xy(GP_SpaceConversion *gsc, bGPDstroke *gps, bGPDspoint *pt,
 			*r_x = (int)((pt->x / 100) * BLI_rctf_size_x(subrect)) + subrect->xmin;
 			*r_y = (int)((pt->y / 100) * BLI_rctf_size_y(subrect)) + subrect->ymin;
 		}
+	}
+}
+
+/**
+ * Project screenspace coordinates to 3D-space
+ *
+ * \note We include this as a utility function, since the standard method
+ * involves quite a few steps, which are invariably always the same
+ * for all GPencil operations. So, it's nicer to just centralize these.
+ *
+ * \warning Assumes that it is getting called in a 3D view only.
+ */
+bool gp_point_xy_to_3d(GP_SpaceConversion *gsc, Scene *scene, const float screen_co[2], float r_out[3])
+{
+	View3D *v3d = gsc->sa->spacedata.first;
+	RegionView3D *rv3d = gsc->ar->regiondata;
+	float *rvec = ED_view3d_cursor3d_get(scene, v3d);
+	float ref[3] = {rvec[0], rvec[1], rvec[2]};
+	float zfac = ED_view3d_calc_zfac(rv3d, rvec, NULL);
+	
+	float mval_f[2], mval_prj[2];
+	float dvec[3];
+	
+	copy_v2_v2(mval_f, screen_co);
+	
+	if (ED_view3d_project_float_global(gsc->ar, ref, mval_prj, V3D_PROJ_TEST_NOP) == V3D_PROJ_RET_OK) {
+		sub_v2_v2v2(mval_f, mval_prj, mval_f);
+		ED_view3d_win_to_delta(gsc->ar, mval_f, dvec, zfac);
+		sub_v3_v3v3(r_out, rvec, dvec);
+		
+		return true;
+	}
+	else {
+		zero_v3(r_out);
+		
+		return false;
 	}
 }
 

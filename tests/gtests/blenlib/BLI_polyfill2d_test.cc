@@ -10,7 +10,7 @@
 #define USE_BEAUTIFY
 
 extern "C" {
-#include "BLI_array.h"
+#include "BLI_array_utils.h"
 #include "BLI_polyfill2d.h"
 #include "BLI_math.h"
 #include "BLI_edgehash.h"
@@ -116,6 +116,7 @@ static void  test_polyfill_topology(
 		EXPECT_EQ(true, ELEM((intptr_t)*p, 1, 2));
 	}
 
+	BLI_edgehashIterator_free(ehi);
 	BLI_edgehash_free(edgehash, NULL);
 }
 

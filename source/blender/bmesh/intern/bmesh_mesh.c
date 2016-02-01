@@ -143,7 +143,7 @@ BMesh *BM_mesh_create(const BMAllocTemplate *allocsize)
 	bm_mempool_init(bm, allocsize);
 
 	/* allocate one flag pool that we don't get rid of. */
-	bm->stackdepth = 1;
+	bm->toolflag_index = 0;
 	bm->totflags = 0;
 
 	CustomData_reset(&bm->vdata);
@@ -246,7 +246,7 @@ void BM_mesh_clear(BMesh *bm)
 	/* allocate the memory pools for the mesh elements */
 	bm_mempool_init(bm, &bm_mesh_allocsize_default);
 
-	bm->stackdepth = 1;
+	bm->toolflag_index = 0;
 	bm->totflags = 0;
 
 	CustomData_reset(&bm->vdata);
@@ -303,8 +303,9 @@ static void bm_mesh_edges_calc_vectors(BMesh *bm, float (*edgevec)[3], const flo
 	bm->elem_index_dirty &= ~BM_EDGE;
 }
 
-static void bm_mesh_verts_calc_normals(BMesh *bm, const float (*edgevec)[3], const float (*fnos)[3],
-                                       const float (*vcos)[3], float (*vnos)[3])
+static void bm_mesh_verts_calc_normals(
+        BMesh *bm, const float (*edgevec)[3], const float (*fnos)[3],
+        const float (*vcos)[3], float (*vnos)[3])
 {
 	BM_mesh_elem_index_ensure(bm, (vnos) ? (BM_EDGE | BM_VERT) : BM_EDGE);
 
@@ -437,8 +438,9 @@ void BM_verts_calc_normal_vcos(BMesh *bm, const float (*fnos)[3], const float (*
 /**
  * Helpers for #BM_mesh_loop_normals_update and #BM_loops_calc_normals_vnos
  */
-static void bm_mesh_edges_sharp_tag(BMesh *bm, const float (*vnos)[3], const float (*fnos)[3], float split_angle,
-                                    float (*r_lnos)[3])
+static void bm_mesh_edges_sharp_tag(
+        BMesh *bm, const float (*vnos)[3], const float (*fnos)[3], float split_angle,
+        float (*r_lnos)[3])
 {
 	BMIter eiter, viter;
 	BMVert *v;
@@ -1131,8 +1133,9 @@ finally:
  * These functions ensure its correct and are called more often in debug mode.
  */
 
-void BM_mesh_elem_index_validate(BMesh *bm, const char *location, const char *func,
-                                 const char *msg_a, const char *msg_b)
+void BM_mesh_elem_index_validate(
+        BMesh *bm, const char *location, const char *func,
+        const char *msg_a, const char *msg_b)
 {
 	const char iter_types[3] = {BM_VERTS_OF_MESH,
 	                            BM_EDGES_OF_MESH,
@@ -1379,6 +1382,41 @@ BMFace *BM_face_at_index_find(BMesh *bm, const int index)
 	return BLI_mempool_findelem(bm->fpool, index);
 }
 
+/**
+ * Use lookup table when available, else use slower find functions.
+ *
+ * \note Try to use #BM_mesh_elem_table_ensure instead.
+ */
+BMVert *BM_vert_at_index_find_or_table(BMesh *bm, const int index)
+{
+	if ((bm->elem_table_dirty & BM_VERT) == 0) {
+		return (index < bm->totvert) ? bm->vtable[index] : NULL;
+	}
+	else {
+		return BM_vert_at_index_find(bm, index);
+	}
+}
+
+BMEdge *BM_edge_at_index_find_or_table(BMesh *bm, const int index)
+{
+	if ((bm->elem_table_dirty & BM_EDGE) == 0) {
+		return (index < bm->totedge) ? bm->etable[index] : NULL;
+	}
+	else {
+		return BM_edge_at_index_find(bm, index);
+	}
+}
+
+BMFace *BM_face_at_index_find_or_table(BMesh *bm, const int index)
+{
+	if ((bm->elem_table_dirty & BM_FACE) == 0) {
+		return (index < bm->totface) ? bm->ftable[index] : NULL;
+	}
+	else {
+		return BM_face_at_index_find(bm, index);
+	}
+}
+
 
 /**
  * Return the amount of element of type 'type' in a given bmesh.
@@ -1397,6 +1435,24 @@ int BM_mesh_elem_count(BMesh *bm, const char htype)
 			return 0;
 		}
 	}
+}
+
+/**
+ * Special case: Python uses custom-data layers to hold PyObject references.
+ * These have to be kept in-place, else the PyObject's we point to, wont point back to us.
+ *
+ * \note ``ele_src`` Is a duplicate, so we don't need to worry about getting in a feedback loop.
+ *
+ * \note If there are other customdata layers which need this functionality, it should be generalized.
+ * However #BM_mesh_remap is currently the only place where this is done.
+ */
+static void bm_mesh_remap_cd_update(
+        BMHeader *ele_dst, BMHeader *ele_src,
+        const int cd_elem_pyptr)
+{
+	void **pyptr_dst_p = BM_ELEM_CD_GET_VOID_P(((BMElem *)ele_dst), cd_elem_pyptr);
+	void **pyptr_src_p = BM_ELEM_CD_GET_VOID_P(((BMElem *)ele_src), cd_elem_pyptr);
+	*pyptr_dst_p = *pyptr_src_p;
 }
 
 /**
@@ -1439,6 +1495,7 @@ void BM_mesh_remap(
 		BMVert **verts_pool, *verts_copy, **vep;
 		int i, totvert = bm->totvert;
 		const unsigned int *new_idx;
+		const int cd_vert_pyptr  = CustomData_get_offset(&bm->vdata, CD_BM_ELEM_PYPTR);
 
 		/* Init the old-to-new vert pointers mapping */
 		vptr_map = BLI_ghash_ptr_new_ex("BM_mesh_remap vert pointers mapping", bm->totvert);
@@ -1459,7 +1516,10 @@ void BM_mesh_remap(
 			BMVert *new_vep = verts_pool[*new_idx];
 			*new_vep = *ve;
 /*			printf("mapping vert from %d to %d (%p/%p to %p)\n", i, *new_idx, *vep, verts_pool[i], new_vep);*/
-			BLI_ghash_insert(vptr_map, (void *)*vep, (void *)new_vep);
+			BLI_ghash_insert(vptr_map, *vep, new_vep);
+			if (cd_vert_pyptr != -1) {
+				bm_mesh_remap_cd_update(&(*vep)->head, &new_vep->head, cd_vert_pyptr);
+			}
 		}
 		bm->elem_index_dirty |= BM_VERT;
 		bm->elem_table_dirty |= BM_VERT;
@@ -1472,6 +1532,7 @@ void BM_mesh_remap(
 		BMEdge **edges_pool, *edges_copy, **edp;
 		int i, totedge = bm->totedge;
 		const unsigned int *new_idx;
+		const int cd_edge_pyptr  = CustomData_get_offset(&bm->edata, CD_BM_ELEM_PYPTR);
 
 		/* Init the old-to-new vert pointers mapping */
 		eptr_map = BLI_ghash_ptr_new_ex("BM_mesh_remap edge pointers mapping", bm->totedge);
@@ -1490,8 +1551,11 @@ void BM_mesh_remap(
 		for (i = totedge; i--; new_idx--, ed--, edp--) {
 			BMEdge *new_edp = edges_pool[*new_idx];
 			*new_edp = *ed;
-			BLI_ghash_insert(eptr_map, (void *)*edp, (void *)new_edp);
+			BLI_ghash_insert(eptr_map, *edp, new_edp);
 /*			printf("mapping edge from %d to %d (%p/%p to %p)\n", i, *new_idx, *edp, edges_pool[i], new_edp);*/
+			if (cd_edge_pyptr != -1) {
+				bm_mesh_remap_cd_update(&(*edp)->head, &new_edp->head, cd_edge_pyptr);
+			}
 		}
 		bm->elem_index_dirty |= BM_EDGE;
 		bm->elem_table_dirty |= BM_EDGE;
@@ -1504,6 +1568,7 @@ void BM_mesh_remap(
 		BMFace **faces_pool, *faces_copy, **fap;
 		int i, totface = bm->totface;
 		const unsigned int *new_idx;
+		const int cd_poly_pyptr  = CustomData_get_offset(&bm->pdata, CD_BM_ELEM_PYPTR);
 
 		/* Init the old-to-new vert pointers mapping */
 		fptr_map = BLI_ghash_ptr_new_ex("BM_mesh_remap face pointers mapping", bm->totface);
@@ -1522,7 +1587,10 @@ void BM_mesh_remap(
 		for (i = totface; i--; new_idx--, fa--, fap--) {
 			BMFace *new_fap = faces_pool[*new_idx];
 			*new_fap = *fa;
-			BLI_ghash_insert(fptr_map, (void *)*fap, (void *)new_fap);
+			BLI_ghash_insert(fptr_map, *fap, new_fap);
+			if (cd_poly_pyptr != -1) {
+				bm_mesh_remap_cd_update(&(*fap)->head, &new_fap->head, cd_poly_pyptr);
+			}
 		}
 
 		bm->elem_index_dirty |= BM_FACE | BM_LOOP;
@@ -1535,8 +1603,11 @@ void BM_mesh_remap(
 	/* Verts' pointers, only edge pointers... */
 	if (eptr_map) {
 		BM_ITER_MESH (ve, &iter, bm, BM_VERTS_OF_MESH) {
-/*			printf("Vert e: %p -> %p\n", ve->e, BLI_ghash_lookup(eptr_map, (const void *)ve->e));*/
-			ve->e = BLI_ghash_lookup(eptr_map, (const void *)ve->e);
+/*			printf("Vert e: %p -> %p\n", ve->e, BLI_ghash_lookup(eptr_map, ve->e));*/
+			if (ve->e) {
+				ve->e = BLI_ghash_lookup(eptr_map, ve->e);
+				BLI_assert(ve->e);
+			}
 		}
 	}
 
@@ -1545,24 +1616,30 @@ void BM_mesh_remap(
 	if (vptr_map || eptr_map) {
 		BM_ITER_MESH (ed, &iter, bm, BM_EDGES_OF_MESH) {
 			if (vptr_map) {
-/*				printf("Edge v1: %p -> %p\n", ed->v1, BLI_ghash_lookup(vptr_map, (const void *)ed->v1));*/
-/*				printf("Edge v2: %p -> %p\n", ed->v2, BLI_ghash_lookup(vptr_map, (const void *)ed->v2));*/
-				ed->v1 = BLI_ghash_lookup(vptr_map, (const void *)ed->v1);
-				ed->v2 = BLI_ghash_lookup(vptr_map, (const void *)ed->v2);
+/*				printf("Edge v1: %p -> %p\n", ed->v1, BLI_ghash_lookup(vptr_map, ed->v1));*/
+/*				printf("Edge v2: %p -> %p\n", ed->v2, BLI_ghash_lookup(vptr_map, ed->v2));*/
+				ed->v1 = BLI_ghash_lookup(vptr_map, ed->v1);
+				ed->v2 = BLI_ghash_lookup(vptr_map, ed->v2);
+				BLI_assert(ed->v1);
+				BLI_assert(ed->v2);
 			}
 			if (eptr_map) {
 /*				printf("Edge v1_disk_link prev: %p -> %p\n", ed->v1_disk_link.prev,*/
-/*				       BLI_ghash_lookup(eptr_map, (const void *)ed->v1_disk_link.prev));*/
+/*				       BLI_ghash_lookup(eptr_map, ed->v1_disk_link.prev));*/
 /*				printf("Edge v1_disk_link next: %p -> %p\n", ed->v1_disk_link.next,*/
-/*				       BLI_ghash_lookup(eptr_map, (const void *)ed->v1_disk_link.next));*/
+/*				       BLI_ghash_lookup(eptr_map, ed->v1_disk_link.next));*/
 /*				printf("Edge v2_disk_link prev: %p -> %p\n", ed->v2_disk_link.prev,*/
-/*				       BLI_ghash_lookup(eptr_map, (const void *)ed->v2_disk_link.prev));*/
+/*				       BLI_ghash_lookup(eptr_map, ed->v2_disk_link.prev));*/
 /*				printf("Edge v2_disk_link next: %p -> %p\n", ed->v2_disk_link.next,*/
-/*				       BLI_ghash_lookup(eptr_map, (const void *)ed->v2_disk_link.next));*/
-				ed->v1_disk_link.prev = BLI_ghash_lookup(eptr_map, (const void *)ed->v1_disk_link.prev);
-				ed->v1_disk_link.next = BLI_ghash_lookup(eptr_map, (const void *)ed->v1_disk_link.next);
-				ed->v2_disk_link.prev = BLI_ghash_lookup(eptr_map, (const void *)ed->v2_disk_link.prev);
-				ed->v2_disk_link.next = BLI_ghash_lookup(eptr_map, (const void *)ed->v2_disk_link.next);
+/*				       BLI_ghash_lookup(eptr_map, ed->v2_disk_link.next));*/
+				ed->v1_disk_link.prev = BLI_ghash_lookup(eptr_map, ed->v1_disk_link.prev);
+				ed->v1_disk_link.next = BLI_ghash_lookup(eptr_map, ed->v1_disk_link.next);
+				ed->v2_disk_link.prev = BLI_ghash_lookup(eptr_map, ed->v2_disk_link.prev);
+				ed->v2_disk_link.next = BLI_ghash_lookup(eptr_map, ed->v2_disk_link.next);
+				BLI_assert(ed->v1_disk_link.prev);
+				BLI_assert(ed->v1_disk_link.next);
+				BLI_assert(ed->v2_disk_link.prev);
+				BLI_assert(ed->v2_disk_link.next);
 			}
 		}
 	}
@@ -1571,17 +1648,54 @@ void BM_mesh_remap(
 	BM_ITER_MESH (fa, &iter, bm, BM_FACES_OF_MESH) {
 		BM_ITER_ELEM (lo, &iterl, fa, BM_LOOPS_OF_FACE) {
 			if (vptr_map) {
-/*				printf("Loop v: %p -> %p\n", lo->v, BLI_ghash_lookup(vptr_map, (const void *)lo->v));*/
-				lo->v = BLI_ghash_lookup(vptr_map, (const void *)lo->v);
+/*				printf("Loop v: %p -> %p\n", lo->v, BLI_ghash_lookup(vptr_map, lo->v));*/
+				lo->v = BLI_ghash_lookup(vptr_map, lo->v);
+				BLI_assert(lo->v);
 			}
 			if (eptr_map) {
-/*				printf("Loop e: %p -> %p\n", lo->e, BLI_ghash_lookup(eptr_map, (const void *)lo->e));*/
-				lo->e = BLI_ghash_lookup(eptr_map, (const void *)lo->e);
+/*				printf("Loop e: %p -> %p\n", lo->e, BLI_ghash_lookup(eptr_map, lo->e));*/
+				lo->e = BLI_ghash_lookup(eptr_map, lo->e);
+				BLI_assert(lo->e);
 			}
 			if (fptr_map) {
-/*				printf("Loop f: %p -> %p\n", lo->f, BLI_ghash_lookup(fptr_map, (const void *)lo->f));*/
-				lo->f = BLI_ghash_lookup(fptr_map, (const void *)lo->f);
+/*				printf("Loop f: %p -> %p\n", lo->f, BLI_ghash_lookup(fptr_map, lo->f));*/
+				lo->f = BLI_ghash_lookup(fptr_map, lo->f);
+				BLI_assert(lo->f);
 			}
+		}
+	}
+
+	/* Selection history */
+	{
+		BMEditSelection *ese;
+		for (ese = bm->selected.first; ese; ese = ese->next) {
+			switch (ese->htype) {
+				case BM_VERT:
+					if (vptr_map) {
+						ese->ele = BLI_ghash_lookup(vptr_map, ese->ele);
+						BLI_assert(ese->ele);
+					}
+					break;
+				case BM_EDGE:
+					if (eptr_map) {
+						ese->ele = BLI_ghash_lookup(eptr_map, ese->ele);
+						BLI_assert(ese->ele);
+					}
+					break;
+				case BM_FACE:
+					if (fptr_map) {
+						ese->ele = BLI_ghash_lookup(fptr_map, ese->ele);
+						BLI_assert(ese->ele);
+					}
+					break;
+			}
+		}
+	}
+
+	if (fptr_map) {
+		if (bm->act_face) {
+			bm->act_face = BLI_ghash_lookup(fptr_map, bm->act_face);
+			BLI_assert(bm->act_face);
 		}
 	}
 

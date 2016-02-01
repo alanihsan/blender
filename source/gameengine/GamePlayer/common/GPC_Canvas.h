@@ -69,6 +69,8 @@ public:
 
 	virtual void ResizeWindow(int width, int height) {}
 
+	virtual void GetDisplayDimensions(int &width, int &height) {}
+
 	/**
 	 * \section Methods inherited from abstract base class RAS_ICanvas.
 	 */

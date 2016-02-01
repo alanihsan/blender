@@ -21,11 +21,12 @@
 from _bpy import types as bpy_types
 import _bpy
 
-StructRNA = bpy_types.Struct.__bases__[0]
-StructMetaPropGroup = _bpy.StructMetaPropGroup
+StructRNA = bpy_types.bpy_struct
+StructMetaPropGroup = bpy_types.bpy_struct_meta_idprop
 # StructRNA = bpy_types.Struct
 
 bpy_types.BlendDataLibraries.load = _bpy._library_load
+bpy_types.BlendData.user_map = _bpy._rna_id_collection_user_map
 
 
 class Context(StructRNA):
@@ -34,8 +35,10 @@ class Context(StructRNA):
     def copy(self):
         from types import BuiltinMethodType
         new_context = {}
-        generic_attrs = (list(StructRNA.__dict__.keys()) +
-                         ["bl_rna", "rna_type", "copy"])
+        generic_attrs = (
+            *StructRNA.__dict__.keys(),
+            "bl_rna", "rna_type", "copy",
+            )
         for attr in dir(self):
             if not (attr.startswith("_") or attr in generic_attrs):
                 value = getattr(self, attr)
@@ -205,7 +208,7 @@ class _GenericBone:
     @property
     def basename(self):
         """The name of this bone before any '.' character"""
-        #return self.name.rsplit(".", 1)[0]
+        # return self.name.rsplit(".", 1)[0]
         return self.name.split(".")[0]
 
     @property
@@ -715,7 +718,7 @@ class Menu(StructRNA, _GenericUI, metaclass=RNAMeta):
     __slots__ = ()
 
     def path_menu(self, searchpaths, operator,
-                  props_default={}, filter_ext=None):
+                  props_default=None, filter_ext=None):
 
         layout = self.layout
         # hard coded to set the operators 'filepath' to the filename.
@@ -745,8 +748,9 @@ class Menu(StructRNA, _GenericUI, metaclass=RNAMeta):
                                     text=bpy.path.display_name(f),
                                     translate=False)
 
-            for attr, value in props_default.items():
-                setattr(props, attr, value)
+            if props_default is not None:
+                for attr, value in props_default.items():
+                    setattr(props, attr, value)
 
             props.filepath = filepath
             if operator == "script.execute_preset":
@@ -754,14 +758,21 @@ class Menu(StructRNA, _GenericUI, metaclass=RNAMeta):
 
     def draw_preset(self, context):
         """
-        Define these on the subclass
-        - preset_operator
-        - preset_subdir
+        Define these on the subclass:
+        - preset_operator (string)
+        - preset_subdir (string)
+
+        Optionally:
+        - preset_extensions (set of strings)
+        - preset_operator_defaults (dict of keyword args)
         """
         import bpy
+        ext_valid = getattr(self, "preset_extensions", {".py", ".xml"})
+        props_default = getattr(self, "preset_operator_defaults", None)
         self.path_menu(bpy.utils.preset_paths(self.preset_subdir),
                        self.preset_operator,
-                       filter_ext=lambda ext: ext.lower() in {".py", ".xml"})
+                       props_default=props_default,
+                       filter_ext=lambda ext: ext.lower() in ext_valid)
 
     @classmethod
     def draw_collapsible(cls, context, layout):
@@ -771,24 +782,6 @@ class Menu(StructRNA, _GenericUI, metaclass=RNAMeta):
             cls.draw_menus(layout, context)
         else:
             layout.menu(cls.__name__, icon='COLLAPSEMENU')
-
-
-class Region(StructRNA):
-    __slots__ = ()
-
-    def callback_add(self, cb, args, draw_mode):
-        """
-        Append a draw function to this region,
-        deprecated, instead use bpy.types.SpaceView3D.draw_handler_add
-        """
-        for area in self.id_data.areas:
-            for region in area.regions:
-                if region == self:
-                    spacetype = type(area.spaces[0])
-                    return spacetype.draw_handler_add(cb, args, self.type,
-                                                      draw_mode)
-
-        return None
 
 
 class NodeTree(bpy_types.ID, metaclass=RNAMetaPropGroup):

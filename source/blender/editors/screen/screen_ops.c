@@ -37,7 +37,7 @@
 #include "BLI_dlrbTree.h"
 #include "BLI_utildefines.h"
 
-#include "BLF_translation.h"
+#include "BLT_translation.h"
 
 #include "DNA_armature_types.h"
 #include "DNA_lattice_types.h"
@@ -81,6 +81,7 @@
 
 #include "UI_interface.h"
 #include "UI_resources.h"
+#include "UI_view2d.h"
 
 #include "screen_intern.h"  /* own module include */
 
@@ -391,7 +392,7 @@ int ED_operator_editarmature(bContext *C)
  * \brief check for pose mode (no mixed modes)
  *
  * We want to enable most pose operations in weight paint mode,
- * when it comes to transforming bones, but managing bomes layers/groups
+ * when it comes to transforming bones, but managing bones layers/groups
  * can be left for pose mode only. (not weight paint mode)
  */
 int ED_operator_posemode_exclusive(bContext *C)
@@ -717,7 +718,7 @@ static void actionzone_apply(bContext *C, wmOperator *op, int type)
 	else
 		event.type = EVT_ACTIONZONE_REGION;
 
-	event.val = 0;
+	event.val = KM_NOTHING;
 	event.customdata = op->customdata;
 	event.customdatafree = true;
 	op->customdata = NULL;
@@ -727,7 +728,8 @@ static void actionzone_apply(bContext *C, wmOperator *op, int type)
 
 static int actionzone_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 {
-	AZone *az = is_in_area_actionzone(CTX_wm_area(C), &event->x);
+	ScrArea *sa = CTX_wm_area(C);
+	AZone *az = is_in_area_actionzone(sa, &event->x);
 	sActionzoneData *sad;
 	
 	/* quick escape */
@@ -736,7 +738,7 @@ static int actionzone_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 	
 	/* ok we do the actionzone */
 	sad = op->customdata = MEM_callocN(sizeof(sActionzoneData), "sActionzoneData");
-	sad->sa1 = CTX_wm_area(C);
+	sad->sa1 = sa;
 	sad->az = az;
 	sad->x = event->x; sad->y = event->y;
 	
@@ -990,6 +992,12 @@ static int area_dupli_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 	rect.ymax = rect.ymin + BLI_rcti_size_y(&rect) / U.pixelsize;
 
 	newwin = WM_window_open(C, &rect);
+	if (newwin == NULL) {
+		BKE_report(op->reports, RPT_ERROR, "Failed to open window!");
+		goto finally;
+	}
+
+	*newwin->stereo3d_format = *win->stereo3d_format;
 	
 	/* allocs new screen and adds to newly created window, using window size */
 	newsc = ED_screen_add(newwin, CTX_data_scene(C), sc->id.name + 2);
@@ -1002,11 +1010,18 @@ static int area_dupli_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 
 	/* screen, areas init */
 	WM_event_add_notifier(C, NC_SCREEN | NA_EDITED, NULL);
-	
+
+
+finally:
 	if (event->type == EVT_ACTIONZONE_AREA)
 		actionzone_exit(op);
 	
-	return OPERATOR_FINISHED;
+	if (newwin) {
+		return OPERATOR_FINISHED;
+	}
+	else {
+		return OPERATOR_CANCELLED;
+	}
 }
 
 static void SCREEN_OT_area_dupli(wmOperatorType *ot)
@@ -1928,6 +1943,12 @@ static void region_scale_validate_size(RegionMoveData *rmd)
 
 static void region_scale_toggle_hidden(bContext *C, RegionMoveData *rmd)
 {
+	/* hidden areas may have bad 'View2D.cur' value,
+	 * correct before displaying. see T45156 */
+	if (rmd->ar->flag & RGN_FLAG_HIDDEN) {
+		UI_view2d_curRect_validate(&rmd->ar->v2d);
+	}
+
 	region_toggle_hidden(C, rmd->ar, 0);
 	region_scale_validate_size(rmd);
 }
@@ -2099,7 +2120,7 @@ static int frame_offset_exec(bContext *C, wmOperator *op)
 	
 	areas_do_frame_follow(C, false);
 
-	sound_seek_scene(bmain, scene);
+	BKE_sound_seek_scene(bmain, scene);
 
 	WM_event_add_notifier(C, NC_SCENE | ND_FRAME, scene);
 	
@@ -2151,7 +2172,7 @@ static int frame_jump_exec(bContext *C, wmOperator *op)
 		
 		areas_do_frame_follow(C, true);
 
-		sound_seek_scene(bmain, scene);
+		BKE_sound_seek_scene(bmain, scene);
 
 		WM_event_add_notifier(C, NC_SCENE | ND_FRAME, scene);
 	}
@@ -2183,7 +2204,6 @@ static int keyframe_jump_exec(bContext *C, wmOperator *op)
 	Main *bmain = CTX_data_main(C);
 	Scene *scene = CTX_data_scene(C);
 	Object *ob = CTX_data_active_object(C);
-	bGPdata *gpd = CTX_data_gpencil_data(C);
 	bDopeSheet ads = {NULL};
 	DLRBT_Tree keys;
 	ActKeyColumn *ak;
@@ -2208,11 +2228,12 @@ static int keyframe_jump_exec(bContext *C, wmOperator *op)
 	
 	/* populate tree with keyframe nodes */
 	scene_to_keylist(&ads, scene, &keys, NULL);
+	gpencil_to_keylist(&ads, scene->gpd, &keys);
 
-	if (ob)
+	if (ob) {
 		ob_to_keylist(&ads, ob, &keys, NULL);
-	
-	gpencil_to_keylist(&ads, gpd, &keys);
+		gpencil_to_keylist(&ads, ob->gpd, &keys);
+	}
 	
 	{
 		Mask *mask = CTX_data_edit_mask(C);
@@ -2257,7 +2278,7 @@ static int keyframe_jump_exec(bContext *C, wmOperator *op)
 	else {
 		areas_do_frame_follow(C, true);
 
-		sound_seek_scene(bmain, scene);
+		BKE_sound_seek_scene(bmain, scene);
 
 		WM_event_add_notifier(C, NC_SCENE | ND_FRAME, scene);
 
@@ -2319,7 +2340,7 @@ static int marker_jump_exec(bContext *C, wmOperator *op)
 
 		areas_do_frame_follow(C, true);
 
-		sound_seek_scene(bmain, scene);
+		BKE_sound_seek_scene(bmain, scene);
 
 		WM_event_add_notifier(C, NC_SCENE | ND_FRAME, scene);
 
@@ -2347,6 +2368,9 @@ static void SCREEN_OT_marker_jump(wmOperatorType *ot)
 static bool screen_set_is_ok(bScreen *screen, bScreen *screen_prev)
 {
 	return ((screen->winid == 0) &&
+	        /* in typical usage these should have a nonzero winid
+	         * (all temp screens should be used, or closed & freed). */
+	        (screen->temp == false) &&
 	        (screen->state == SCREENNORMAL) &&
 	        (screen != screen_prev) &&
 	        (screen->id.name[2] != '.' || !(U.uiflag & USER_HIDE_DOT)));
@@ -2364,8 +2388,9 @@ static int screen_set_exec(bContext *C, wmOperator *op)
 	int delta = RNA_int_get(op->ptr, "delta");
 	
 	/* temp screens are for userpref or render display */
-	if (screen->temp)
+	if (screen->temp || (sa && sa->full && sa->full->temp)) {
 		return OPERATOR_CANCELLED;
+	}
 	
 	if (delta == 1) {
 		while (tot--) {
@@ -3413,9 +3438,16 @@ static int match_region_with_redraws(int spacetype, int regiontype, int redraws)
 	return 0;
 }
 
+//#define PROFILE_AUDIO_SYNCH
+
 static int screen_animation_step(bContext *C, wmOperator *UNUSED(op), const wmEvent *event)
 {
 	bScreen *screen = CTX_wm_screen(C);
+
+#ifdef PROFILE_AUDIO_SYNCH
+	static int old_frame = 0;
+	int newfra_int;
+#endif
 
 	if (screen->animtimer && screen->animtimer == event->customdata) {
 		Main *bmain = CTX_data_main(C);
@@ -3435,14 +3467,27 @@ static int screen_animation_step(bContext *C, wmOperator *UNUSED(op), const wmEv
 		
 		if ((scene->audio.flag & AUDIO_SYNC) &&
 		    (sad->flag & ANIMPLAY_FLAG_REVERSE) == false &&
-		    finite(time = sound_sync_scene(scene)))
+		    finite(time = BKE_sound_sync_scene(scene)))
 		{
 			double newfra = (double)time * FPS;
+
 			/* give some space here to avoid jumps */
 			if (newfra + 0.5 > scene->r.cfra && newfra - 0.5 < scene->r.cfra)
 				scene->r.cfra++;
 			else
 				scene->r.cfra = newfra + 0.5;
+
+#ifdef PROFILE_AUDIO_SYNCH
+			newfra_int = scene->r.cfra;
+			if (newfra_int < old_frame) {
+				printf("back jump detected, frame %d!\n", newfra_int);
+			}
+			else if (newfra_int > old_frame + 1) {
+				printf("forward jump detected, frame %d!\n", newfra_int);
+			}
+			fflush(stdout);
+			old_frame = newfra_int;
+#endif
 		}
 		else {
 			if (sync) {
@@ -3509,8 +3554,12 @@ static int screen_animation_step(bContext *C, wmOperator *UNUSED(op), const wmEv
 			sad->flag |= ANIMPLAY_FLAG_JUMPED;
 		}
 		
-		if (sad->flag & ANIMPLAY_FLAG_JUMPED)
-			sound_seek_scene(bmain, scene);
+		if (sad->flag & ANIMPLAY_FLAG_JUMPED) {
+			BKE_sound_seek_scene(bmain, scene);
+#ifdef PROFILE_AUDIO_SYNCH
+			old_frame = CFRA;
+#endif
+		}
 		
 		/* since we follow drawflags, we can't send notifier but tag regions ourselves */
 		ED_update_for_newframe(bmain, scene, 1);
@@ -3593,6 +3642,19 @@ bScreen *ED_screen_animation_playing(const wmWindowManager *wm)
 	wmWindow *win;
 
 	for (win = wm->windows.first; win; win = win->next) {
+		if (win->screen->animtimer || win->screen->scrubbing) {
+			return win->screen;
+		}
+	}
+
+	return NULL;
+}
+
+bScreen *ED_screen_animation_no_scrub(const wmWindowManager *wm)
+{
+	wmWindow *win;
+
+	for (win = wm->windows.first; win; win = win->next) {
 		if (win->screen->animtimer) {
 			return win->screen;
 		}
@@ -3600,6 +3662,7 @@ bScreen *ED_screen_animation_playing(const wmWindowManager *wm)
 
 	return NULL;
 }
+
 
 /* toggle operator */
 int ED_screen_animation_play(bContext *C, int sync, int mode)
@@ -3610,7 +3673,7 @@ int ED_screen_animation_play(bContext *C, int sync, int mode)
 	if (ED_screen_animation_playing(CTX_wm_manager(C))) {
 		/* stop playback now */
 		ED_screen_animation_timer(C, 0, 0, 0, 0);
-		sound_stop_scene(scene);
+		BKE_sound_stop_scene(scene);
 
 		WM_event_add_notifier(C, NC_SCENE | ND_FRAME, scene);
 	}
@@ -3618,7 +3681,7 @@ int ED_screen_animation_play(bContext *C, int sync, int mode)
 		int refresh = SPACE_TIME; /* these settings are currently only available from a menu in the TimeLine */
 		
 		if (mode == 1)  /* XXX only play audio forwards!? */
-			sound_play_scene(scene);
+			BKE_sound_play_scene(scene);
 		
 		ED_screen_animation_timer(C, screen->redraws_flag, refresh, sync, mode);
 		
@@ -3775,7 +3838,7 @@ static int fullscreen_back_exec(bContext *C, wmOperator *op)
 		return OPERATOR_CANCELLED;
 	}
 
-	ED_screen_full_prevspace(C, sa);
+	ED_screen_full_prevspace(C, sa, false);
 
 	return OPERATOR_FINISHED;
 }
@@ -3794,7 +3857,7 @@ static void SCREEN_OT_back_to_previous(struct wmOperatorType *ot)
 
 /* *********** show user pref window ****** */
 
-static int userpref_show_invoke(bContext *C, wmOperator *UNUSED(op), const wmEvent *event)
+static int userpref_show_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 {
 	wmWindow *win = CTX_wm_window(C);
 	rcti rect;
@@ -3811,9 +3874,13 @@ static int userpref_show_invoke(bContext *C, wmOperator *UNUSED(op), const wmEve
 	rect.ymax = rect.ymin + sizey;
 	
 	/* changes context! */
-	WM_window_open_temp(C, &rect, WM_WINDOW_USERPREFS);
-	
-	return OPERATOR_FINISHED;
+	if (WM_window_open_temp(C, &rect, WM_WINDOW_USERPREFS) != NULL) {
+		return OPERATOR_FINISHED;
+	}
+	else {
+		BKE_report(op->reports, RPT_ERROR, "Failed to open window!");
+		return OPERATOR_CANCELLED;
+	}
 }
 
 
@@ -3939,7 +4006,9 @@ static int scene_delete_exec(bContext *C, wmOperator *UNUSED(op))
 {
 	Scene *scene = CTX_data_scene(C);
 
-	ED_screen_delete_scene(C, scene);
+	if (ED_screen_delete_scene(C, scene) == false) {
+		return OPERATOR_CANCELLED;
+	}
 
 	if (G.debug & G_DEBUG)
 		printf("scene delete %p\n", scene);
@@ -4162,6 +4231,8 @@ void ED_operatortypes_screen(void)
 	WM_operatortype_append(ED_OT_undo_push);
 	WM_operatortype_append(ED_OT_redo);
 	WM_operatortype_append(ED_OT_undo_history);
+
+	WM_operatortype_append(ED_OT_flush_edits);
 	
 }
 
@@ -4227,18 +4298,19 @@ void ED_keymap_screen(wmKeyConfig *keyconf)
 	WM_keymap_verify_item(keymap, "SCREEN_OT_area_dupli", EVT_ACTIONZONE_AREA, 0, KM_SHIFT, 0);
 	WM_keymap_verify_item(keymap, "SCREEN_OT_area_swap", EVT_ACTIONZONE_AREA, 0, KM_CTRL, 0);
 	WM_keymap_verify_item(keymap, "SCREEN_OT_region_scale", EVT_ACTIONZONE_REGION, 0, 0, 0);
+	kmi = WM_keymap_add_item(keymap, "SCREEN_OT_screen_full_area", EVT_ACTIONZONE_FULLSCREEN, 0, 0, 0);
+	RNA_boolean_set(kmi->ptr, "use_hide_panels", true);
 	/* area move after action zones */
 	WM_keymap_verify_item(keymap, "SCREEN_OT_area_move", LEFTMOUSE, KM_PRESS, 0, 0);
 	
 	WM_keymap_verify_item(keymap, "SCREEN_OT_area_options", RIGHTMOUSE, KM_PRESS, 0, 0);
-	
-	WM_keymap_add_item(keymap, "SCREEN_OT_header", F9KEY, KM_PRESS, KM_ALT, 0);
-	
+
 	/* Header Editing ------------------------------------------------ */
 	keymap = WM_keymap_find(keyconf, "Header", 0, 0);
-	
+
+	WM_keymap_add_item(keymap, "SCREEN_OT_header", F9KEY, KM_PRESS, KM_ALT, 0);
 	WM_keymap_add_item(keymap, "SCREEN_OT_header_toolbox", RIGHTMOUSE, KM_PRESS, 0, 0);
-	
+
 	/* Screen General ------------------------------------------------ */
 	keymap = WM_keymap_find(keyconf, "Screen", 0, 0);
 	
@@ -4253,8 +4325,6 @@ void ED_keymap_screen(wmKeyConfig *keyconf)
 	WM_keymap_add_item(keymap, "SCREEN_OT_screen_full_area", DOWNARROWKEY, KM_PRESS, KM_CTRL, 0);
 	WM_keymap_add_item(keymap, "SCREEN_OT_screen_full_area", SPACEKEY, KM_PRESS, KM_SHIFT, 0);
 	kmi = WM_keymap_add_item(keymap, "SCREEN_OT_screen_full_area", F10KEY, KM_PRESS, KM_ALT, 0);
-	RNA_boolean_set(kmi->ptr, "use_hide_panels", true);
-	kmi = WM_keymap_add_item(keymap, "SCREEN_OT_screen_full_area", EVT_ACTIONZONE_FULLSCREEN, 0, 0, 0);
 	RNA_boolean_set(kmi->ptr, "use_hide_panels", true);
 
 	WM_keymap_add_item(keymap, "SCREEN_OT_screenshot", F3KEY, KM_PRESS, KM_CTRL, 0);

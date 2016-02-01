@@ -68,6 +68,7 @@
 #include "ED_gpencil.h"
 #include "ED_image.h"
 #include "ED_mask.h"
+#include "ED_render.h"
 #include "ED_screen.h"
 
 #include "UI_interface.h"
@@ -79,26 +80,36 @@
 
 #include "image_intern.h"
 
-static void draw_render_info(Scene *scene, Image *ima, ARegion *ar, float zoomx, float zoomy)
+static void draw_render_info(const bContext *C,
+                             Scene *scene,
+                             Image *ima,
+                             ARegion *ar,
+                             float zoomx,
+                             float zoomy)
 {
 	RenderResult *rr;
 	Render *re = RE_GetRender(scene->id.name);
 	RenderData *rd = RE_engine_get_render_data(re);
+	Scene *stats_scene = ED_render_job_get_scene(C);
+	if (stats_scene == NULL) {
+		stats_scene = CTX_data_scene(C);
+	}
 
-	rr = BKE_image_acquire_renderresult(scene, ima);
+	rr = BKE_image_acquire_renderresult(stats_scene, ima);
 
 	if (rr && rr->text) {
 		float fill_color[4] = {0.0f, 0.0f, 0.0f, 0.25f};
-		ED_region_info_draw(ar, rr->text, 1, fill_color);
+		ED_region_info_draw(ar, rr->text, fill_color, true);
 	}
 
-	BKE_image_release_renderresult(scene, ima);
+	BKE_image_release_renderresult(stats_scene, ima);
 
 	if (re) {
 		int total_tiles;
+		bool need_free_tiles;
 		rcti *tiles;
 
-		RE_engine_get_current_tiles(re, &total_tiles, &tiles);
+		tiles = RE_engine_get_current_tiles(re, &total_tiles, &need_free_tiles);
 
 		if (total_tiles) {
 			int i, x, y;
@@ -119,11 +130,14 @@ static void draw_render_info(Scene *scene, Image *ima, ARegion *ar, float zoomx,
 
 			UI_ThemeColor(TH_FACE_SELECT);
 
+			glLineWidth(1.0f);
 			for (i = 0, tile = tiles; i < total_tiles; i++, tile++) {
 				glaDrawBorderCorners(tile, zoomx, zoomy);
 			}
 
-			MEM_freeN(tiles);
+			if (need_free_tiles) {
+				MEM_freeN(tiles);
+			}
 
 			glPopMatrix();
 		}
@@ -325,9 +339,7 @@ void ED_image_draw_info(Scene *scene, ARegion *ar, bool color_manage, bool use_d
 
 	/* draw outline */
 	glColor3ub(128, 128, 128);
-	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-	glRecti(color_rect.xmin, color_rect.ymin, color_rect.xmax, color_rect.ymax);
-	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+	sdrawbox(color_rect.xmin, color_rect.ymin, color_rect.xmax, color_rect.ymax);
 
 	dx += 1.75f * UI_UNIT_X;
 
@@ -465,6 +477,19 @@ static void sima_draw_zbuffloat_pixels(Scene *scene, float x1, float y1, int rec
 	MEM_freeN(rectf);
 }
 
+static int draw_image_channel_offset(SpaceImage *sima)
+{
+#ifdef __BIG_ENDIAN__
+	if      (sima->flag & SI_SHOW_R) return 2;
+	else if (sima->flag & SI_SHOW_G) return 1;
+	else                             return 0;
+#else
+	if      (sima->flag & SI_SHOW_R) return 1;
+	else if (sima->flag & SI_SHOW_G) return 2;
+	else                             return 3;
+#endif
+}
+
 static void draw_image_buffer(const bContext *C, SpaceImage *sima, ARegion *ar, Scene *scene, ImBuf *ibuf, float fx, float fy, float zoomx, float zoomy)
 {
 	int x, y;
@@ -500,7 +525,27 @@ static void draw_image_buffer(const bContext *C, SpaceImage *sima, ARegion *ar, 
 			fdrawcheckerboard(x, y, x + ibuf->x * zoomx, y + ibuf->y * zoomy);
 		}
 
-		glaDrawImBuf_glsl_ctx(C, ibuf, x, y, GL_NEAREST);
+		if ((sima->flag & (SI_SHOW_R | SI_SHOW_G | SI_SHOW_B)) == 0) {
+			glaDrawImBuf_glsl_ctx(C, ibuf, x, y, GL_NEAREST);
+		}
+		else {
+			unsigned char *display_buffer;
+			void *cache_handle;
+
+			/* TODO(sergey): Ideally GLSL shading should be capable of either
+			 * disabling some channels or displaying buffer with custom offset.
+			 */
+			display_buffer = IMB_display_buffer_acquire_ctx(C, ibuf, &cache_handle);
+
+			if (display_buffer != NULL) {
+				int channel_offset = draw_image_channel_offset(sima);
+				glaDrawPixelsSafe(x, y, ibuf->x, ibuf->y, ibuf->x, GL_LUMINANCE, GL_UNSIGNED_INT,
+				                  display_buffer + channel_offset);
+			}
+			if (cache_handle != NULL) {
+				IMB_display_buffer_release(cache_handle);
+			}
+		}
 
 		if (sima->flag & SI_USE_ALPHA)
 			glDisable(GL_BLEND);
@@ -538,6 +583,7 @@ static void draw_image_buffer_tiled(SpaceImage *sima, ARegion *ar, Scene *scene,
 	unsigned int *rect;
 	int dx, dy, sx, sy, x, y;
 	void *cache_handle;
+	int channel_offset = -1;
 
 	/* verify valid values, just leave this a while */
 	if (ima->xrep < 1) return;
@@ -564,11 +610,19 @@ static void draw_image_buffer_tiled(SpaceImage *sima, ARegion *ar, Scene *scene,
 	rect = get_part_from_buffer((unsigned int *)display_buffer, ibuf->x, sx, sy, sx + dx, sy + dy);
 	
 	/* draw repeated */
+	if ((sima->flag & (SI_SHOW_R | SI_SHOW_G | SI_SHOW_B)) != 0) {
+		channel_offset = draw_image_channel_offset(sima);
+	}
 	for (sy = 0; sy + dy <= ibuf->y; sy += dy) {
 		for (sx = 0; sx + dx <= ibuf->x; sx += dx) {
 			UI_view2d_view_to_region(&ar->v2d, fx + (float)sx / (float)ibuf->x, fy + (float)sy / (float)ibuf->y, &x, &y);
-
-			glaDrawPixelsSafe(x, y, dx, dy, dx, GL_RGBA, GL_UNSIGNED_BYTE, rect);
+			if (channel_offset == -1) {
+				glaDrawPixelsSafe(x, y, dx, dy, dx, GL_RGBA, GL_UNSIGNED_BYTE, rect);
+			}
+			else {
+				glaDrawPixelsSafe(x, y, dx, dy, dx, GL_LUMINANCE, GL_UNSIGNED_INT,
+				                  (unsigned char *)rect + channel_offset);
+			}
 		}
 	}
 
@@ -761,7 +815,7 @@ static void draw_image_paint_helpers(const bContext *C, ARegion *ar, Scene *scen
 	}
 }
 
-/* draw main image area */
+/* draw main image region */
 
 void draw_image_main(const bContext *C, ARegion *ar)
 {
@@ -770,7 +824,7 @@ void draw_image_main(const bContext *C, ARegion *ar)
 	Image *ima;
 	ImBuf *ibuf;
 	float zoomx, zoomy;
-	bool show_viewer, show_render, show_paint;
+	bool show_viewer, show_render, show_paint, show_stereo3d, show_multilayer;
 	void *lock;
 
 	/* XXX can we do this in refresh? */
@@ -800,6 +854,8 @@ void draw_image_main(const bContext *C, ARegion *ar)
 	show_viewer = (ima && ima->source == IMA_SRC_VIEWER) != 0;
 	show_render = (show_viewer && ima->type == IMA_TYPE_R_RESULT) != 0;
 	show_paint = (ima && (sima->mode == SI_MODE_PAINT) && (show_viewer == false) && (show_render == false));
+	show_stereo3d = (ima && BKE_image_is_stereo(ima) && (sima->iuser.flag & IMA_SHOW_STEREO));
+	show_multilayer = ima && BKE_image_is_multilayer(ima);
 
 	if (show_viewer) {
 		/* use locked draw for drawing viewer image buffer since the compositor
@@ -810,17 +866,41 @@ void draw_image_main(const bContext *C, ARegion *ar)
 		BLI_lock_thread(LOCK_DRAW_IMAGE);
 	}
 
+	if (show_stereo3d) {
+		if (show_multilayer)
+			/* update multiindex and pass for the current eye */
+			BKE_image_multilayer_index(ima->rr, &sima->iuser);
+		else
+			BKE_image_multiview_index(ima, &sima->iuser);
+	}
+
 	ibuf = ED_space_image_acquire_buffer(sima, &lock);
 
 	/* draw the image or grid */
-	if (ibuf == NULL)
+	if (ibuf == NULL) {
 		ED_region_grid_draw(ar, zoomx, zoomy);
-	else if (sima->flag & SI_DRAW_TILE)
-		draw_image_buffer_repeated(C, sima, ar, scene, ima, ibuf, zoomx, zoomy);
-	else if (ima && (ima->tpageflag & IMA_TILES))
-		draw_image_buffer_tiled(sima, ar, scene, ima, ibuf, 0.0f, 0.0, zoomx, zoomy);
-	else
-		draw_image_buffer(C, sima, ar, scene, ibuf, 0.0f, 0.0f, zoomx, zoomy);
+	}
+	else {
+
+		if (sima->flag & SI_DRAW_TILE)
+			draw_image_buffer_repeated(C, sima, ar, scene, ima, ibuf, zoomx, zoomy);
+		else if (ima && (ima->tpageflag & IMA_TILES))
+			draw_image_buffer_tiled(sima, ar, scene, ima, ibuf, 0.0f, 0.0, zoomx, zoomy);
+		else
+			draw_image_buffer(C, sima, ar, scene, ibuf, 0.0f, 0.0f, zoomx, zoomy);
+		
+		if (sima->flag & SI_DRAW_METADATA) {
+			int x, y;
+			rctf frame;
+
+			BLI_rctf_init(&frame, 0.0f, ibuf->x, 0.0f, ibuf->y);
+			UI_view2d_view_to_region(&ar->v2d, 0.0f, 0.0f, &x, &y);
+
+			ED_region_image_metadata_draw(x, y, ibuf, &frame, zoomx, zoomy);
+		}
+	}
+
+	ED_space_image_release_buffer(sima, ibuf, lock);
 
 	/* paint helpers */
 	if (show_paint)
@@ -843,15 +923,13 @@ void draw_image_main(const bContext *C, ARegion *ar)
 	}
 #endif
 
-	ED_space_image_release_buffer(sima, ibuf, lock);
-
 	if (show_viewer) {
 		BLI_unlock_thread(LOCK_DRAW_IMAGE);
 	}
 
 	/* render info */
 	if (ima && show_render)
-		draw_render_info(sima->iuser.scene, ima, ar, zoomx, zoomy);
+		draw_render_info(C, sima->iuser.scene, ima, ar, zoomx, zoomy);
 }
 
 bool ED_space_image_show_cache(SpaceImage *sima)

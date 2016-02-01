@@ -185,12 +185,6 @@ static void rna_Main_screen_begin(CollectionPropertyIterator *iter, PointerRNA *
 	rna_iterator_listbase_begin(iter, &bmain->screen, NULL);
 }
 
-static void rna_Main_script_begin(CollectionPropertyIterator *iter, PointerRNA *ptr)
-{
-	Main *bmain = (Main *)ptr->data;
-	rna_iterator_listbase_begin(iter, &bmain->script, NULL);
-}
-
 static void rna_Main_font_begin(CollectionPropertyIterator *iter, PointerRNA *ptr)
 {
 	Main *bmain = (Main *)ptr->data;
@@ -249,6 +243,12 @@ static void rna_Main_particle_begin(CollectionPropertyIterator *iter, PointerRNA
 {
 	Main *bmain = (Main *)ptr->data;
 	rna_iterator_listbase_begin(iter, &bmain->particle, NULL);
+}
+
+static void rna_Main_palettes_begin(CollectionPropertyIterator *iter, PointerRNA *ptr)
+{
+	Main *bmain = (Main *)ptr->data;
+	rna_iterator_listbase_begin(iter, &bmain->palettes, NULL);
 }
 
 static void rna_Main_gpencil_begin(CollectionPropertyIterator *iter, PointerRNA *ptr)
@@ -343,13 +343,13 @@ void RNA_def_main(BlenderRNA *brna)
 		{"worlds", "World", "rna_Main_world_begin", "Worlds", "World datablocks", RNA_def_main_worlds},
 		{"groups", "Group", "rna_Main_group_begin", "Groups", "Group datablocks", RNA_def_main_groups},
 		{"shape_keys", "Key", "rna_Main_key_begin", "Shape Keys", "Shape Key datablocks", NULL},
-		{"scripts", "ID", "rna_Main_script_begin", "Scripts", "Script datablocks (DEPRECATED)", NULL},
 		{"texts", "Text", "rna_Main_text_begin", "Texts", "Text datablocks", RNA_def_main_texts},
 		{"speakers", "Speaker", "rna_Main_speaker_begin", "Speakers", "Speaker datablocks", RNA_def_main_speakers},
 		{"sounds", "Sound", "rna_Main_sound_begin", "Sounds", "Sound datablocks", RNA_def_main_sounds},
 		{"armatures", "Armature", "rna_Main_armature_begin", "Armatures", "Armature datablocks", RNA_def_main_armatures},
 		{"actions", "Action", "rna_Main_action_begin", "Actions", "Action datablocks", RNA_def_main_actions},
 		{"particles", "ParticleSettings", "rna_Main_particle_begin", "Particles", "Particle datablocks", RNA_def_main_particles},
+		{"palettes", "Palette", "rna_Main_palettes_begin", "Palettes", "Palette datablocks", RNA_def_main_palettes},
 		{"grease_pencil", "GreasePencil", "rna_Main_gpencil_begin", "Grease Pencil", "Grease Pencil datablocks", RNA_def_main_gpencil},
 		{"movieclips", "MovieClip", "rna_Main_movieclips_begin", "Movie Clips", "Movie Clip datablocks", RNA_def_main_movieclips},
 		{"masks", "Mask", "rna_Main_masks_begin", "Masks", "Masks datablocks", RNA_def_main_masks},

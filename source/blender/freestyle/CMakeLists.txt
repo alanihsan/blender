@@ -491,6 +491,7 @@ set(SRC
 	intern/system/TimeUtils.h
 	intern/view_map/ArbitraryGridDensityProvider.cpp
 	intern/view_map/ArbitraryGridDensityProvider.h
+	intern/view_map/AutoPtrHelper.h
 	intern/view_map/AverageAreaGridDensityProvider.cpp
 	intern/view_map/AverageAreaGridDensityProvider.h
 	intern/view_map/BoxGrid.cpp
@@ -555,6 +556,7 @@ set(INC
 	.
 	../blenkernel
 	../blenlib
+	../blentranslation
 	../imbuf
 	../makesdna
 	../makesrna
@@ -573,10 +575,14 @@ set(INC_SYS
 
 add_definitions(-DWITH_FREESTYLE)
 
+if(WITH_INTERNATIONAL)
+	add_definitions(-DWITH_INTERNATIONAL)
+endif()
+
 if(WIN32)
 	list(APPEND INC_SYS
 		${PTHREADS_INC}
 	)
-endif(WIN32)
+endif()
 
 blender_add_lib(bf_freestyle "${SRC}" "${INC}" "${INC_SYS}")

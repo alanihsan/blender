@@ -35,7 +35,7 @@
 #include "BLI_utildefines.h"
 #include "BLI_math.h"
 
-#include "BLF_translation.h"
+#include "BLT_translation.h"
 
 #include "RNA_define.h"
 #include "RNA_access.h"
@@ -531,14 +531,6 @@ static void rna_Actuator_editobject_mesh_set(PointerRNA *ptr, PointerRNA value)
 	eoa->me = value.data;
 }
 
-static void rna_Actuator_action_action_set(PointerRNA *ptr, PointerRNA value)
-{
-	bActuator *act = (bActuator *)ptr->data;
-	bActionActuator *aa = (bActionActuator *) act->data;
-
-	aa->act = value.data;
-}
-
 #else
 
 static void rna_def_actuator(BlenderRNA *brna)
@@ -618,10 +610,8 @@ static void rna_def_action_actuator(BlenderRNA *brna)
 	prop = RNA_def_property(srna, "action", PROP_POINTER, PROP_NONE);
 	RNA_def_property_pointer_sdna(prop, NULL, "act");
 	RNA_def_property_struct_type(prop, "Action");
-	RNA_def_property_flag(prop, PROP_EDITABLE);
+	RNA_def_property_flag(prop, PROP_EDITABLE | PROP_ID_REFCOUNT);
 	RNA_def_property_ui_text(prop, "Action", "");
-	/* note: custom set function is ONLY to avoid rna setting a user for this. */
-	RNA_def_property_pointer_funcs(prop, NULL, "rna_Actuator_action_action_set", NULL, NULL);
 	RNA_def_property_update(prop, NC_LOGIC, NULL);
 
 	prop = RNA_def_property(srna, "use_continue_last_frame", PROP_BOOLEAN, PROP_NONE);
@@ -1009,13 +999,13 @@ static void rna_def_sound_actuator(BlenderRNA *brna)
 	RNA_def_property_ui_range(prop, 0.0, 1.0, 1, 2);
 	RNA_def_property_range(prop, 0.0, 2.0);
 	RNA_def_property_ui_text(prop, "Volume", "Initial volume of the sound");
-	RNA_def_property_translation_context(prop, BLF_I18NCONTEXT_ID_SOUND);
+	RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_ID_SOUND);
 	RNA_def_property_update(prop, NC_LOGIC, NULL);
 
 	prop = RNA_def_property(srna, "pitch", PROP_FLOAT, PROP_NONE);
 	RNA_def_property_ui_range(prop, -12.0, 12.0, 1, 2);
 	RNA_def_property_ui_text(prop, "Pitch", "Pitch of the sound");
-	RNA_def_property_translation_context(prop, BLF_I18NCONTEXT_ID_SOUND);
+	RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_ID_SOUND);
 	RNA_def_property_update(prop, NC_LOGIC, NULL);
 	
 	/* floats - 3D Parameters */
@@ -1716,6 +1706,7 @@ static void rna_def_game_actuator(BlenderRNA *brna)
 		{ACT_GAME_QUIT, "QUIT", 0, "Quit Game", ""},
 		{ACT_GAME_SAVECFG, "SAVECFG", 0, "Save bge.logic.globalDict", ""},
 		{ACT_GAME_LOADCFG, "LOADCFG", 0, "Load bge.logic.globalDict", ""},
+		{ACT_GAME_SCREENSHOT, "SCREENSHOT", 0, "Screenshot", ""},
 		{0, NULL, 0, NULL, NULL}
 	};
 	
@@ -1732,8 +1723,8 @@ static void rna_def_game_actuator(BlenderRNA *brna)
 	/* ACT_GAME_LOAD */
 	prop = RNA_def_property(srna, "filename", PROP_STRING, PROP_FILEPATH);
 	RNA_def_property_ui_text(prop, "File",
-	                         "Load this blend file, use the \"//\" prefix for a path relative to the current "
-	                         "blend file");
+	                         "The file to use, depending on the mode (e.g. the blend file to load or a destination "
+	                         "for saving a screenshot) - use the \"//\" prefix for a relative path");
 	RNA_def_property_update(prop, NC_LOGIC, NULL);
 	/*XXX to do: an operator that calls file_browse with relative_path on and blender filtering active */
 }
@@ -2065,6 +2056,11 @@ static void rna_def_steering_actuator(BlenderRNA *brna)
 	prop = RNA_def_property(srna, "normal_up", PROP_BOOLEAN, PROP_NONE);
 	RNA_def_property_boolean_sdna(prop, NULL, "flag", ACT_STEERING_NORMALUP);
 	RNA_def_property_ui_text(prop, "N", "Use normal of the navmesh to set \"UP\" vector");
+	RNA_def_property_update(prop, NC_LOGIC, NULL);
+
+	prop = RNA_def_property(srna, "lock_z_velocity", PROP_BOOLEAN, PROP_NONE);
+	RNA_def_property_boolean_sdna(prop, NULL, "flag", ACT_STEERING_LOCKZVEL);
+	RNA_def_property_ui_text(prop, "Lock Z velocity", "Disable simulation of linear motion along Z axis");
 	RNA_def_property_update(prop, NC_LOGIC, NULL);
 }
 

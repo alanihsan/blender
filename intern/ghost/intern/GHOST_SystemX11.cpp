@@ -48,7 +48,7 @@
 #include "GHOST_DisplayManagerX11.h"
 #include "GHOST_EventDragnDrop.h"
 #ifdef WITH_INPUT_NDOF
-#  include "GHOST_NDOFManagerX11.h"
+#  include "GHOST_NDOFManagerUnix.h"
 #endif
 
 #ifdef WITH_XDND
@@ -75,6 +75,10 @@
 
 /* see [#34039] Fix Alt key glitch on Unity desktop */
 #define USE_UNITY_WORKAROUND
+
+/* Fix 'shortcut' part of keyboard reading code only ever using first defined keymap instead of active one.
+ * See T47228 and D1746 */
+#define USE_NON_LATIN_KB_WORKAROUND
 
 static GHOST_TKey convertXKey(KeySym key);
 
@@ -202,7 +206,7 @@ init()
 
 	if (success) {
 #ifdef WITH_INPUT_NDOF
-		m_ndofManager = new GHOST_NDOFManagerX11(*this);
+		m_ndofManager = new GHOST_NDOFManagerUnix(*this);
 #endif
 		m_displayManager = new GHOST_DisplayManagerX11(this);
 
@@ -280,40 +284,33 @@ getAllDisplayDimensions(
  * \param	height	The height the window.
  * \param	state	The state of the window when opened.
  * \param	type	The type of drawing context installed in this window.
- * \param	stereoVisual	Stereo visual for quad buffered stereo.
- * \param	exclusive	Use to show the window ontop and ignore others
- *						(used fullscreen).
- * \param	numOfAASamples	Number of samples used for AA (zero if no AA)
+ * \param glSettings: Misc OpenGL settings.
+ * \param exclusive: Use to show the window ontop and ignore others (used fullscreen).
  * \param	parentWindow    Parent (embedder) window
  * \return	The new window (or 0 if creation failed).
  */
 GHOST_IWindow *
 GHOST_SystemX11::
-createWindow(
-		const STR_String& title,
+createWindow(const STR_String& title,
 		GHOST_TInt32 left,
 		GHOST_TInt32 top,
 		GHOST_TUns32 width,
 		GHOST_TUns32 height,
 		GHOST_TWindowState state,
 		GHOST_TDrawingContextType type,
-		const bool stereoVisual,
+		GHOST_GLSettings glSettings,
 		const bool exclusive,
-		const GHOST_TUns16 numOfAASamples,
 		const GHOST_TEmbedderWindowID parentWindow)
 {
 	GHOST_WindowX11 *window = 0;
 	
 	if (!m_display) return 0;
 	
-
-	
-
 	window = new GHOST_WindowX11(this, m_display, title,
 	                             left, top, width, height,
 	                             state, parentWindow, type,
-	                             stereoVisual, exclusive,
-	                             numOfAASamples);
+	                             ((glSettings.flags & GHOST_glStereoVisual) != 0), exclusive,
+	                             glSettings.numOfAASamples, (glSettings.flags & GHOST_glDebugContext) != 0);
 
 	if (window) {
 		/* Both are now handle in GHOST_WindowX11.cpp
@@ -334,7 +331,7 @@ createWindow(
 }
 
 #if defined(WITH_X11_XINPUT) && defined(X_HAVE_UTF8_STRING)
-static void destroyIMCallback(XIM xim, XPointer ptr, XPointer data)
+static void destroyIMCallback(XIM /*xim*/, XPointer ptr, XPointer /*data*/)
 {
 	GHOST_PRINT("XIM server died\n");
 
@@ -596,7 +593,7 @@ processEvents(
 		}
 
 #ifdef WITH_INPUT_NDOF
-		if (static_cast<GHOST_NDOFManagerX11 *>(m_ndofManager)->processEvents()) {
+		if (static_cast<GHOST_NDOFManagerUnix *>(m_ndofManager)->processEvents()) {
 			anyProcessed = true;
 		}
 #endif
@@ -768,7 +765,7 @@ GHOST_SystemX11::processEvent(XEvent *xe)
 		case KeyRelease:
 		{
 			XKeyEvent *xke = &(xe->xkey);
-			KeySym key_sym;
+			KeySym key_sym = 0;
 			char ascii;
 #if defined(WITH_X11_XINPUT) && defined(X_HAVE_UTF8_STRING)
 			/* utf8_array[] is initial buffer used for Xutf8LookupString().
@@ -784,8 +781,48 @@ GHOST_SystemX11::processEvent(XEvent *xe)
 			char *utf8_buf = NULL;
 #endif
 			
+			GHOST_TEventType type = (xke->type == KeyPress) ?  GHOST_kEventKeyDown : GHOST_kEventKeyUp;
+
 			GHOST_TKey gkey;
 
+#ifdef USE_NON_LATIN_KB_WORKAROUND
+            /* XXX Code below is kinda awfully convoluted... Issues are:
+             *
+             *     - In keyboards like latin ones, numbers need a 'Shift' to be accessed but key_sym
+             *       is unmodified (or anyone swapping the keys with xmodmap).
+             *
+             *     - XLookupKeysym seems to always use first defined keymap (see T47228), which generates
+             *       keycodes unusable by convertXKey for non-latin-compatible keymaps.
+             *
+             * To address this, we:
+             *
+             *     - Try to get a 'number' key_sym using XLookupKeysym (with or without shift modifier).
+             *     - Fallback to XLookupString to get a key_sym from active user-defined keymap.
+             *
+             * Note that this enforces users to use an ascii-compatible keymap with Blender - but at least it gives
+             * predictable and consistent results.
+             *
+             * Also, note that nothing in XLib sources [1] makes it obvious why those two functions give different
+             * key_sym results...
+             *
+             * [1] http://cgit.freedesktop.org/xorg/lib/libX11/tree/src/KeyBind.c
+             */
+            if ((xke->keycode >= 10 && xke->keycode < 20)) {
+                key_sym = XLookupKeysym(xke, ShiftMask);
+                if (!((key_sym >= XK_0) && (key_sym <= XK_9))) {
+                    key_sym = XLookupKeysym(xke, 0);
+                }
+                if (!((key_sym >= XK_0) && (key_sym <= XK_9))) {
+                    key_sym = 0;  /* Get current-keymap valid key_sym. */
+                }
+            }
+
+            if (!XLookupString(xke, &ascii, 1, (key_sym == 0) ? &key_sym : NULL, NULL)) {
+                ascii = '\0';
+            }
+
+			gkey = convertXKey(key_sym);
+#else
 			/* In keyboards like latin ones,
 			 * numbers needs a 'Shift' to be accessed but key_sym
 			 * is unmodified (or anyone swapping the keys with xmodmap).
@@ -806,14 +843,12 @@ GHOST_SystemX11::processEvent(XEvent *xe)
 			}
 
 			gkey = convertXKey(key_sym);
-
-			GHOST_TEventType type = (xke->type == KeyPress) ? 
-			                        GHOST_kEventKeyDown : GHOST_kEventKeyUp;
 			
 			if (!XLookupString(xke, &ascii, 1, NULL, NULL)) {
 				ascii = '\0';
 			}
-			
+#endif
+
 #if defined(WITH_X11_XINPUT) && defined(X_HAVE_UTF8_STRING)
 			/* getting unicode on key-up events gives XLookupNone status */
 			XIC xic = window->getX11_XIC();
@@ -1887,7 +1922,7 @@ GHOST_TSuccess GHOST_SystemX11::pushDragDropEvent(GHOST_TEventType eventType,
  * Basically it will not crash blender now if you have a X device that
  * is configured but not plugged in.
  */
-int GHOST_X11_ApplicationErrorHandler(Display *display, XErrorEvent *theEvent)
+int GHOST_X11_ApplicationErrorHandler(Display * /*display*/, XErrorEvent *theEvent)
 {
 	fprintf(stderr, "Ignoring Xlib error: error code %d request code %d\n",
 	        theEvent->error_code, theEvent->request_code);
@@ -1896,7 +1931,7 @@ int GHOST_X11_ApplicationErrorHandler(Display *display, XErrorEvent *theEvent)
 	return 0;
 }
 
-int GHOST_X11_ApplicationIOErrorHandler(Display *display)
+int GHOST_X11_ApplicationIOErrorHandler(Display * /*display*/)
 {
 	fprintf(stderr, "Ignoring Xlib error: error IO\n");
 

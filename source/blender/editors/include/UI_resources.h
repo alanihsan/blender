@@ -200,8 +200,9 @@ enum {
 	TH_SEQ_EFFECT,
 	TH_SEQ_TRANSITION,
 	TH_SEQ_META,
+	TH_SEQ_TEXT,
 	TH_SEQ_PREVIEW,
-	
+
 	TH_EDGE_SHARP,
 	TH_EDITMESH_ACTIVE,
 	
@@ -294,14 +295,16 @@ enum {
 	TH_INFO_DEBUG_TEXT,
 	TH_VIEW_OVERLAY,
 	
-	TH_V3D_CLIPPING_BORDER
+	TH_V3D_CLIPPING_BORDER,
+
+	TH_METADATA_BG,
+	TH_METADATA_TEXT
 };
 /* XXX WARNING: previous is saved in file, so do not change order! */
 
 /* specific defines per space should have higher define values */
 
 struct bTheme;
-struct PointerRNA;
 
 struct bThemeState {
 	struct bTheme *theme;
@@ -332,6 +335,9 @@ void    UI_ThemeColorBlendShadeAlpha(int colorid1, int colorid2, float fac, int 
 float   UI_GetThemeValuef(int colorid);
 int     UI_GetThemeValue(int colorid);
 
+float   UI_GetThemeValueTypef(int colorid, int spacetype);
+int     UI_GetThemeValueType(int colorid, int spacetype);
+
 // get three color values, scaled to 0.0-1.0 range
 void    UI_GetThemeColor3fv(int colorid, float col[3]);
 void    UI_GetThemeColorBlend3ubv(int colorid1, int colorid2, float fac, unsigned char col[3]);
@@ -360,6 +366,9 @@ void    UI_GetColorPtrBlendShade3ubv(const unsigned char cp1[3], const unsigned 
 
 // clear the openGL ClearColor using the input colorid
 void    UI_ThemeClearColor(int colorid);
+
+// clear the openGL ClearColor using the input colorid using optional transparency
+void    UI_ThemeClearColorAlpha(int colorid, float alpha);
 
 // internal (blender) usage only, for init and set active
 void    UI_SetTheme(int spacetype, int regionid);

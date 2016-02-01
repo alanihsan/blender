@@ -29,28 +29,21 @@
  *  \ingroup spview3d
  */
 
-#include "MEM_guardedalloc.h"
-
 #include "DNA_scene_types.h"
 #include "DNA_screen_types.h"
 #include "DNA_view3d_types.h"
 #include "DNA_object_types.h"
 
-#include "BLI_blenlib.h"
 #include "BLI_math.h"
 #include "BLI_utildefines.h"
 #include "BLI_ghash.h"
 
 #include "BKE_effect.h"
-#include "BKE_global.h"
-#include "BKE_modifier.h"
 
 #include "view3d_intern.h"
 
 #include "BIF_gl.h"
-#include "BIF_glutil.h"
 
-#include "UI_resources.h"
 
 static void draw_sim_debug_elements(SimDebugData *debug_data, float imat[4][4])
 {
@@ -69,7 +62,6 @@ static void draw_sim_debug_elements(SimDebugData *debug_data, float imat[4][4])
 		glVertex3f(elem->v1[0], elem->v1[1], elem->v1[2]);
 	}
 	glEnd();
-	glPointSize(1.0f);
 	
 	/**** circles ****/
 	
@@ -130,7 +122,6 @@ static void draw_sim_debug_elements(SimDebugData *debug_data, float imat[4][4])
 		glVertex3f(elem->v1[0], elem->v1[1], elem->v1[2]);
 	}
 	glEnd();
-	glPointSize(1.0f);
 	
 	glBegin(GL_LINES);
 	for (BLI_ghashIterator_init(&iter, debug_data->gh); !BLI_ghashIterator_done(&iter); BLI_ghashIterator_step(&iter)) {

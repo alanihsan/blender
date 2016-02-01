@@ -49,7 +49,7 @@
 #include "RAS_Rect.h"
 
 
-#include "PyObjectPlus.h"
+#include "EXP_PyObjectPlus.h"
 #include "RAS_2DFilterManager.h"
 
 /**
@@ -93,7 +93,7 @@ class KX_ObstacleSimulation;
 #endif
 
 /* for ID freeing */
-#define IS_TAGGED(_id) ((_id) && (((ID *)_id)->flag & LIB_DOIT))
+#define IS_TAGGED(_id) ((_id) && (((ID *)_id)->tag & LIB_TAG_DOIT))
 
 /**
  * The KX_Scene holds all data for an independent scene. It relates
@@ -107,6 +107,7 @@ class KX_Scene : public PyObjectPlus, public SCA_IScene
 	PyObject*	m_attr_dict;
 	PyObject*	m_draw_call_pre;
 	PyObject*	m_draw_call_post;
+	PyObject*	m_draw_setup_call_pre;
 #endif
 
 	struct CullingInfo {
@@ -295,6 +296,12 @@ protected:
 
 	KX_ObstacleSimulation* m_obstacleSimulation;
 
+	/**
+	 * LOD Hysteresis settings
+	 */
+	bool m_isActivedHysteresis;
+	int m_lodHysteresisValue;
+
 public:
 	KX_Scene(class SCA_IInputDevice* keyboarddevice,
 		class SCA_IInputDevice* mousedevice,
@@ -332,6 +339,7 @@ public:
 	void RemoveNodeDestructObject(SG_IObject* node,
 	                              CValue* gameobj);
 	void RemoveObject(CValue* gameobj);
+	void RemoveDupliGroup(CValue *gameobj);
 	void DelayedRemoveObject(CValue* gameobj);
 	
 	int NewRemoveObject(CValue* gameobj);
@@ -546,6 +554,12 @@ public:
 
 	// Update the mesh for objects based on level of detail settings
 	void UpdateObjectLods(void);
+
+	// LoD Hysteresis functions
+	void SetLodHysteresis(bool active);
+	bool IsActivedLodHysteresis();
+	void SetLodHysteresisValue(int hysteresisvalue);
+	int GetLodHysteresisValue();
 	
 	// Update the activity box settings for objects in this scene, if needed.
 	void UpdateObjectActivity(void);
@@ -612,12 +626,15 @@ public:
 	static PyObject*	pyattr_get_objects_inactive(void* self_v, const KX_PYATTRIBUTE_DEF *attrdef);
 	static PyObject*	pyattr_get_lights(void* self_v, const KX_PYATTRIBUTE_DEF *attrdef);
 	static PyObject*	pyattr_get_cameras(void* self_v, const KX_PYATTRIBUTE_DEF *attrdef);
+	static PyObject*	pyattr_get_world(void* self_v, const KX_PYATTRIBUTE_DEF *attrdef);
 	static PyObject*	pyattr_get_active_camera(void* self_v, const KX_PYATTRIBUTE_DEF *attrdef);
 	static int			pyattr_set_active_camera(void *self_v, const KX_PYATTRIBUTE_DEF *attrdef, PyObject *value);
 	static PyObject*	pyattr_get_drawing_callback_pre(void *self_v, const KX_PYATTRIBUTE_DEF *attrdef);
 	static int			pyattr_set_drawing_callback_pre(void *selv_v, const KX_PYATTRIBUTE_DEF *attrdef, PyObject *value);
 	static PyObject*	pyattr_get_drawing_callback_post(void *self_v, const KX_PYATTRIBUTE_DEF *attrdef);
 	static int			pyattr_set_drawing_callback_post(void *selv_v, const KX_PYATTRIBUTE_DEF *attrdef, PyObject *value);
+	static PyObject*	pyattr_get_drawing_setup_callback_pre(void *self_v, const KX_PYATTRIBUTE_DEF *attrdef);
+	static int			pyattr_set_drawing_setup_callback_pre(void *selv_v, const KX_PYATTRIBUTE_DEF *attrdef, PyObject *value);
 	static PyObject*	pyattr_get_gravity(void* self_v, const KX_PYATTRIBUTE_DEF *attrdef);
 	static int			pyattr_set_gravity(void *self_v, const KX_PYATTRIBUTE_DEF *attrdef, PyObject *value);
 
@@ -634,6 +651,7 @@ public:
 	
 	PyObject *GetPreDrawCB() { return m_draw_call_pre; }
 	PyObject *GetPostDrawCB() { return m_draw_call_post; }
+	PyObject *GetPreDrawSetupCB() { return m_draw_setup_call_pre; }
 #endif
 
 	/**

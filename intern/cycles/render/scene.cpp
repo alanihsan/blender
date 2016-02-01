@@ -36,6 +36,11 @@
 #include "util_foreach.h"
 #include "util_progress.h"
 
+#ifdef WITH_CYCLES_DEBUG
+#  include "util_guarded_allocator.h"
+#  include "util_logging.h"
+#endif
+
 CCL_NAMESPACE_BEGIN
 
 Scene::Scene(const SceneParams& params_, const DeviceInfo& device_info_)
@@ -92,7 +97,7 @@ void Scene::free_memory(bool final)
 	particle_systems.clear();
 
 	if(device) {
-		camera->device_free(device, &dscene);
+		camera->device_free(device, &dscene, this);
 		film->device_free(device, &dscene, this);
 		background->device_free(device, &dscene);
 		integrator->device_free(device, &dscene);
@@ -155,11 +160,6 @@ void Scene::device_update(Device *device_, Progress& progress)
 
 	if(progress.get_cancel() || device->have_error()) return;
 
-	progress.set_status("Updating Images");
-	image_manager->device_update(device, &dscene, progress);
-
-	if(progress.get_cancel() || device->have_error()) return;
-
 	progress.set_status("Updating Background");
 	background->device_update(device, &dscene, this);
 
@@ -180,13 +180,18 @@ void Scene::device_update(Device *device_, Progress& progress)
 
 	if(progress.get_cancel() || device->have_error()) return;
 
+	progress.set_status("Updating Meshes");
+	mesh_manager->device_update(device, &dscene, this, progress);
+
+	if(progress.get_cancel() || device->have_error()) return;
+
 	progress.set_status("Updating Objects Flags");
 	object_manager->device_update_flags(device, &dscene, this, progress);
 
 	if(progress.get_cancel() || device->have_error()) return;
 
-	progress.set_status("Updating Meshes");
-	mesh_manager->device_update(device, &dscene, this, progress);
+	progress.set_status("Updating Images");
+	image_manager->device_update(device, &dscene, progress);
 
 	if(progress.get_cancel() || device->have_error()) return;
 
@@ -239,6 +244,12 @@ void Scene::device_update(Device *device_, Progress& progress)
 		progress.set_status("Updating Device", "Writing constant memory");
 		device->const_copy_to("__data", &dscene.data, sizeof(dscene.data));
 	}
+
+#ifdef WITH_CYCLES_DEBUG
+	VLOG(1) << "System memory statistics after full device sync:\n"
+	        << "  Usage: " << util_guarded_get_mem_used() << "\n"
+	        << "  Peak: " << util_guarded_get_mem_peak();
+#endif
 }
 
 Scene::MotionType Scene::need_motion(bool advanced_shading)

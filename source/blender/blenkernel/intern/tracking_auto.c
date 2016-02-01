@@ -447,7 +447,7 @@ bool BKE_autotrack_context_step(AutoTrackContext *context)
 void BKE_autotrack_context_sync(AutoTrackContext *context)
 {
 	int newframe, frame_delta = context->backwards ? -1 : 1;
-	int clip, frame;
+	int frame;
 
 	BLI_spin_lock(&context->spin_lock);
 	newframe = context->user.framenr;
@@ -502,7 +502,7 @@ void BKE_autotrack_context_sync(AutoTrackContext *context)
 	}
 	BLI_spin_unlock(&context->spin_lock);
 
-	for (clip = 0; clip < context->num_clips; ++clip) {
+	for (int clip = 0; clip < context->num_clips; ++clip) {
 		MovieTracking *tracking = &context->clips[clip]->tracking;
 		BKE_tracking_dopesheet_tag_update(tracking);
 	}
@@ -534,19 +534,9 @@ void BKE_autotrack_context_finish(AutoTrackContext *context)
 			if ((plane_track->flag & PLANE_TRACK_AUTOKEY) == 0) {
 				int track;
 				for (track = 0; track < context->num_tracks; ++track) {
-					MovieTrackingTrack *old_track;
-					bool do_update = false;
-					int j;
-
-					old_track = context->options[track].track;
-					for (j = 0; j < plane_track->point_tracksnr; j++) {
-						if (plane_track->point_tracks[j] == old_track) {
-							do_update = true;
-							break;
-						}
-					}
-
-					if (do_update) {
+					if (BKE_tracking_plane_track_has_point_track(plane_track,
+					                                             context->options[track].track))
+					{
 						BKE_tracking_track_plane_from_existing_motion(
 						        plane_track,
 						        context->first_frame);

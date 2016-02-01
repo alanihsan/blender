@@ -105,8 +105,8 @@ public:
 	 * \param	height			The height the window.
 	 * \param	state			The state of the window when opened.
 	 * \param	type			The type of drawing context installed in this window.
-	 * \param	stereoVisual	Stereo visual for quad buffered stereo.
-	 * \param	numOfAASamples	Number of samples used for AA (zero if no AA)
+	 * \param glSettings: Misc OpenGL settings.
+	 * \param exclusive: Use to show the window ontop and ignore others (used fullscreen).
 	 * \param	parentWindow    Parent (embedder) window
 	 * \return	The new window (or 0 if creation failed).
 	 */
@@ -118,9 +118,8 @@ public:
 	    GHOST_TUns32 height,
 	    GHOST_TWindowState state,
 	    GHOST_TDrawingContextType type,
-	    const bool stereoVisual = false,
-		const bool exclusive = false,
-	    const GHOST_TUns16 numOfAASamples = 0,
+	    GHOST_GLSettings glSettings,
+	    const bool exclusive = false,
 	    const GHOST_TEmbedderWindowID parentWindow = 0
 	    );
 	
@@ -298,9 +297,8 @@ protected:
 	 */
 	GHOST_TInt32 m_cursorDelta_x, m_cursorDelta_y;
 	
-	/** Multitouch trackpad availability */
-	bool m_hasMultiTouchTrackpad;
-	
+	/** Temporarily ignore momentum scroll events */
+	bool m_ignoreMomentumScroll;
 };
 
 #endif // __GHOST_SYSTEMCOCOA_H__

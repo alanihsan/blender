@@ -52,6 +52,7 @@
 #include "BKE_material.h"
 #include "BKE_node.h"
 #include "BKE_paint.h"
+#include "BKE_scene.h"
 
 #include "GPU_material.h"
 #include "GPU_buffers.h"
@@ -61,6 +62,7 @@
 
 #include "ED_node.h"
 #include "ED_render.h"
+#include "ED_view3d.h"
 
 #include "render_intern.h"  // own include
 
@@ -141,26 +143,36 @@ void ED_render_scene_update(Main *bmain, Scene *scene, int updated)
 	recursive_check = false;
 }
 
-void ED_render_engine_area_exit(ScrArea *sa)
+void ED_render_scene_update_pre(Main *bmain, Scene *scene, bool time)
+{
+	/* Blender internal might access to the data which is gonna to be freed
+	 * by the scene update functions. This applies for example to simulation
+	 * data like smoke and fire.
+	 */
+	if (time && !BKE_scene_use_new_shading_nodes(scene)) {
+		bScreen *sc;
+		ScrArea *sa;
+		for (sc = bmain->screen.first; sc; sc = sc->id.next) {
+			for (sa = sc->areabase.first; sa; sa = sa->next) {
+				ED_render_engine_area_exit(bmain, sa);
+			}
+		}
+	}
+}
+
+void ED_render_engine_area_exit(Main *bmain, ScrArea *sa)
 {
 	/* clear all render engines in this area */
 	ARegion *ar;
+	wmWindowManager *wm = bmain->wm.first;
 
 	if (sa->spacetype != SPACE_VIEW3D)
 		return;
 
 	for (ar = sa->regionbase.first; ar; ar = ar->next) {
-		RegionView3D *rv3d;
-
 		if (ar->regiontype != RGN_TYPE_WINDOW || !(ar->regiondata))
 			continue;
-		
-		rv3d = ar->regiondata;
-
-		if (rv3d->render_engine) {
-			RE_engine_free(rv3d->render_engine);
-			rv3d->render_engine = NULL;
-		}
+		ED_view3d_stop_render_preview(wm, ar);
 	}
 }
 
@@ -173,7 +185,7 @@ void ED_render_engine_changed(Main *bmain)
 
 	for (sc = bmain->screen.first; sc; sc = sc->id.next)
 		for (sa = sc->areabase.first; sa; sa = sa->next)
-			ED_render_engine_area_exit(sa);
+			ED_render_engine_area_exit(bmain, sa);
 
 	RE_FreePersistentData();
 
@@ -276,7 +288,7 @@ static void material_changed(Main *bmain, Material *ma)
 	int texture_draw = false;
 
 	/* icons */
-	BKE_icon_changed(BKE_icon_getid(&ma->id));
+	BKE_icon_changed(BKE_icon_id_ensure(&ma->id));
 
 	/* glsl */
 	if (ma->gpumaterial.first)
@@ -291,7 +303,7 @@ static void material_changed(Main *bmain, Material *ma)
 			continue;
 		}
 
-		BKE_icon_changed(BKE_icon_getid(&parent->id));
+		BKE_icon_changed(BKE_icon_id_ensure(&parent->id));
 
 		if (parent->gpumaterial.first)
 			GPU_material_free(&parent->gpumaterial);
@@ -306,7 +318,7 @@ static void material_changed(Main *bmain, Material *ma)
 	}
 
 	/* find textured objects */
-	if (texture_draw && !(U.gameflags & USER_DISABLE_VBO)) {
+	if (texture_draw) {
 		for (ob = bmain->object.first; ob; ob = ob->id.next) {
 			DerivedMesh *dm = ob->derivedFinal;
 			Material ***material = give_matarar(ob);
@@ -331,7 +343,7 @@ static void lamp_changed(Main *bmain, Lamp *la)
 	Material *ma;
 
 	/* icons */
-	BKE_icon_changed(BKE_icon_getid(&la->id));
+	BKE_icon_changed(BKE_icon_id_ensure(&la->id));
 
 	/* glsl */
 	for (ob = bmain->object.first; ob; ob = ob->id.next)
@@ -367,7 +379,7 @@ static void texture_changed(Main *bmain, Tex *tex)
 	bool texture_draw = false;
 
 	/* icons */
-	BKE_icon_changed(BKE_icon_getid(&tex->id));
+	BKE_icon_changed(BKE_icon_id_ensure(&tex->id));
 
 	/* paint overlays */
 	for (scene = bmain->scene.first; scene; scene = scene->id.next)
@@ -378,7 +390,7 @@ static void texture_changed(Main *bmain, Tex *tex)
 		if (!material_uses_texture(ma, tex))
 			continue;
 
-		BKE_icon_changed(BKE_icon_getid(&ma->id));
+		BKE_icon_changed(BKE_icon_id_ensure(&ma->id));
 
 		if (ma->gpumaterial.first)
 			GPU_material_free(&ma->gpumaterial);
@@ -409,7 +421,7 @@ static void texture_changed(Main *bmain, Tex *tex)
 			continue;
 		}
 
-		BKE_icon_changed(BKE_icon_getid(&wo->id));
+		BKE_icon_changed(BKE_icon_id_ensure(&wo->id));
 		
 		if (wo->gpumaterial.first)
 			GPU_material_free(&wo->gpumaterial);		
@@ -429,7 +441,7 @@ static void texture_changed(Main *bmain, Tex *tex)
 	}
 
 	/* find textured objects */
-	if (texture_draw && !(U.gameflags & USER_DISABLE_VBO)) {
+	if (texture_draw) {
 		for (ob = bmain->object.first; ob; ob = ob->id.next) {
 			DerivedMesh *dm = ob->derivedFinal;
 			Material ***material = give_matarar(ob);
@@ -457,7 +469,7 @@ static void world_changed(Main *bmain, World *wo)
 	Material *ma;
 
 	/* icons */
-	BKE_icon_changed(BKE_icon_getid(&wo->id));
+	BKE_icon_changed(BKE_icon_id_ensure(&wo->id));
 	
 	/* glsl */
 	for (ma = bmain->mat.first; ma; ma = ma->id.next)
@@ -476,7 +488,7 @@ static void image_changed(Main *bmain, Image *ima)
 	Tex *tex;
 
 	/* icons */
-	BKE_icon_changed(BKE_icon_getid(&ima->id));
+	BKE_icon_changed(BKE_icon_id_ensure(&ima->id));
 
 	/* textures */
 	for (tex = bmain->tex.first; tex; tex = tex->id.next)

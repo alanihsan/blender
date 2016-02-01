@@ -49,6 +49,7 @@
 #include "BKE_effect.h"
 #include "BKE_global.h"
 #include "BKE_key.h"
+#include "BKE_library_query.h"
 #include "BKE_modifier.h"
 #include "BKE_pointcache.h"
 
@@ -98,7 +99,7 @@ static void deformVerts(ModifierData *md, Object *ob, DerivedMesh *derivedData, 
 	if (derivedData == NULL && clmd->sim_parms->shapekey_rest) {
 		KeyBlock *kb = BKE_keyblock_from_key(BKE_key_from_object(ob),
 		                                     clmd->sim_parms->shapekey_rest);
-		if (kb->data != NULL) {
+		if (kb && kb->data != NULL) {
 			float (*layerorco)[3];
 			if (!(layerorco = DM_get_vert_data_layer(dm, CD_CLOTH_ORCO))) {
 				DM_add_vert_layer(dm, CD_CLOTH_ORCO, CD_CALLOC, NULL);
@@ -111,14 +112,14 @@ static void deformVerts(ModifierData *md, Object *ob, DerivedMesh *derivedData, 
 
 	CDDM_apply_vert_coords(dm, vertexCos);
 
-	DM_ensure_tessface(dm); /* BMESH - UNTIL MODIFIER IS UPDATED FOR MPoly */
-
 	clothModifier_do(clmd, md->scene, ob, dm, vertexCos);
 
 	dm->release(dm);
 }
 
-static void updateDepgraph(ModifierData *md, DagForest *forest, Scene *scene, Object *ob, DagNode *obNode)
+static void updateDepgraph(ModifierData *md, DagForest *forest,
+                           struct Main *UNUSED(bmain),
+                           Scene *scene, Object *ob, DagNode *obNode)
 {
 	ClothModifierData *clmd = (ClothModifierData *) md;
 	
@@ -132,6 +133,27 @@ static void updateDepgraph(ModifierData *md, DagForest *forest, Scene *scene, Ob
 				if (coll_clmd) {
 					DagNode *curNode = dag_get_node(forest, ob1);
 					dag_add_relation(forest, curNode, obNode, DAG_RL_DATA_DATA | DAG_RL_OB_DATA, "Cloth Collision");
+				}
+			}
+		}
+	}
+}
+
+static void updateDepsgraph(ModifierData *md,
+                            struct Main *UNUSED(bmain),
+                            struct Scene *scene,
+                            Object *ob,
+                            struct DepsNodeHandle *node)
+{
+	ClothModifierData *clmd = (ClothModifierData *)md;
+	if (clmd != NULL) {
+		Base *base;
+		for (base = scene->base.first; base; base = base->next) {
+			Object *ob1 = base->object;
+			if (ob1 != ob) {
+				CollisionModifierData *coll_clmd = (CollisionModifierData *)modifiers_findByType(ob1, eModifierType_Collision);
+				if (coll_clmd) {
+					DEG_add_object_relation(node, ob1, DEG_OB_COMP_TRANSFORM, "Cloth Modifier");
 				}
 			}
 		}
@@ -220,11 +242,11 @@ static void foreachIDLink(ModifierData *md, Object *ob,
 	ClothModifierData *clmd = (ClothModifierData *) md;
 
 	if (clmd->coll_parms) {
-		walk(userData, ob, (ID **)&clmd->coll_parms->group);
+		walk(userData, ob, (ID **)&clmd->coll_parms->group, IDWALK_NOP);
 	}
 
 	if (clmd->sim_parms && clmd->sim_parms->effector_weights) {
-		walk(userData, ob, (ID **)&clmd->sim_parms->effector_weights->group);
+		walk(userData, ob, (ID **)&clmd->sim_parms->effector_weights->group, IDWALK_NOP);
 	}
 }
 
@@ -249,6 +271,7 @@ ModifierTypeInfo modifierType_Cloth = {
 	/* freeData */          freeData,
 	/* isDisabled */        NULL,
 	/* updateDepgraph */    updateDepgraph,
+	/* updateDepsgraph */   updateDepsgraph,
 	/* dependsOnTime */     dependsOnTime,
 	/* dependsOnNormals */	NULL,
 	/* foreachObjectLink */ NULL,

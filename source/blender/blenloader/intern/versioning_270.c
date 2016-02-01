@@ -38,21 +38,29 @@
 #include "DNA_camera_types.h"
 #include "DNA_cloth_types.h"
 #include "DNA_constraint_types.h"
+#include "DNA_gpencil_types.h"
 #include "DNA_sdna_types.h"
+#include "DNA_sequence_types.h"
 #include "DNA_space_types.h"
 #include "DNA_screen_types.h"
+#include "DNA_object_force.h"
 #include "DNA_object_types.h"
 #include "DNA_mesh_types.h"
 #include "DNA_modifier_types.h"
 #include "DNA_particle_types.h"
 #include "DNA_linestyle_types.h"
 #include "DNA_actuator_types.h"
+#include "DNA_view3d_types.h"
 
 #include "DNA_genfile.h"
 
+#include "BKE_colortools.h"
+#include "BKE_library.h"
 #include "BKE_main.h"
 #include "BKE_modifier.h"
 #include "BKE_node.h"
+#include "BKE_scene.h"
+#include "BKE_sequencer.h"
 #include "BKE_screen.h"
 
 #include "BLI_math.h"
@@ -458,10 +466,10 @@ void blo_do_versions_270(FileData *fd, Library *UNUSED(lib), Main *main)
 			br->mtex.random_angle = 2.0 * M_PI;
 			br->mask_mtex.random_angle = 2.0 * M_PI;
 		}
+	}
 
 #undef BRUSH_RAKE
 #undef BRUSH_RANDOM_ROTATION
-	}
 
 	/* Customizable Safe Areas */
 	if (!MAIN_VERSION_ATLEAST(main, 273, 2)) {
@@ -615,6 +623,438 @@ void blo_do_versions_270(FileData *fd, Library *UNUSED(lib), Main *main)
 					       ob->id.name + 2, md->name);
 				}
 			}
+		}
+	}
+
+	if (!MAIN_VERSION_ATLEAST(main, 273, 9)) {
+		bScreen *scr;
+		ScrArea *sa;
+		SpaceLink *sl;
+		ARegion *ar;
+
+		/* Make sure sequencer preview area limits zoom */
+		for (scr = main->screen.first; scr; scr = scr->id.next) {
+			for (sa = scr->areabase.first; sa; sa = sa->next) {
+				for (sl = sa->spacedata.first; sl; sl = sl->next) {
+					if (sl->spacetype == SPACE_SEQ) {
+						for (ar = sl->regionbase.first; ar; ar = ar->next) {
+							if (ar->regiontype == RGN_TYPE_PREVIEW) {
+								ar->v2d.keepzoom |= V2D_LIMITZOOM;
+								ar->v2d.minzoom = 0.001f;
+								ar->v2d.maxzoom = 1000.0f;
+								break;
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if (!MAIN_VERSION_ATLEAST(main, 274, 1)) {
+		/* particle systems need to be forced to redistribute for jitter mode fix */
+		{
+			Object *ob;
+			ParticleSystem *psys;
+			for (ob = main->object.first; ob; ob = ob->id.next) {
+				for (psys = ob->particlesystem.first; psys; psys = psys->next) {
+					if ((psys->pointcache->flag & PTCACHE_BAKED) == 0) {
+						psys->recalc |= PSYS_RECALC_RESET;
+					}
+				}
+			}
+		}
+
+		/* hysteresis setted to 10% but not actived */
+		if (!DNA_struct_elem_find(fd->filesdna, "LodLevel", "int", "obhysteresis")) {
+			Object *ob;
+			for (ob = main->object.first; ob; ob = ob->id.next) {
+				LodLevel *level;
+				for (level = ob->lodlevels.first; level; level = level->next) {
+					level->obhysteresis = 10;
+				}
+			}
+		}
+
+		if (!DNA_struct_elem_find(fd->filesdna, "GameData", "int", "scehysteresis")) {
+			Scene *scene;
+			for (scene = main->scene.first; scene; scene = scene->id.next) {
+				scene->gm.scehysteresis = 10;
+			}
+		}
+	}
+
+	if (!MAIN_VERSION_ATLEAST(main, 274, 2)) {
+		FOREACH_NODETREE(main, ntree, id) {
+			bNode *node;
+			bNodeSocket *sock;
+
+			for (node = ntree->nodes.first; node; node = node->next) {
+				if (node->type == SH_NODE_MATERIAL) {
+					for (sock = node->inputs.first; sock; sock = sock->next) {
+						if (STREQ(sock->name, "Refl")) {
+							BLI_strncpy(sock->name, "DiffuseIntensity", sizeof(sock->name));
+						}
+					}
+				}
+				else if (node->type == SH_NODE_MATERIAL_EXT) {
+					for (sock = node->outputs.first; sock; sock = sock->next) {
+						if (STREQ(sock->name, "Refl")) {
+							BLI_strncpy(sock->name, "DiffuseIntensity", sizeof(sock->name));
+						}
+						else if (STREQ(sock->name, "Ray Mirror")) {
+							BLI_strncpy(sock->name, "Reflectivity", sizeof(sock->name));
+						}
+					}
+				}
+			}
+		} FOREACH_NODETREE_END
+	}
+
+	if (!MAIN_VERSION_ATLEAST(main, 274, 4)) {
+		SceneRenderView *srv;
+		wmWindowManager *wm;
+		bScreen *screen;
+		wmWindow *win;
+		Scene *scene;
+		Camera *cam;
+		Image *ima;
+
+		for (scene = main->scene.first; scene; scene = scene->id.next) {
+			Sequence *seq;
+
+			BKE_scene_add_render_view(scene, STEREO_LEFT_NAME);
+			srv = scene->r.views.first;
+			BLI_strncpy(srv->suffix, STEREO_LEFT_SUFFIX, sizeof(srv->suffix));
+
+			BKE_scene_add_render_view(scene, STEREO_RIGHT_NAME);
+			srv = scene->r.views.last;
+			BLI_strncpy(srv->suffix, STEREO_RIGHT_SUFFIX, sizeof(srv->suffix));
+
+			SEQ_BEGIN (scene->ed, seq)
+			{
+				seq->stereo3d_format = MEM_callocN(sizeof(Stereo3dFormat), "Stereo Display 3d Format");
+
+#define SEQ_USE_PROXY_CUSTOM_DIR (1 << 19)
+#define SEQ_USE_PROXY_CUSTOM_FILE (1 << 21)
+				if (seq->strip && seq->strip->proxy && !seq->strip->proxy->storage) {
+					if (seq->flag & SEQ_USE_PROXY_CUSTOM_DIR)
+						seq->strip->proxy->storage = SEQ_STORAGE_PROXY_CUSTOM_DIR;
+					if (seq->flag & SEQ_USE_PROXY_CUSTOM_FILE)
+						seq->strip->proxy->storage = SEQ_STORAGE_PROXY_CUSTOM_FILE;
+				}
+#undef SEQ_USE_PROXY_CUSTOM_DIR
+#undef SEQ_USE_PROXY_CUSTOM_FILE
+
+			}
+			SEQ_END
+		}
+
+		for (screen = main->screen.first; screen; screen = screen->id.next) {
+			ScrArea *sa;
+			for (sa = screen->areabase.first; sa; sa = sa->next) {
+				SpaceLink *sl;
+
+				for (sl = sa->spacedata.first; sl; sl = sl->next) {
+					switch (sl->spacetype) {
+						case SPACE_VIEW3D:
+						{
+							View3D *v3d = (View3D *)sl;
+							v3d->stereo3d_camera = STEREO_3D_ID;
+							v3d->stereo3d_flag |= V3D_S3D_DISPPLANE;
+							v3d->stereo3d_convergence_alpha = 0.15f;
+							v3d->stereo3d_volume_alpha = 0.05f;
+							break;
+						}
+						case SPACE_IMAGE:
+						{
+							SpaceImage *sima = (SpaceImage *) sl;
+							sima->iuser.flag |= IMA_SHOW_STEREO;
+							break;
+						}
+					}
+				}
+			}
+		}
+
+		for (cam = main->camera.first; cam; cam = cam->id.next) {
+			cam->stereo.interocular_distance = 0.065f;
+			cam->stereo.convergence_distance = 30.0f * 0.065f;
+		}
+
+		for (ima = main->image.first; ima; ima = ima->id.next) {
+			ima->stereo3d_format = MEM_callocN(sizeof(Stereo3dFormat), "Image Stereo 3d Format");
+
+			if (ima->packedfile) {
+				ImagePackedFile *imapf = MEM_mallocN(sizeof(ImagePackedFile), "Image Packed File");
+				BLI_addtail(&ima->packedfiles, imapf);
+
+				imapf->packedfile = ima->packedfile;
+				BLI_strncpy(imapf->filepath, ima->name, FILE_MAX);
+				ima->packedfile = NULL;
+			}
+		}
+
+		for (wm = main->wm.first; wm; wm = wm->id.next) {
+			for (win = wm->windows.first; win; win = win->next) {
+				win->stereo3d_format = MEM_callocN(sizeof(Stereo3dFormat), "Stereo Display 3d Format");
+			}
+		}
+	}
+
+	if (!MAIN_VERSION_ATLEAST(main, 274, 6)) {
+		bScreen *screen;
+
+		if (!DNA_struct_elem_find(fd->filesdna, "FileSelectParams", "int", "thumbnail_size")) {
+			for (screen = main->screen.first; screen; screen = screen->id.next) {
+				ScrArea *sa;
+
+				for (sa = screen->areabase.first; sa; sa = sa->next) {
+					SpaceLink *sl;
+
+					for (sl = sa->spacedata.first; sl; sl = sl->next) {
+						if (sl->spacetype == SPACE_FILE) {
+							SpaceFile *sfile = (SpaceFile *)sl;
+
+							if (sfile->params) {
+								sfile->params->thumbnail_size = 128;
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if (!DNA_struct_elem_find(fd->filesdna, "RenderData", "short", "simplify_subsurf_render")) {
+			Scene *scene;
+			for (scene = main->scene.first; scene != NULL; scene = scene->id.next) {
+				scene->r.simplify_subsurf_render = scene->r.simplify_subsurf;
+				scene->r.simplify_particles_render = scene->r.simplify_particles;
+			}
+		}
+
+		if (!DNA_struct_elem_find(fd->filesdna, "DecimateModifierData", "float", "defgrp_factor")) {
+			Object *ob;
+
+			for (ob = main->object.first; ob; ob = ob->id.next) {
+				ModifierData *md;
+				for (md = ob->modifiers.first; md; md = md->next) {
+					if (md->type == eModifierType_Decimate) {
+						DecimateModifierData *dmd = (DecimateModifierData *)md;
+						dmd->defgrp_factor = 1.0f;
+					}
+				}
+			}
+		}
+	}
+
+	if (!MAIN_VERSION_ATLEAST(main, 275, 3)) {
+		Brush *br;
+#define BRUSH_TORUS (1 << 1)
+		for (br = main->brush.first; br; br = br->id.next) {
+			br->flag &= ~BRUSH_TORUS;
+		}
+#undef BRUSH_TORUS
+	}
+
+	if (!MAIN_VERSION_ATLEAST(main, 276, 2)) {
+		if (!DNA_struct_elem_find(fd->filesdna, "bPoseChannel", "float", "custom_scale")) {
+			Object *ob;
+
+			for (ob = main->object.first; ob; ob = ob->id.next) {
+				if (ob->pose) {
+					bPoseChannel *pchan;
+					for (pchan = ob->pose->chanbase.first; pchan; pchan = pchan->next) {
+						pchan->custom_scale = 1.0f;
+					}
+				}
+			}
+		}
+
+		{
+			bScreen *screen;
+#define RV3D_VIEW_PERSPORTHO	 7
+			for (screen = main->screen.first; screen; screen = screen->id.next) {
+				ScrArea *sa;
+				for (sa = screen->areabase.first; sa; sa = sa->next) {
+					SpaceLink *sl;
+					for (sl = sa->spacedata.first; sl; sl = sl->next) {
+						if (sl->spacetype == SPACE_VIEW3D) {
+							ARegion *ar;
+							ListBase *lb = (sl == sa->spacedata.first) ? &sa->regionbase : &sl->regionbase;
+							for (ar = lb->first; ar; ar = ar->next) {
+								if (ar->regiontype == RGN_TYPE_WINDOW) {
+									if (ar->regiondata) {
+										RegionView3D *rv3d = ar->regiondata;
+										if (rv3d->view == RV3D_VIEW_PERSPORTHO) {
+											rv3d->view = RV3D_VIEW_USER;
+										}
+									}
+								}
+							}
+							break;
+						}
+					}
+				}
+			}
+#undef RV3D_VIEW_PERSPORTHO
+		}
+
+		{
+			Lamp *lamp;
+#define LA_YF_PHOTON	5
+			for (lamp = main->lamp.first; lamp; lamp = lamp->id.next) {
+				if (lamp->type == LA_YF_PHOTON) {
+					lamp->type = LA_LOCAL;
+				}
+			}
+#undef LA_YF_PHOTON
+		}
+
+		{
+			Object *ob;
+			for (ob = main->object.first; ob; ob = ob->id.next) {
+				if (ob->body_type == OB_BODY_TYPE_CHARACTER && (ob->gameflag & OB_BOUNDS) && ob->collision_boundtype == OB_BOUND_TRIANGLE_MESH) {
+					ob->boundtype = ob->collision_boundtype = OB_BOUND_BOX;
+				}
+			}
+		}
+
+	}
+
+	if (!MAIN_VERSION_ATLEAST(main, 276, 3)) {
+		if (!DNA_struct_elem_find(fd->filesdna, "RenderData", "CurveMapping", "mblur_shutter_curve")) {
+			Scene *scene;
+			for (scene = main->scene.first; scene != NULL; scene = scene->id.next) {
+				CurveMapping *curve_mapping = &scene->r.mblur_shutter_curve;
+				curvemapping_set_defaults(curve_mapping, 1, 0.0f, 0.0f, 1.0f, 1.0f);
+				curvemapping_initialize(curve_mapping);
+				curvemap_reset(curve_mapping->cm,
+				               &curve_mapping->clipr,
+				               CURVE_PRESET_MAX,
+				               CURVEMAP_SLOPE_POS_NEG);
+			}
+		}
+	}
+
+	if (!MAIN_VERSION_ATLEAST(main, 276, 4)) {
+		for (Scene *scene = main->scene.first; scene; scene = scene->id.next) {
+			ToolSettings *ts = scene->toolsettings;
+			
+			if (ts->gp_sculpt.brush[0].size == 0) {
+				GP_BrushEdit_Settings *gset = &ts->gp_sculpt;
+				GP_EditBrush_Data *brush;
+				
+				brush = &gset->brush[GP_EDITBRUSH_TYPE_SMOOTH];
+				brush->size = 25;
+				brush->strength = 0.3f;
+				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_SMOOTH_PRESSURE;
+				
+				brush = &gset->brush[GP_EDITBRUSH_TYPE_THICKNESS];
+				brush->size = 25;
+				brush->strength = 0.5f;
+				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
+				
+				brush = &gset->brush[GP_EDITBRUSH_TYPE_GRAB];
+				brush->size = 50;
+				brush->strength = 0.3f;
+				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
+				
+				brush = &gset->brush[GP_EDITBRUSH_TYPE_PUSH];
+				brush->size = 25;
+				brush->strength = 0.3f;
+				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
+				
+				brush = &gset->brush[GP_EDITBRUSH_TYPE_TWIST];
+				brush->size = 50;
+				brush->strength = 0.3f; // XXX?
+				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
+				
+				brush = &gset->brush[GP_EDITBRUSH_TYPE_PINCH];
+				brush->size = 50;
+				brush->strength = 0.5f; // XXX?
+				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
+				
+				brush = &gset->brush[GP_EDITBRUSH_TYPE_RANDOMIZE];
+				brush->size = 25;
+				brush->strength = 0.5f;
+				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
+				
+				brush = &gset->brush[GP_EDITBRUSH_TYPE_CLONE];
+				brush->size = 50;
+				brush->strength = 1.0f;
+			}
+			
+			if (!DNA_struct_elem_find(fd->filesdna, "ToolSettings", "char", "gpencil_v3d_align")) {
+#if 0 /* XXX: Cannot do this, as we get random crashes... */
+				if (scene->gpd) {
+					bGPdata *gpd = scene->gpd;
+					
+					/* Copy over the settings stored in the GP datablock linked to the scene, for minimal disruption */
+					ts->gpencil_v3d_align = 0;
+					
+					if (gpd->flag & GP_DATA_VIEWALIGN)    ts->gpencil_v3d_align |= GP_PROJECT_VIEWSPACE;
+					if (gpd->flag & GP_DATA_DEPTH_VIEW)   ts->gpencil_v3d_align |= GP_PROJECT_DEPTH_VIEW;
+					if (gpd->flag & GP_DATA_DEPTH_STROKE) ts->gpencil_v3d_align |= GP_PROJECT_DEPTH_STROKE;
+					
+					if (gpd->flag & GP_DATA_DEPTH_STROKE_ENDPOINTS)
+						ts->gpencil_v3d_align |= GP_PROJECT_DEPTH_STROKE_ENDPOINTS;
+				}
+				else {
+					/* Default to cursor for all standard 3D views */
+					ts->gpencil_v3d_align = GP_PROJECT_VIEWSPACE;
+				}
+#endif
+				
+				ts->gpencil_v3d_align = GP_PROJECT_VIEWSPACE;
+				ts->gpencil_v2d_align = GP_PROJECT_VIEWSPACE;
+				ts->gpencil_seq_align = GP_PROJECT_VIEWSPACE;
+				ts->gpencil_ima_align = GP_PROJECT_VIEWSPACE;
+			}
+		}
+		
+		for (bGPdata *gpd = main->gpencil.first; gpd; gpd = gpd->id.next) {
+			bool enabled = false;
+			
+			/* Ensure that the datablock's onionskinning toggle flag
+			 * stays in sync with the status of the actual layers
+			 */
+			for (bGPDlayer *gpl = gpd->layers.first; gpl; gpl = gpl->next) {
+				if (gpl->flag & GP_LAYER_ONIONSKIN) {
+					enabled = true;
+				}
+			}
+			
+			if (enabled)
+				gpd->flag |= GP_DATA_SHOW_ONIONSKINS;
+			else
+				gpd->flag &= ~GP_DATA_SHOW_ONIONSKINS;
+		}
+
+		if (!DNA_struct_elem_find(fd->filesdna, "Object", "unsigned char", "max_jumps")) {
+			for (Object *ob = main->object.first; ob; ob = ob->id.next) {
+				ob->max_jumps = 1;
+			}
+		}
+	}
+	if (!MAIN_VERSION_ATLEAST(main, 276, 5)) {
+		ListBase *lbarray[MAX_LIBARRAY];
+		int a;
+
+		/* Important to clear all non-persistent flags from older versions here, otherwise they could collide
+		 * with any new persistent flag we may add in the future. */
+		a = set_listbasepointers(main, lbarray);
+		while (a--) {
+			for (ID *id = lbarray[a]->first; id; id = id->next) {
+				id->flag &= LIB_FAKEUSER;
+			}
+		}
+	}
+
+	if (!MAIN_VERSION_ATLEAST(main, 276, 7)) {
+		Scene *scene;
+		for (scene = main->scene.first; scene != NULL; scene = scene->id.next) {
+			scene->r.bake.pass_filter = R_BAKE_PASS_FILTER_ALL;
 		}
 	}
 }

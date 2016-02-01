@@ -28,7 +28,7 @@ class BVHParams
 {
 public:
 	/* spatial split area threshold */
-	int use_spatial_split;
+	bool use_spatial_split;
 	float spatial_split_alpha;
 
 	/* SAH costs */
@@ -41,13 +41,10 @@ public:
 	int max_curve_leaf_size;
 
 	/* object or mesh level bvh */
-	int top_level;
-
-	/* disk cache */
-	int use_cache;
+	bool top_level;
 
 	/* QBVH */
-	int use_qbvh;
+	bool use_qbvh;
 
 	/* fixed parameters */
 	enum {
@@ -71,7 +68,6 @@ public:
 		max_curve_leaf_size = 2;
 
 		top_level = false;
-		use_cache = false;
 		use_qbvh = false;
 	}
 
@@ -113,7 +109,9 @@ public:
 	__forceinline int prim_type() const { return type; }
 
 	BVHReference& operator=(const BVHReference &arg) {
-		memcpy(this, &arg, sizeof(BVHReference));
+		if(&arg != this) {
+			memcpy(this, &arg, sizeof(BVHReference));
+		}
 		return *this;
 	}
 

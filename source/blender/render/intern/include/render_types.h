@@ -58,7 +58,6 @@ struct MemArena;
 struct VertTableNode;
 struct VlakTableNode;
 struct GHash;
-struct RenderBuckets;
 struct ObjectInstanceRen;
 struct RayObject;
 struct RayFace;
@@ -123,8 +122,7 @@ enum {
 };
 
 /* controls state of render, everything that's read-only during render stage */
-struct Render
-{
+struct Render {
 	struct Render *next, *prev;
 	char name[RE_MAXNAME];
 	int slot;
@@ -194,6 +192,7 @@ struct Render
 	struct Object *camera_override;
 	unsigned int lay, layer_override;
 	
+	ThreadRWMutex partsmutex;
 	ListBase parts;
 	
 	/* render engine */
@@ -275,6 +274,9 @@ struct Render
 
 	struct ImagePool *pool;
 	struct EvaluationContext *eval_ctx;
+
+	void **movie_ctx_arr;
+	char viewname[MAX_NAME];
 };
 
 /* ------------------------------------------------------------------------- */
@@ -351,6 +353,10 @@ typedef struct ObjectInstanceRen {
 
 	float mat[4][4], imat[4][4];
 	float nmat[3][3]; /* nmat is inverse mat tranposed */
+
+	float obmat[4][4], obinvmat[4][4];
+	float localtoviewmat[4][4], localtoviewinvmat[4][4];
+
 	short flag;
 
 	float dupliorco[3], dupliuv[2];
@@ -365,6 +371,14 @@ typedef struct ObjectInstanceRen {
 	struct RayObject *raytree;
 	int transform_primitives;
 
+	/* Particle info */
+	float part_index;
+	float part_age;
+	float part_lifetime;
+	float part_size;
+	float part_co[3];
+	float part_vel[3];
+	float part_avel[3];
 } ObjectInstanceRen;
 
 /* ------------------------------------------------------------------------- */
@@ -388,7 +402,6 @@ struct halosort {
 
 /* ------------------------------------------------------------------------- */
 struct Material;
-struct MTFace;
 struct ImagePool;
 
 typedef struct RadFace {

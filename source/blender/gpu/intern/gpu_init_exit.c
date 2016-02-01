@@ -29,11 +29,16 @@
  *  \ingroup gpu
  */
 
+#include "BKE_DerivedMesh.h"
+
 #include "BLI_sys_types.h"
 #include "GPU_init_exit.h"  /* interface */
+#include "GPU_buffers.h"
+
+#include "BKE_global.h"
 
 #include "intern/gpu_codegen.h"
-#include "intern/gpu_extensions_private.h"
+#include "intern/gpu_private.h"
 
 /**
  * although the order of initialization and shutdown should not matter
@@ -44,7 +49,7 @@ static bool initialized = false;
 
 void GPU_init(void)
 {
-	/* can't avoid calling this multiple times, see wm_window_add_ghostwindow */
+	/* can't avoid calling this multiple times, see wm_window_ghostwindow_add */
 	if (initialized)
 		return;
 
@@ -53,15 +58,22 @@ void GPU_init(void)
 	gpu_extensions_init(); /* must come first */
 
 	gpu_codegen_init();
+
+	if (G.debug & G_DEBUG_GPU)
+		gpu_debug_init();
+
 }
 
 
 
 void GPU_exit(void)
 {
+	if (G.debug & G_DEBUG_GPU)
+		gpu_debug_exit();
 	gpu_codegen_exit();
 
 	gpu_extensions_exit(); /* must come last */
+	GPU_buffer_multires_free(true);
 
 	initialized = false;
 }

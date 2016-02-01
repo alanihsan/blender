@@ -41,6 +41,7 @@
 #include "BLI_string.h"
 #include "BLI_listbase.h"
 #include "BLI_ghash.h"
+#include "BLI_task.h"
 #include "BLI_threads.h"
 
 #include "DNA_meshdata_types.h"
@@ -265,6 +266,13 @@ static int sculpt_undo_restore_mask(bContext *C, DerivedMesh *dm, SculptUndoNode
 	return 1;
 }
 
+static void sculpt_undo_bmesh_restore_generic_task_cb(void *userdata, const int n)
+{
+	PBVHNode **nodes = userdata;
+
+	BKE_pbvh_node_mark_redraw(nodes[n]);
+}
+
 static void sculpt_undo_bmesh_restore_generic(bContext *C,
                                               SculptUndoNode *unode,
                                               Object *ob,
@@ -279,22 +287,16 @@ static void sculpt_undo_bmesh_restore_generic(bContext *C,
 		unode->applied = true;
 	}
 
-	if (ELEM(unode->type, SCULPT_UNDO_MASK, SCULPT_UNDO_MASK)) {
-		int i, totnode;
+	if (unode->type == SCULPT_UNDO_MASK) {
+		int totnode;
 		PBVHNode **nodes;
-
-#ifdef _OPENMP
 		Sculpt *sd = CTX_data_tool_settings(C)->sculpt;
-#else
-		(void)C;
-#endif
 
 		BKE_pbvh_search_gather(ss->pbvh, NULL, NULL, &nodes, &totnode);
 
-#pragma omp parallel for schedule(guided) if ((sd->flags & SCULPT_USE_OPENMP) && totnode > SCULPT_OMP_LIMIT)
-		for (i = 0; i < totnode; i++) {
-			BKE_pbvh_node_mark_redraw(nodes[i]);
-		}
+		BLI_task_parallel_range(
+		            0, totnode, nodes, sculpt_undo_bmesh_restore_generic_task_cb,
+		            ((sd->flags & SCULPT_USE_OPENMP) && totnode > SCULPT_THREADED_LIMIT));
 
 		if (nodes)
 			MEM_freeN(nodes);
@@ -484,7 +486,7 @@ static void sculpt_undo_restore(bContext *C, ListBase *lb)
 			BKE_mesh_calc_normals_tessface(mesh->mvert, mesh->totvert,
 			                               mesh->mface, mesh->totface, NULL);
 
-			BKE_free_sculptsession_deformMats(ss);
+			BKE_sculptsession_free_deformMats(ss);
 			tag_update |= true;
 		}
 
@@ -581,7 +583,7 @@ static void sculpt_undo_alloc_and_store_hidden(PBVH *pbvh,
 	grid_hidden = BKE_pbvh_grid_hidden(pbvh);
 
 	BKE_pbvh_node_get_grids(pbvh, node, &grid_indices, &totgrid,
-	                        NULL, NULL, NULL, NULL);
+	                        NULL, NULL, NULL);
 			
 	unode->grid_hidden = MEM_mapallocN(sizeof(*unode->grid_hidden) * totgrid,
 	                                   "unode->grid_hidden");
@@ -610,7 +612,7 @@ static SculptUndoNode *sculpt_undo_alloc_node(Object *ob, PBVHNode *node,
 	if (node) {
 		BKE_pbvh_node_num_verts(ss->pbvh, node, &totvert, &allvert);
 		BKE_pbvh_node_get_grids(ss->pbvh, node, &grids, &totgrid,
-		                        &maxgrid, &gridsize, NULL, NULL);
+		                        &maxgrid, &gridsize, NULL);
 
 		unode->totvert = totvert;
 	}
@@ -695,7 +697,8 @@ static void sculpt_undo_store_hidden(Object *ob, SculptUndoNode *unode)
 	}
 	else {
 		MVert *mvert;
-		int *vert_indices, allvert;
+		const int *vert_indices;
+		int allvert;
 		int i;
 		
 		BKE_pbvh_node_num_verts(pbvh, node, NULL, &allvert);
@@ -842,11 +845,12 @@ SculptUndoNode *sculpt_undo_push_node(Object *ob, PBVHNode *node,
 	if (unode->grids) {
 		int totgrid, *grids;
 		BKE_pbvh_node_get_grids(ss->pbvh, node, &grids, &totgrid,
-		                        NULL, NULL, NULL, NULL);
+		                        NULL, NULL, NULL);
 		memcpy(unode->grids, grids, sizeof(int) * totgrid);
 	}
 	else {
-		int *vert_indices, allvert;
+		const int *vert_indices;
+		int allvert;
 		BKE_pbvh_node_num_verts(ss->pbvh, node, NULL, &allvert);
 		BKE_pbvh_node_get_verts(ss->pbvh, node, &vert_indices, NULL);
 		memcpy(unode->index, vert_indices, sizeof(int) * unode->totvert);
@@ -882,7 +886,7 @@ void sculpt_undo_push_begin(const char *name)
 	                         sculpt_undo_restore, sculpt_undo_free, sculpt_undo_cleanup);
 }
 
-void sculpt_undo_push_end(void)
+void sculpt_undo_push_end(const bContext *C)
 {
 	ListBase *lb = undo_paint_push_get_list(UNDO_PAINT_MESH);
 	SculptUndoNode *unode;
@@ -899,4 +903,6 @@ void sculpt_undo_push_end(void)
 	}
 
 	ED_undo_paint_push_end(UNDO_PAINT_MESH);
+
+	WM_file_tag_modified(C);
 }

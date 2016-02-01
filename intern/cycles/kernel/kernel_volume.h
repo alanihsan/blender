@@ -39,7 +39,7 @@ typedef struct VolumeShaderCoefficients {
 ccl_device bool volume_shader_extinction_sample(KernelGlobals *kg, ShaderData *sd, PathState *state, float3 P, float3 *extinction)
 {
 	sd->P = P;
-	shader_eval_volume(kg, sd, state->volume_stack, PATH_RAY_SHADOW, SHADER_CONTEXT_SHADOW);
+	shader_eval_volume(kg, sd, state, state->volume_stack, PATH_RAY_SHADOW, SHADER_CONTEXT_SHADOW);
 
 	if(!(sd->flag & (SD_ABSORPTION|SD_SCATTER)))
 		return false;
@@ -61,7 +61,7 @@ ccl_device bool volume_shader_extinction_sample(KernelGlobals *kg, ShaderData *s
 ccl_device bool volume_shader_sample(KernelGlobals *kg, ShaderData *sd, PathState *state, float3 P, VolumeShaderCoefficients *coeff)
 {
 	sd->P = P;
-	shader_eval_volume(kg, sd, state->volume_stack, state->flag, SHADER_CONTEXT_VOLUME);
+	shader_eval_volume(kg, sd, state, state->volume_stack, state->flag, SHADER_CONTEXT_VOLUME);
 
 	if(!(sd->flag & (SD_ABSORPTION|SD_SCATTER|SD_EMISSION)))
 		return false;
@@ -222,7 +222,7 @@ ccl_device void kernel_volume_shadow_heterogeneous(KernelGlobals *kg, PathState 
 ccl_device_noinline void kernel_volume_shadow(KernelGlobals *kg, PathState *state, Ray *ray, float3 *throughput)
 {
 	ShaderData sd;
-	shader_setup_from_volume(kg, &sd, ray, state->bounce, state->transparent_bounce);
+	shader_setup_from_volume(kg, &sd, ray);
 
 	if(volume_stack_is_heterogeneous(kg, state->volume_stack))
 		kernel_volume_shadow_heterogeneous(kg, state, ray, &sd, throughput);
@@ -374,7 +374,7 @@ ccl_device VolumeIntegrateResult kernel_volume_integrate_homogeneous(KernelGloba
 			/* distance sampling */
 			sample_t = kernel_volume_distance_sample(ray->t, sigma_t, channel, xi, &transmittance, &pdf);
 
-			/* modifiy pdf for hit/miss decision */
+			/* modify pdf for hit/miss decision */
 			if(probalistic_scatter)
 				pdf *= make_float3(1.0f, 1.0f, 1.0f) - volume_color_transmittance(sigma_t, t);
 
@@ -422,7 +422,7 @@ ccl_device VolumeIntegrateResult kernel_volume_integrate_homogeneous(KernelGloba
 
 /* heterogeneous volume distance sampling: integrate stepping through the
  * volume until we reach the end, get absorbed entirely, or run out of
- * iterations. this does probalistically scatter or get transmitted through
+ * iterations. this does probabilistically scatter or get transmitted through
  * for path tracing where we don't want to branch. */
 ccl_device VolumeIntegrateResult kernel_volume_integrate_heterogeneous_distance(KernelGlobals *kg,
 	PathState *state, Ray *ray, ShaderData *sd, PathRadiance *L, float3 *throughput, RNG *rng)
@@ -567,7 +567,7 @@ ccl_device_noinline VolumeIntegrateResult kernel_volume_integrate(KernelGlobals 
 	 * performance of rendering without volumes */
 	RNG tmp_rng = cmj_hash(*rng, state->rng_offset);
 
-	shader_setup_from_volume(kg, sd, ray, state->bounce, state->transparent_bounce);
+	shader_setup_from_volume(kg, sd, ray);
 
 	if(heterogeneous)
 		return kernel_volume_integrate_heterogeneous_distance(kg, state, ray, sd, L, throughput, &tmp_rng);
@@ -578,7 +578,7 @@ ccl_device_noinline VolumeIntegrateResult kernel_volume_integrate(KernelGlobals 
 /* Decoupled Volume Sampling
  *
  * VolumeSegment is list of coefficients and transmittance stored at all steps
- * through a volume. This can then latter be used for decoupled sampling as in:
+ * through a volume. This can then later be used for decoupled sampling as in:
  * "Importance Sampling Techniques for Path Tracing in Participating Media"
  *
  * On the GPU this is only supported (but currently not enabled)
@@ -610,7 +610,7 @@ typedef struct VolumeSegment {
 /* record volume steps to the end of the volume.
  *
  * it would be nice if we could only record up to the point that we need to scatter,
- * but the entire segment is needed to do always scattering, rather than probalistically
+ * but the entire segment is needed to do always scattering, rather than probabilistically
  * hitting or missing the volume. if we don't know the transmittance at the end of the
  * volume we can't generate stratified distance samples up to that transmittance */
 ccl_device void kernel_volume_decoupled_record(KernelGlobals *kg, PathState *state,
@@ -623,13 +623,16 @@ ccl_device void kernel_volume_decoupled_record(KernelGlobals *kg, PathState *sta
 	float step_size, random_jitter_offset;
 
 	if(heterogeneous) {
-		max_steps = kernel_data.integrator.volume_max_steps;
+		const int global_max_steps = kernel_data.integrator.volume_max_steps;
 		step_size = kernel_data.integrator.volume_step_size;
-		random_jitter_offset = lcg_step_float(&state->rng_congruential) * step_size;
-
 		/* compute exact steps in advance for malloc */
 		max_steps = max((int)ceilf(ray->t/step_size), 1);
+		if(max_steps > global_max_steps) {
+			max_steps = global_max_steps;
+			step_size = ray->t / (float)max_steps;
+		}
 		segment->steps = (VolumeStep*)malloc(sizeof(VolumeStep)*max_steps);
+		random_jitter_offset = lcg_step_float(&state->rng_congruential) * step_size;
 	}
 	else {
 		max_steps = 1;
@@ -646,6 +649,7 @@ ccl_device void kernel_volume_decoupled_record(KernelGlobals *kg, PathState *sta
 
 	segment->numsteps = 0;
 	segment->closure_flag = 0;
+	bool is_last_step_empty = false;
 
 	VolumeStep *step = segment->steps;
 
@@ -687,20 +691,30 @@ ccl_device void kernel_volume_decoupled_record(KernelGlobals *kg, PathState *sta
 			step->closure_flag = closure_flag;
 
 			segment->closure_flag |= closure_flag;
+
+			is_last_step_empty = false;
+			segment->numsteps++;
 		}
 		else {
-			/* store empty step (todo: skip consecutive empty steps) */
-			step->sigma_t = make_float3(0.0f, 0.0f, 0.0f);
-			step->sigma_s = make_float3(0.0f, 0.0f, 0.0f);
-			step->closure_flag = 0;
+			if(is_last_step_empty) {
+				/* consecutive empty step, merge */
+				step--;
+			}
+			else {
+				/* store empty step */
+				step->sigma_t = make_float3(0.0f, 0.0f, 0.0f);
+				step->sigma_s = make_float3(0.0f, 0.0f, 0.0f);
+				step->closure_flag = 0;
+
+				segment->numsteps++;
+				is_last_step_empty = true;
+			}
 		}
 
 		step->accum_transmittance = accum_transmittance;
 		step->cdf_distance = cdf_distance;
 		step->t = new_t;
 		step->shade_t = t + random_jitter_offset;
-
-		segment->numsteps++;
 
 		/* stop if at the end of the volume */
 		t = new_t;
@@ -736,7 +750,7 @@ ccl_device void kernel_volume_decoupled_free(KernelGlobals *kg, VolumeSegment *s
 }
 
 /* scattering for homogeneous and heterogeneous volumes, using decoupled ray
- * marching. this function does not do emission or modify throughput. 
+ * marching.
  *
  * function is expected to return VOLUME_PATH_SCATTERED when probalistic_scatter is false */
 ccl_device VolumeIntegrateResult kernel_volume_decoupled_scatter(
@@ -752,7 +766,7 @@ ccl_device VolumeIntegrateResult kernel_volume_decoupled_scatter(
 	sd->randb_closure = rphase*3.0f - channel;
 	float xi = rscatter;
 
-	/* probalistic scattering decision based on transmittance */
+	/* probabilistic scattering decision based on transmittance */
 	if(probalistic_scatter) {
 		float sample_transmittance = kernel_volume_channel_get(segment->accum_transmittance, channel);
 
@@ -832,7 +846,7 @@ ccl_device VolumeIntegrateResult kernel_volume_decoupled_scatter(
 		float3 distance_pdf;
 		sample_t = prev_t + kernel_volume_distance_sample(step_t, step->sigma_t, channel, xi, &transmittance, &distance_pdf);
 
-		/* modifiy pdf for hit/miss decision */
+		/* modify pdf for hit/miss decision */
 		if(probalistic_scatter)
 			distance_pdf *= make_float3(1.0f, 1.0f, 1.0f) - segment->accum_transmittance;
 
@@ -928,7 +942,7 @@ ccl_device VolumeIntegrateResult kernel_volume_decoupled_scatter(
 /* decide if we need to use decoupled or not */
 ccl_device bool kernel_volume_use_decoupled(KernelGlobals *kg, bool heterogeneous, bool direct, int sampling_method)
 {
-	/* decoupled ray marching for heterogenous volumes not supported on the GPU,
+	/* decoupled ray marching for heterogeneous volumes not supported on the GPU,
 	 * which also means equiangular and multiple importance sampling is not
 	 * support for that case */
 #ifdef __KERNEL_GPU__
@@ -979,6 +993,48 @@ ccl_device void kernel_volume_stack_init(KernelGlobals *kg,
 	volume_ray.t = FLT_MAX;
 
 	int stack_index = 0, enclosed_index = 0;
+
+#ifdef __VOLUME_RECORD_ALL__
+	Intersection hits[2*VOLUME_STACK_SIZE];
+	uint num_hits = scene_intersect_volume_all(kg,
+	                                           &volume_ray,
+	                                           hits,
+	                                           2*VOLUME_STACK_SIZE);
+	if(num_hits > 0) {
+		int enclosed_volumes[VOLUME_STACK_SIZE];
+		Intersection *isect = hits;
+
+		qsort(hits, num_hits, sizeof(Intersection), intersections_compare);
+
+		for(uint hit = 0; hit < num_hits; ++hit, ++isect) {
+			ShaderData sd;
+			shader_setup_from_ray(kg, &sd, isect, &volume_ray);
+			if(sd.flag & SD_BACKFACING) {
+				/* If ray exited the volume and never entered to that volume
+				 * it means that camera is inside such a volume.
+				 */
+				bool is_enclosed = false;
+				for(int i = 0; i < enclosed_index; ++i) {
+					if(enclosed_volumes[i] == sd.object) {
+						is_enclosed = true;
+						break;
+					}
+				}
+				if(is_enclosed == false) {
+					stack[stack_index].object = sd.object;
+					stack[stack_index].shader = sd.shader;
+					++stack_index;
+				}
+			}
+			else {
+				/* If ray from camera enters the volume, this volume shouldn't
+				 * be added to the stack on exit.
+				 */
+				enclosed_volumes[enclosed_index++] = sd.object;
+			}
+		}
+	}
+#else
 	int enclosed_volumes[VOLUME_STACK_SIZE];
 	int step = 0;
 
@@ -992,7 +1048,7 @@ ccl_device void kernel_volume_stack_init(KernelGlobals *kg,
 		}
 
 		ShaderData sd;
-		shader_setup_from_ray(kg, &sd, &isect, &volume_ray, 0, 0);
+		shader_setup_from_ray(kg, &sd, &isect, &volume_ray);
 		if(sd.flag & SD_BACKFACING) {
 			/* If ray exited the volume and never entered to that volume
 			 * it means that camera is inside such a volume.
@@ -1021,6 +1077,7 @@ ccl_device void kernel_volume_stack_init(KernelGlobals *kg,
 		volume_ray.P = ray_offset(sd.P, -sd.Ng);
 		++step;
 	}
+#endif
 	/* stack_index of 0 means quick checks outside of the kernel gave false
 	 * positive, nothing to worry about, just we've wasted quite a few of
 	 * ticks just to come into conclusion that camera is in the air.
@@ -1082,5 +1139,50 @@ ccl_device void kernel_volume_stack_enter_exit(KernelGlobals *kg, ShaderData *sd
 		stack[i+1].shader = SHADER_NONE;
 	}
 }
+
+#ifdef __SUBSURFACE__
+ccl_device void kernel_volume_stack_update_for_subsurface(KernelGlobals *kg,
+                                                          Ray *ray,
+                                                          VolumeStack *stack)
+{
+	kernel_assert(kernel_data.integrator.use_volumes);
+
+	Ray volume_ray = *ray;
+
+#ifdef __VOLUME_RECORD_ALL__
+	Intersection hits[2*VOLUME_STACK_SIZE];
+	uint num_hits = scene_intersect_volume_all(kg,
+	                                           &volume_ray,
+	                                           hits,
+	                                           2*VOLUME_STACK_SIZE);
+	if(num_hits > 0) {
+		Intersection *isect = hits;
+
+		qsort(hits, num_hits, sizeof(Intersection), intersections_compare);
+
+		for(uint hit = 0; hit < num_hits; ++hit, ++isect) {
+			ShaderData sd;
+			shader_setup_from_ray(kg, &sd, isect, &volume_ray);
+			kernel_volume_stack_enter_exit(kg, &sd, stack);
+		}
+	}
+#else
+	Intersection isect;
+	int step = 0;
+	while(step < 2 * VOLUME_STACK_SIZE &&
+	      scene_intersect_volume(kg, &volume_ray, &isect))
+	{
+		ShaderData sd;
+		shader_setup_from_ray(kg, &sd, &isect, &volume_ray);
+		kernel_volume_stack_enter_exit(kg, &sd, stack);
+
+		/* Move ray forward. */
+		volume_ray.P = ray_offset(sd.P, -sd.Ng);
+		volume_ray.t -= sd.ray_length;
+		++step;
+	}
+#endif
+}
+#endif
 
 CCL_NAMESPACE_END

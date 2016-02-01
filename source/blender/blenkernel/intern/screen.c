@@ -180,6 +180,7 @@ ARegion *BKE_area_region_copy(SpaceType *st, ARegion *ar)
 	BLI_listbase_clear(&newar->panels_category_active);
 	BLI_listbase_clear(&newar->ui_lists);
 	newar->swinid = 0;
+	newar->regiontimer = NULL;
 	
 	/* use optional regiondata callback */
 	if (ar->regiondata) {
@@ -272,6 +273,19 @@ void BKE_spacedata_draw_locks(int set)
 	}
 }
 
+static void (*spacedata_id_unref_cb)(struct SpaceLink *sl, const struct ID *id) = NULL;
+
+void BKE_spacedata_callback_id_unref_set(void (*func)(struct SpaceLink *sl, const struct ID *))
+{
+	spacedata_id_unref_cb = func;
+}
+
+void BKE_spacedata_id_unref(struct SpaceLink *sl, const struct ID *id)
+{
+	if (spacedata_id_unref_cb) {
+		spacedata_id_unref_cb(sl, id);
+	}
+}
 
 /* not region itself */
 void BKE_area_region_free(SpaceType *st, ARegion *ar)
@@ -295,7 +309,16 @@ void BKE_area_region_free(SpaceType *st, ARegion *ar)
 		ar->v2d.tab_offset = NULL;
 	}
 
-	BLI_freelistN(&ar->panels);
+	if (!BLI_listbase_is_empty(&ar->panels)) {
+		Panel *pa, *pa_next;
+		for (pa = ar->panels.first; pa; pa = pa_next) {
+			pa_next = pa->next;
+			if (pa->activedata) {
+				MEM_freeN(pa->activedata);
+			}
+			MEM_freeN(pa);
+		}
+	}
 
 	for (uilst = ar->ui_lists.first; uilst; uilst = uilst->next) {
 		if (uilst->dyn_data) {
@@ -405,6 +428,23 @@ ARegion *BKE_area_find_region_active_win(ScrArea *sa)
 	return NULL;
 }
 
+ARegion *BKE_area_find_region_xy(ScrArea *sa, const int regiontype, int x, int y)
+{
+	ARegion *ar_found = NULL;
+	if (sa) {
+		ARegion *ar;
+		for (ar = sa->regionbase.first; ar; ar = ar->next) {
+			if ((regiontype == RGN_TYPE_ANY) || (ar->regiontype == regiontype)) {
+				if (BLI_rcti_isect_pt(&ar->winrct, x, y)) {
+					ar_found = ar;
+					break;
+				}
+			}
+		}
+	}
+	return ar_found;
+}
+
 /**
  * \note, ideally we can get the area from the context,
  * there are a few places however where this isn't practical.
@@ -488,6 +528,23 @@ unsigned int BKE_screen_view3d_layer_active(const struct View3D *v3d, const stru
 	return BKE_screen_view3d_layer_active_ex(v3d, scene, true);
 }
 
+/**
+ * Accumulate all visible layers on this screen.
+ */
+unsigned int BKE_screen_view3d_layer_all(const bScreen *sc)
+{
+	const ScrArea *sa;
+	unsigned int lay = 0;
+	for (sa = sc->areabase.first; sa; sa = sa->next) {
+		if (sa->spacetype == SPACE_VIEW3D) {
+			View3D *v3d = sa->spacedata.first;
+			lay |= v3d->lay;
+		}
+	}
+
+	return lay;
+}
+
 void BKE_screen_view3d_sync(View3D *v3d, struct Scene *scene)
 {
 	int bit;
@@ -510,8 +567,8 @@ void BKE_screen_view3d_sync(View3D *v3d, struct Scene *scene)
 
 		if ((v3d->lay & v3d->layact) == 0) {
 			for (bit = 0; bit < 32; bit++) {
-				if (v3d->lay & (1 << bit)) {
-					v3d->layact = 1 << bit;
+				if (v3d->lay & (1u << bit)) {
+					v3d->layact = (1u << bit);
 					break;
 				}
 			}

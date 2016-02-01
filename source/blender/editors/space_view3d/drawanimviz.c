@@ -51,7 +51,6 @@
 
 #include "BIF_gl.h"
 
-#include "ED_armature.h"
 #include "ED_keyframes_draw.h"
 
 
@@ -221,7 +220,6 @@ void draw_motion_path_instance(Scene *scene,
 		glVertex3fv(mpv->co);
 		glEnd();
 		
-		glPointSize(1.0f);
 		UI_ThemeColor(TH_TEXT_HI);
 	}
 	
@@ -305,8 +303,6 @@ void draw_motion_path_instance(Scene *scene,
 				glVertex3fv(mpv->co);
 		}
 		glEnd();
-		
-		glPointSize(1.0f);
 		
 		/* Draw frame numbers of keyframes  */
 		if (avs->path_viewflag & MOTIONPATH_VIEW_KFNOS) {

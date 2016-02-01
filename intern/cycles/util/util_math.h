@@ -175,6 +175,15 @@ ccl_device_inline float clamp(float a, float mn, float mx)
 
 #endif
 
+#ifndef __KERNEL_CUDA__
+
+ccl_device_inline float saturate(float a)
+{
+	return clamp(a, 0.0f, 1.0f);
+}
+
+#endif
+
 ccl_device_inline int float_to_int(float f)
 {
 	return (int)f;
@@ -342,7 +351,7 @@ ccl_device_inline float2 normalize_len(const float2 a, float *t)
 ccl_device_inline float2 safe_normalize(const float2 a)
 {
 	float t = len(a);
-	return (t)? a/t: a;
+	return (t != 0.0f)? a/t: a;
 }
 
 ccl_device_inline bool operator==(const float2 a, const float2 b)
@@ -544,7 +553,7 @@ ccl_device_inline float3 normalize_len(const float3 a, float *t)
 ccl_device_inline float3 safe_normalize(const float3 a)
 {
 	float t = len(a);
-	return (t)? a/t: a;
+	return (t != 0.0f)? a/t: a;
 }
 
 #ifndef __KERNEL_OPENCL__
@@ -857,7 +866,7 @@ ccl_device_inline float4 normalize(const float4 a)
 ccl_device_inline float4 safe_normalize(const float4 a)
 {
 	float t = len(a);
-	return (t)? a/t: a;
+	return (t != 0.0f)? a/t: a;
 }
 
 ccl_device_inline float4 min(float4 a, float4 b)
@@ -926,6 +935,37 @@ ccl_device_inline float4 reduce_add(const float4& a)
 ccl_device_inline void print_float4(const char *label, const float4& a)
 {
 	printf("%s: %.8f %.8f %.8f %.8f\n", label, (double)a.x, (double)a.y, (double)a.z, (double)a.w);
+}
+
+#endif
+
+/* Int2 */
+
+#ifndef __KERNEL_OPENCL__
+
+ccl_device_inline int2 operator+(const int2 &a, const int2 &b)
+{
+	return make_int2(a.x + b.x, a.y + b.y);
+}
+
+ccl_device_inline int2 operator+=(int2 &a, const int2 &b)
+{
+	return a = a + b;
+}
+
+ccl_device_inline int2 operator-(const int2 &a, const int2 &b)
+{
+	return make_int2(a.x - b.x, a.y - b.y);
+}
+
+ccl_device_inline int2 operator*(const int2 &a, const int2 &b)
+{
+	return make_int2(a.x * b.x, a.y * b.y);
+}
+
+ccl_device_inline int2 operator/(const int2 &a, const int2 &b)
+{
+	return make_int2(a.x / b.x, a.y / b.y);
 }
 
 #endif
@@ -1438,10 +1478,9 @@ ccl_device bool ray_triangle_intersect_uv(
 	return true;
 }
 
-ccl_device bool ray_quad_intersect(
-	float3 ray_P, float3 ray_D, float ray_t,
-	float3 quad_P, float3 quad_u, float3 quad_v,
-	float3 *isect_P, float *isect_t)
+ccl_device bool ray_quad_intersect(float3 ray_P, float3 ray_D, float ray_t,
+                                   float3 quad_P, float3 quad_u, float3 quad_v,
+                                   float3 *isect_P, float *isect_t)
 {
 	float3 v0 = quad_P - quad_u*0.5f - quad_v*0.5f;
 	float3 v1 = quad_P + quad_u*0.5f - quad_v*0.5f;
@@ -1457,38 +1496,37 @@ ccl_device bool ray_quad_intersect(
 }
 
 /* projections */
-ccl_device void map_to_tube(float *r_u, float *r_v,
-                            const float x, const float y, const float z)
+ccl_device_inline float2 map_to_tube(const float3 co)
 {
-	float len;
-	*r_v = (z + 1.0f) * 0.5f;
-	len = sqrtf(x * x + y * y);
-	if (len > 0.0f) {
-		*r_u = (1.0f - (atan2f(x / len, y / len) / M_PI_F)) * 0.5f;
+	float len, u, v;
+	len = sqrtf(co.x * co.x + co.y * co.y);
+	if(len > 0.0f) {
+		u = (1.0f - (atan2f(co.x / len, co.y / len) / M_PI_F)) * 0.5f;
+		v = (co.z + 1.0f) * 0.5f;
 	}
 	else {
-		*r_v = *r_u = 0.0f; /* To avoid un-initialized variables. */
+		u = v = 0.0f;
 	}
+	return make_float2(u, v);
 }
 
-ccl_device bool map_to_sphere(float *r_u, float *r_v,
-                              const float x, const float y, const float z)
+ccl_device_inline float2 map_to_sphere(const float3 co)
 {
-	float len = sqrtf(x * x + y * y + z * z);
-	if(len > 0.0f) {
-		if(UNLIKELY(x == 0.0f && y == 0.0f)) {
-			*r_u = 0.0f;  /* othwise domain error */
+	float l = len(co);
+	float u, v;
+	if(l > 0.0f) {
+		if(UNLIKELY(co.x == 0.0f && co.y == 0.0f)) {
+			u = 0.0f;  /* othwise domain error */
 		}
 		else {
-			*r_u = (1.0f - atan2f(x, y) / M_PI_F) / 2.0f;
+			u = (1.0f - atan2f(co.x, co.y) / M_PI_F) / 2.0f;
 		}
-		*r_v = 1.0f - safe_acosf(z / len) / M_PI_F;
-		return true;
+		v = 1.0f - safe_acosf(co.z / l) / M_PI_F;
 	}
 	else {
-		*r_v = *r_u = 0.0f; /* to avoid un-initialized variables */
-		return false;
+		u = v = 0.0f;
 	}
+	return make_float2(u, v);
 }
 
 ccl_device_inline int util_max_axis(float3 vec)

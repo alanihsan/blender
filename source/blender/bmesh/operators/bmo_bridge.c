@@ -87,8 +87,9 @@ static void bm_vert_loop_pair(BMesh *bm, BMVert *v1, BMVert *v2, BMLoop **l1, BM
 }
 
 /* el_b can have any offset */
-static float bm_edgeloop_offset_length(LinkData *el_a, LinkData *el_b,
-                                       LinkData *el_b_first, const float len_max)
+static float bm_edgeloop_offset_length(
+        LinkData *el_a, LinkData *el_b,
+        LinkData *el_b_first, const float len_max)
 {
 	float len = 0.0f;
 	BLI_assert(el_a->prev == NULL);  /* must be first */
@@ -137,10 +138,11 @@ static bool bm_edge_test_cb(BMEdge *e, void *bm_v)
 	return BMO_elem_flag_test((BMesh *)bm_v, e, EDGE_MARK);
 }
 
-static void bridge_loop_pair(BMesh *bm,
-                             struct BMEdgeLoopStore *el_store_a,
-                             struct BMEdgeLoopStore *el_store_b,
-                             const bool use_merge, const float merge_factor, const int twist_offset)
+static void bridge_loop_pair(
+        BMesh *bm,
+        struct BMEdgeLoopStore *el_store_a,
+        struct BMEdgeLoopStore *el_store_b,
+        const bool use_merge, const float merge_factor, const int twist_offset)
 {
 	const float eps = 0.00001f;
 	LinkData *el_a_first, *el_b_first;
@@ -282,7 +284,7 @@ static void bridge_loop_pair(BMesh *bm,
 
 	if (el_store_a_len > el_store_b_len) {
 		el_store_b = BM_edgeloop_copy(el_store_b);
-		BM_edgeloop_expand(bm, el_store_b, el_store_a_len);
+		BM_edgeloop_expand(bm, el_store_b, el_store_a_len, false, NULL);
 		el_store_b_free = true;
 	}
 
@@ -365,10 +367,10 @@ static void bridge_loop_pair(BMesh *bm,
 					f = BM_face_create_verts(bm, v_arr, 4, NULL, BM_CREATE_NOP, true);
 
 					l_iter = BM_FACE_FIRST_LOOP(f);
-					if (l_b)      BM_elem_attrs_copy(bm, bm, l_b,      l_iter); l_iter = l_iter->next;
-					if (l_b_next) BM_elem_attrs_copy(bm, bm, l_b_next, l_iter); l_iter = l_iter->next;
-					if (l_a_next) BM_elem_attrs_copy(bm, bm, l_a_next, l_iter); l_iter = l_iter->next;
-					if (l_a)      BM_elem_attrs_copy(bm, bm, l_a,      l_iter);
+					if (l_b)      { BM_elem_attrs_copy(bm, bm, l_b,      l_iter); } l_iter = l_iter->next;
+					if (l_b_next) { BM_elem_attrs_copy(bm, bm, l_b_next, l_iter); } l_iter = l_iter->next;
+					if (l_a_next) { BM_elem_attrs_copy(bm, bm, l_a_next, l_iter); } l_iter = l_iter->next;
+					if (l_a)      { BM_elem_attrs_copy(bm, bm, l_a,      l_iter); }
 				}
 			}
 			else {
@@ -378,9 +380,9 @@ static void bridge_loop_pair(BMesh *bm,
 					f = BM_face_create_verts(bm, v_arr, 3, NULL, BM_CREATE_NOP, true);
 
 					l_iter = BM_FACE_FIRST_LOOP(f);
-					if (l_b)      BM_elem_attrs_copy(bm, bm, l_b,      l_iter); l_iter = l_iter->next;
-					if (l_a_next) BM_elem_attrs_copy(bm, bm, l_a_next, l_iter); l_iter = l_iter->next;
-					if (l_a)      BM_elem_attrs_copy(bm, bm, l_a,      l_iter);
+					if (l_b)      { BM_elem_attrs_copy(bm, bm, l_b,      l_iter); } l_iter = l_iter->next;
+					if (l_a_next) { BM_elem_attrs_copy(bm, bm, l_a_next, l_iter); } l_iter = l_iter->next;
+					if (l_a)      { BM_elem_attrs_copy(bm, bm, l_a,      l_iter); }
 				}
 			}
 

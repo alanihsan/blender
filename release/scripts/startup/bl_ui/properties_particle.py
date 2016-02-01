@@ -118,7 +118,7 @@ class PARTICLE_UL_particle_systems(bpy.types.UIList):
                 layout.prop(md, "show_render", emboss=False, icon_only=True, icon='RESTRICT_RENDER_OFF' if md.show_render else 'RESTRICT_RENDER_ON')
                 layout.prop(md, "show_viewport", emboss=False, icon_only=True, icon='RESTRICT_VIEW_OFF' if md.show_viewport else 'RESTRICT_VIEW_ON')
 
-        elif self.layout_type in {'GRID'}:
+        elif self.layout_type == 'GRID':
             layout.alignment = 'CENTER'
             layout.label(text="", icon_value=icon)
 
@@ -253,7 +253,7 @@ class PARTICLE_PT_emission(ParticleButtonsPanel, Panel):
         layout.enabled = particle_panel_enabled(context, psys) and (psys is None or not psys.has_multiple_caches)
 
         row = layout.row()
-        row.active = part.distribution != 'GRID'
+        row.active = part.emit_from == 'VERT' or part.distribution != 'GRID'
         row.prop(part, "count")
 
         if part.type == 'HAIR':
@@ -350,7 +350,7 @@ class PARTICLE_PT_hair_dynamics(ParticleButtonsPanel, Panel):
         subsub.prop(cloth, "bending_stiffness", text="Stiffness")
         subsub.prop(psys.settings, "bending_random", text="Random")
         sub.prop(cloth, "bending_damping", text="Damping")
-        # XXX has no noticable effect with stiff hair structure springs
+        # XXX has no noticeable effect with stiff hair structure springs
         #col.prop(cloth, "spring_damping", text="Damping")
 
         split.separator()
@@ -1243,7 +1243,7 @@ class PARTICLE_PT_children(ParticleButtonsPanel, Panel):
         split = layout.split()
         split.active = part.kink != 'NO'
 
-        if part.kink in {'SPIRAL'}:
+        if part.kink == 'SPIRAL':
             col = split.column()
             sub = col.column(align=True)
             sub.prop(part, "kink_amplitude", text="Radius")

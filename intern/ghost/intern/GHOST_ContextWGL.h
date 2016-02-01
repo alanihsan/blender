@@ -45,7 +45,11 @@ extern "C" WGLEWContext *wglewContext;
 #endif
 
 #ifndef GHOST_OPENGL_WGL_CONTEXT_FLAGS
-#define GHOST_OPENGL_WGL_CONTEXT_FLAGS 0
+#  ifdef WITH_GPU_DEBUG
+#    define GHOST_OPENGL_WGL_CONTEXT_FLAGS WGL_CONTEXT_DEBUG_BIT_ARB
+#  else
+#    define GHOST_OPENGL_WGL_CONTEXT_FLAGS 0
+#  endif
 #endif
 
 #ifndef GHOST_OPENGL_WGL_RESET_NOTIFICATION_STRATEGY
@@ -142,11 +146,10 @@ private:
 	        bool needAlpha,
 	        bool needStencil,
 	        bool sRGB,
-	        int &swapMethodOut);
+	        int *swapMethodOut);
 
-	int _choose_pixel_format_arb_2(
-	        bool stereoVisual,
-	        int numOfAASamples,
+	int _choose_pixel_format_arb_2(bool stereoVisual,
+	        int *numOfAASamples,
 	        bool needAlpha,
 	        bool needStencil,
 	        bool sRGB,
@@ -154,8 +157,8 @@ private:
 
 	void initContextWGLEW(PIXELFORMATDESCRIPTOR &preferredPFD);
 
-	HDC  m_hDC;
 	HWND m_hWnd;
+	HDC  m_hDC;
 
 	const int m_contextProfileMask;
 	const int m_contextMajorVersion;

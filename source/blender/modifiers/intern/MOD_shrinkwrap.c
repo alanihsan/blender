@@ -41,6 +41,7 @@
 #include "BLI_utildefines.h"
 
 #include "BKE_cdderivedmesh.h"
+#include "BKE_library_query.h"
 #include "BKE_modifier.h"
 #include "BKE_shrinkwrap.h"
 
@@ -100,8 +101,8 @@ static void foreachObjectLink(ModifierData *md, Object *ob, ObjectWalkFunc walk,
 {
 	ShrinkwrapModifierData *smd = (ShrinkwrapModifierData *) md;
 
-	walk(userData, ob, &smd->target);
-	walk(userData, ob, &smd->auxTarget);
+	walk(userData, ob, &smd->target, IDWALK_NOP);
+	walk(userData, ob, &smd->auxTarget, IDWALK_NOP);
 }
 
 static void deformVerts(ModifierData *md, Object *ob,
@@ -143,6 +144,7 @@ static void deformVertsEM(ModifierData *md, Object *ob, struct BMEditMesh *editD
 }
 
 static void updateDepgraph(ModifierData *md, DagForest *forest,
+                           struct Main *UNUSED(bmain),
                            struct Scene *UNUSED(scene),
                            Object *UNUSED(ob),
                            DagNode *obNode)
@@ -156,6 +158,23 @@ static void updateDepgraph(ModifierData *md, DagForest *forest,
 	if (smd->auxTarget)
 		dag_add_relation(forest, dag_get_node(forest, smd->auxTarget), obNode,
 		                 DAG_RL_OB_DATA | DAG_RL_DATA_DATA, "Shrinkwrap Modifier");
+}
+
+static void updateDepsgraph(ModifierData *md,
+                            struct Main *UNUSED(bmain),
+                            struct Scene *UNUSED(scene),
+                            Object *UNUSED(ob),
+                            struct DepsNodeHandle *node)
+{
+	ShrinkwrapModifierData *smd = (ShrinkwrapModifierData *)md;
+	if (smd->target != NULL) {
+		DEG_add_object_relation(node, smd->target, DEG_OB_COMP_TRANSFORM, "Shrinkwrap Modifier");
+		DEG_add_object_relation(node, smd->target, DEG_OB_COMP_GEOMETRY, "Shrinkwrap Modifier");
+	}
+	if (smd->auxTarget != NULL) {
+		DEG_add_object_relation(node, smd->auxTarget, DEG_OB_COMP_TRANSFORM, "Shrinkwrap Modifier");
+		DEG_add_object_relation(node, smd->auxTarget, DEG_OB_COMP_GEOMETRY, "Shrinkwrap Modifier");
+	}
 }
 
 static bool dependsOnNormals(ModifierData *md)
@@ -190,6 +209,7 @@ ModifierTypeInfo modifierType_Shrinkwrap = {
 	/* freeData */          NULL,
 	/* isDisabled */        isDisabled,
 	/* updateDepgraph */    updateDepgraph,
+	/* updateDepsgraph */   updateDepsgraph,
 	/* dependsOnTime */     NULL,
 	/* dependsOnNormals */  dependsOnNormals,
 	/* foreachObjectLink */ foreachObjectLink,

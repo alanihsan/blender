@@ -30,7 +30,7 @@
 #include "BLI_math_base.h"
 #include "BLI_math_rotation.h"
 
-#include "BLF_translation.h"
+#include "BLT_translation.h"
 
 #include "RNA_define.h"
 #include "RNA_enum_types.h"
@@ -93,23 +93,21 @@ static int rna_use_shadow_get(PointerRNA *ptr)
 {
 	Lamp *la = (Lamp *)ptr->data;
 
-	if (la->type == LA_SPOT)
-		return la->mode & LA_SHAD_BUF;
-	else
-		return la->mode & LA_SHAD_RAY;
+	if (la->type == LA_SPOT) {
+		return (la->mode & (LA_SHAD_BUF | LA_SHAD_RAY)) != 0;
+	}
+	else {
+		return (la->mode & LA_SHAD_RAY) != 0;
+	}
 }
 
 static void rna_use_shadow_set(PointerRNA *ptr, int value)
 {
 	Lamp *la = (Lamp *)ptr->data;
+	la->mode &= ~(LA_SHAD_BUF | LA_SHAD_RAY);
 	if (value) {
-		if (la->type == LA_SPOT)
-			la->mode |= LA_SHAD_BUF;
-		else
-			la->mode |= LA_SHAD_RAY;
+		la->mode |= LA_SHAD_RAY;
 	}
-	else
-		la->mode &= ~(LA_SHAD_BUF | LA_SHAD_RAY);
 }
 
 static StructRNA *rna_Lamp_refine(struct PointerRNA *ptr)
@@ -168,7 +166,7 @@ static void rna_Lamp_use_nodes_update(bContext *C, PointerRNA *ptr)
 
 #else
 /* Don't define icons here, so they don't show up in the Lamp UI (properties Editor) - DingTo */
-EnumPropertyItem lamp_type_items[] = {
+EnumPropertyItem rna_enum_lamp_type_items[] = {
 	{LA_LOCAL, "POINT", 0, "Point", "Omnidirectional point light source"},
 	{LA_SUN, "SUN", 0, "Sun", "Constant direction parallel ray light source"},
 	{LA_SPOT, "SPOT", 0, "Spot", "Directional cone light source"},
@@ -191,7 +189,7 @@ static void rna_def_lamp_mtex(BlenderRNA *brna)
 
 	srna = RNA_def_struct(brna, "LampTextureSlot", "TextureSlot");
 	RNA_def_struct_sdna(srna, "MTex");
-	RNA_def_struct_ui_text(srna, "Lamp Texture Slot", "Texture slot for textures in a Lamp datablock");
+	RNA_def_struct_ui_text(srna, "Lamp Texture Slot", "Texture slot for textures in a Lamp data-block");
 
 	prop = RNA_def_property(srna, "texture_coords", PROP_ENUM, PROP_NONE);
 	RNA_def_property_enum_sdna(prop, NULL, "texco");
@@ -252,7 +250,7 @@ static void rna_def_lamp_sky_settings(BlenderRNA *brna)
 
 	prop = RNA_def_property(srna, "sky_blend_type", PROP_ENUM, PROP_NONE);
 	RNA_def_property_enum_sdna(prop, NULL, "skyblendtype");
-	RNA_def_property_enum_items(prop, ramp_blend_items);
+	RNA_def_property_enum_items(prop, rna_enum_ramp_blend_items);
 	RNA_def_property_ui_text(prop, "Sky Blend Mode", "Blend mode for combining sun sky with world sky");
 	RNA_def_property_update(prop, 0, "rna_Lamp_sky_update");
 	
@@ -345,13 +343,13 @@ static void rna_def_lamp(BlenderRNA *brna)
 
 	srna = RNA_def_struct(brna, "Lamp", "ID");
 	RNA_def_struct_refine_func(srna, "rna_Lamp_refine");
-	RNA_def_struct_ui_text(srna, "Lamp", "Lamp datablock for lighting a scene");
+	RNA_def_struct_ui_text(srna, "Lamp", "Lamp data-block for lighting a scene");
 	RNA_def_struct_ui_icon(srna, ICON_LAMP_DATA);
 
 	prop = RNA_def_property(srna, "type", PROP_ENUM, PROP_NONE);
-	RNA_def_property_enum_items(prop, lamp_type_items);
+	RNA_def_property_enum_items(prop, rna_enum_lamp_type_items);
 	RNA_def_property_ui_text(prop, "Type", "Type of Lamp");
-	RNA_def_property_translation_context(prop, BLF_I18NCONTEXT_ID_LAMP);
+	RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_ID_LAMP);
 	RNA_def_property_update(prop, 0, "rna_Lamp_draw_update");
 
 	prop = RNA_def_property(srna, "distance", PROP_FLOAT, PROP_DISTANCE);
@@ -826,6 +824,12 @@ static void rna_def_sun_lamp(BlenderRNA *brna)
 	RNA_def_property_float_sdna(prop, NULL, "shadow_frustum_size");
 	RNA_def_property_ui_range(prop, 0.001, 100.0, 2, 1);
 	RNA_def_property_ui_text(prop, "Frustum Size", "Size of the frustum used for creating the shadow map");
+	RNA_def_property_update(prop, 0, "rna_Lamp_draw_update");
+
+	prop = RNA_def_property(srna, "show_shadow_box", PROP_BOOLEAN, PROP_NONE);
+	RNA_def_property_boolean_sdna(prop, NULL, "mode", LA_SHOW_SHADOW_BOX);
+	RNA_def_property_ui_text(prop, "Show Shadow Box",
+	                         "Draw a box in 3D view to visualize which objects are contained in it");
 	RNA_def_property_update(prop, 0, "rna_Lamp_draw_update");
 }
 

@@ -61,7 +61,7 @@ static EnumPropertyItem texture_filter_items[] = {
 };
 #endif
 
-EnumPropertyItem texture_type_items[] = {
+EnumPropertyItem rna_enum_texture_type_items[] = {
 	{0, "NONE", 0, "None", ""},
 	{TEX_BLEND, "BLEND", ICON_TEXTURE, "Blend", "Procedural - create a ramp texture"},
 	{TEX_CLOUDS, "CLOUDS", ICON_TEXTURE, "Clouds", "Procedural - create a cloud-like fractal noise texture"},
@@ -181,7 +181,7 @@ static void rna_Texture_update(Main *bmain, Scene *UNUSED(scene), PointerRNA *pt
 static void rna_Texture_mapping_update(Main *bmain, Scene *scene, PointerRNA *ptr)
 {
 	TexMapping *texmap = ptr->data;
-	init_tex_mapping(texmap);
+	BKE_texture_mapping_init(texmap);
 	rna_Texture_update(bmain, scene, ptr);
 }
 
@@ -222,7 +222,7 @@ static void rna_Texture_type_set(PointerRNA *ptr, int value)
 {
 	Tex *tex = (Tex *)ptr->data;
 	
-	tex_set_type(tex, value);
+	BKE_texture_type_set(tex, value);
 }
 
 void rna_TextureSlot_update(Main *UNUSED(bmain), Scene *UNUSED(scene), PointerRNA *ptr)
@@ -445,7 +445,7 @@ static void rna_Envmap_update_generic(Main *bmain, Scene *scene, PointerRNA *ptr
 	Tex *tex = ptr->id.data;
 	if (tex->env) {
 		ED_preview_kill_jobs(bmain->wm.first, bmain);
-		BKE_free_envmapdata(tex->env);
+		BKE_texture_envmap_free_data(tex->env);
 	}
 	rna_Texture_update(bmain, scene, ptr);
 }
@@ -660,7 +660,7 @@ static void rna_def_mtex(BlenderRNA *brna)
 	RNA_def_property_pointer_sdna(prop, NULL, "tex");
 	RNA_def_property_struct_type(prop, "Texture");
 	RNA_def_property_flag(prop, PROP_EDITABLE);
-	RNA_def_property_ui_text(prop, "Texture", "Texture datablock used by this texture slot");
+	RNA_def_property_ui_text(prop, "Texture", "Texture data-block used by this texture slot");
 	RNA_def_property_update(prop, NC_MATERIAL | ND_SHADING_LINKS, "rna_TextureSlot_update");
 
 	prop = RNA_def_property(srna, "name", PROP_STRING, PROP_NONE);
@@ -2021,14 +2021,14 @@ static void rna_def_texture(BlenderRNA *brna)
 
 	srna = RNA_def_struct(brna, "Texture", "ID");
 	RNA_def_struct_sdna(srna, "Tex");
-	RNA_def_struct_ui_text(srna, "Texture", "Texture datablock used by materials, lamps, worlds and brushes");
+	RNA_def_struct_ui_text(srna, "Texture", "Texture data-block used by materials, lamps, worlds and brushes");
 	RNA_def_struct_ui_icon(srna, ICON_TEXTURE_DATA);
 	RNA_def_struct_refine_func(srna, "rna_Texture_refine");
 
 	prop = RNA_def_property(srna, "type", PROP_ENUM, PROP_NONE);
 	/*RNA_def_property_clear_flag(prop, PROP_EDITABLE); */
 	RNA_def_property_enum_sdna(prop, NULL, "type");
-	RNA_def_property_enum_items(prop, texture_type_items);
+	RNA_def_property_enum_items(prop, rna_enum_texture_type_items);
 	RNA_def_property_enum_funcs(prop, NULL, "rna_Texture_type_set", NULL);
 	RNA_def_property_ui_text(prop, "Type", "");
 	RNA_def_property_update(prop, 0, "rna_Texture_update");

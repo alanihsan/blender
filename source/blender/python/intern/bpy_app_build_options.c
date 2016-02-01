@@ -57,6 +57,7 @@ static PyStructSequence_Field app_builtopts_info_fields[] = {
 	{(char *)"international", NULL},
 	{(char *)"openal", NULL},
 	{(char *)"sdl", NULL},
+	{(char *)"sdl_dynload", NULL},
 	{(char *)"jack", NULL},
 	{(char *)"libmv", NULL},
 	{(char *)"mod_boolean", NULL},
@@ -68,6 +69,7 @@ static PyStructSequence_Field app_builtopts_info_fields[] = {
 	{(char *)"opencolorio", NULL},
 	{(char *)"player", NULL},
 	{(char *)"openmp", NULL},
+	{(char *)"openvdb", NULL},
 	{NULL}
 };
 
@@ -230,6 +232,12 @@ static PyObject *make_builtopts_info(void)
 	SetObjIncref(Py_False);
 #endif
 
+#ifdef WITH_SDL_DYNLOAD
+	SetObjIncref(Py_True);
+#else
+	SetObjIncref(Py_False);
+#endif
+
 #ifdef WITH_JACK
 	SetObjIncref(Py_True);
 #else
@@ -291,6 +299,12 @@ static PyObject *make_builtopts_info(void)
 #endif
 
 #ifdef _OPENMP
+	SetObjIncref(Py_True);
+#else
+	SetObjIncref(Py_False);
+#endif
+
+#ifdef WITH_OPENVDB
 	SetObjIncref(Py_True);
 #else
 	SetObjIncref(Py_False);

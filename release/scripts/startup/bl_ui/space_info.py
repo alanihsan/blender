@@ -203,6 +203,12 @@ class INFO_MT_file_previews(Menu):
         layout = self.layout
 
         layout.operator("wm.previews_ensure")
+        layout.operator("wm.previews_batch_generate")
+
+        layout.separator()
+
+        layout.operator("wm.previews_clear")
+        layout.operator("wm.previews_batch_clear")
 
 
 class INFO_MT_game(Menu):
@@ -256,8 +262,9 @@ class INFO_MT_opengl_render(Menu):
         layout = self.layout
 
         rd = context.scene.render
-
         layout.prop(rd, "use_antialiasing")
+        layout.prop(rd, "use_full_sample")
+
         layout.prop_menu_enum(rd, "antialiasing_samples")
         layout.prop_menu_enum(rd, "alpha_mode")
 
@@ -282,6 +289,10 @@ class INFO_MT_window(Menu):
             layout.separator()
             layout.operator("wm.console_toggle", icon='CONSOLE')
 
+        if context.scene.render.use_multiview:
+            layout.separator()
+            layout.operator("wm.set_stereo_3d", icon='CAMERA_STEREO')
+
 
 class INFO_MT_help(Menu):
     bl_label = "Help"
@@ -294,7 +305,7 @@ class INFO_MT_help(Menu):
         layout.separator()
 
         layout.operator("wm.url_open", text="Blender Website", icon='URL').url = "http://www.blender.org"
-        layout.operator("wm.url_open", text="Blender e-Shop", icon='URL').url = "http://www.blender.org/e-shop"
+        layout.operator("wm.url_open", text="Blender Store", icon='URL').url = "https://store.blender.org"
         layout.operator("wm.url_open", text="Developer Community", icon='URL').url = "http://www.blender.org/get-involved/"
         layout.operator("wm.url_open", text="User Community", icon='URL').url = "http://www.blender.org/community/user-community"
         layout.separator()

@@ -42,17 +42,15 @@ struct GPUDOFSettings;
 struct GPUSSAOSettings;
 struct GPUOffScreen;
 struct GPUFXSettings;
-struct RegionView3D;
 struct rcti;
 struct Scene;
-struct View3D;
 enum eGPUFXFlags;
 
 /**** Public API *****/
 
 typedef enum GPUFXShaderEffect {
 	/* Screen space ambient occlusion shader */
-	GPU_SHADER_FX_SSAO           = 1,
+	GPU_SHADER_FX_SSAO = 1,
 
 	/* depth of field passes. Yep, quite a complex effect */
 	GPU_SHADER_FX_DEPTH_OF_FIELD_PASS_ONE = 2,
@@ -60,6 +58,13 @@ typedef enum GPUFXShaderEffect {
 	GPU_SHADER_FX_DEPTH_OF_FIELD_PASS_THREE = 4,
 	GPU_SHADER_FX_DEPTH_OF_FIELD_PASS_FOUR = 5,
 	GPU_SHADER_FX_DEPTH_OF_FIELD_PASS_FIVE = 6,
+
+	/* high quality */
+	GPU_SHADER_FX_DEPTH_OF_FIELD_HQ_PASS_ONE = 7,
+	GPU_SHADER_FX_DEPTH_OF_FIELD_HQ_PASS_TWO = 8,
+	GPU_SHADER_FX_DEPTH_OF_FIELD_HQ_PASS_THREE = 9,
+
+	GPU_SHADER_FX_DEPTH_RESOLVE = 10,
 } GPUFXShaderEffect;
 
 /* keep in synch with enum above! */
@@ -77,7 +82,15 @@ bool GPU_fx_compositor_initialize_passes(
         const struct GPUFXSettings *fx_settings);
 
 /* do compositing on the fx passes that have been initialized */
-bool GPU_fx_do_composite_pass(GPUFX *fx, float projmat[4][4], bool is_persp, struct Scene *scene, struct GPUOffScreen *ofs);
+bool GPU_fx_do_composite_pass(
+        GPUFX *fx, float projmat[4][4], bool is_persp,
+        struct Scene *scene, struct GPUOffScreen *ofs);
+
+/* bind new depth buffer for XRay pass */
+void GPU_fx_compositor_setup_XRay_pass(GPUFX *fx, bool do_xray);
+
+/* resolve a final depth buffer by compositing the XRay and normal depth buffers */
+void GPU_fx_compositor_XRay_resolve(GPUFX *fx);
 
 void GPU_fx_compositor_init_dof_settings(struct GPUDOFSettings *dof);
 void GPU_fx_compositor_init_ssao_settings(struct GPUSSAOSettings *ssao);

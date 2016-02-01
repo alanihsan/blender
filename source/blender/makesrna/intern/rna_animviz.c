@@ -43,7 +43,7 @@
 
 /* Which part of bone(s) get baked */
 // TODO: icons?
-EnumPropertyItem motionpath_bake_location_items[] = {
+EnumPropertyItem rna_enum_motionpath_bake_location_items[] = {
 	{MOTIONPATH_BAKE_HEADS, "HEADS", 0, "Heads", "Calculate bone paths from heads"},
 	{0, "TAILS", 0, "Tails", "Calculate bone paths from tails"},
 	//{MOTIONPATH_BAKE_CENTERS, "CENTROID", 0, "Centers", "Calculate bone paths from center of mass"},
@@ -66,33 +66,33 @@ static void rna_AnimViz_ghost_start_frame_set(PointerRNA *ptr, int value)
 {
 	bAnimVizSettings *data = (bAnimVizSettings *)ptr->data;
 	
-	CLAMP(value, 1, data->ghost_ef);
 	data->ghost_sf = value;
+	CLAMP(data->ghost_ef, data->ghost_sf, MAXFRAME / 2);
 }
 
 static void rna_AnimViz_ghost_end_frame_set(PointerRNA *ptr, int value)
 {
 	bAnimVizSettings *data = (bAnimVizSettings *)ptr->data;
 	
-	CLAMP(value, data->ghost_sf, (int)(MAXFRAMEF / 2));
 	data->ghost_ef = value;
+	CLAMP(data->ghost_sf, 1, data->ghost_ef);
 }
 
 static void rna_AnimViz_path_start_frame_set(PointerRNA *ptr, int value)
 {
 	bAnimVizSettings *data = (bAnimVizSettings *)ptr->data;
 	
-	CLAMP(value, 1, data->path_ef - 1);
+	/* XXX: watchit! Path Start > MAXFRAME/2 could be a problem... */
 	data->path_sf = value;
+	CLAMP(data->path_ef, data->path_sf + 1, MAXFRAME / 2);
 }
 
 static void rna_AnimViz_path_end_frame_set(PointerRNA *ptr, int value)
 {
 	bAnimVizSettings *data = (bAnimVizSettings *)ptr->data;
 	
-	/* XXX: watchit! Path Start > MAXFRAME/2 could be a problem... */
-	CLAMP(value, data->path_sf + 1, (int)(MAXFRAMEF / 2));
 	data->path_ef = value;
+	CLAMP(data->path_sf, 1, data->path_ef - 1);
 }
 
 #else
@@ -269,7 +269,7 @@ static void rna_def_animviz_paths(BlenderRNA *brna)
 	
 	prop = RNA_def_property(srna, "bake_location", PROP_ENUM, PROP_NONE);
 	RNA_def_property_enum_bitflag_sdna(prop, NULL, "path_bakeflag");
-	RNA_def_property_enum_items(prop, motionpath_bake_location_items);
+	RNA_def_property_enum_items(prop, rna_enum_motionpath_bake_location_items);
 	RNA_def_property_ui_text(prop, "Bake Location", "When calculating Bone Paths, use Head or Tips");
 	RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D, NULL); /* XXX since this is only for 3d-view drawing */
 	
@@ -348,7 +348,7 @@ void rna_def_animviz_common(StructRNA *srna)
 	prop = RNA_def_property(srna, "animation_visualization", PROP_POINTER, PROP_NONE);
 	RNA_def_property_flag(prop, PROP_NEVER_NULL);
 	RNA_def_property_pointer_sdna(prop, NULL, "avs");
-	RNA_def_property_ui_text(prop, "Animation Visualization", "Animation data for this datablock");
+	RNA_def_property_ui_text(prop, "Animation Visualization", "Animation data for this data-block");
 }
 
 static void rna_def_animviz(BlenderRNA *brna)

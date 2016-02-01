@@ -52,6 +52,7 @@
 #include "DNA_userdef_types.h"
 #include "DNA_scene_types.h"
 #include "DNA_screen_types.h"
+#include "DNA_view3d_types.h"
 #include "DNA_windowmanager_types.h"
 
 #include "BLI_blenlib.h"
@@ -121,7 +122,7 @@ void free_blender(void)
 	DAG_exit();
 
 	BKE_brush_system_exit();
-	RE_exit_texture_rng();	
+	RE_texture_rng_exit();	
 
 	BLI_callback_global_finalize();
 
@@ -256,14 +257,13 @@ static void setup_app_data(bContext *C, BlendFileData *bfd, const char *filepath
 		/* comes from readfile.c */
 		SWAP(ListBase, G.main->wm, bfd->main->wm);
 		SWAP(ListBase, G.main->screen, bfd->main->screen);
-		SWAP(ListBase, G.main->script, bfd->main->script);
 		
 		/* we re-use current screen */
 		curscreen = CTX_wm_screen(C);
 		/* but use new Scene pointer */
 		curscene = bfd->curscene;
 
-		track_undo_scene = (mode == LOAD_UNDO && curscreen && bfd->main->wm.first);
+		track_undo_scene = (mode == LOAD_UNDO && curscreen && curscene && bfd->main->wm.first);
 
 		if (curscene == NULL) curscene = bfd->main->scene.first;
 		/* empty file, we add a scene to make Blender work */
@@ -283,13 +283,17 @@ static void setup_app_data(bContext *C, BlendFileData *bfd, const char *filepath
 
 		/* clear_global will free G.main, here we can still restore pointers */
 		blo_lib_link_screen_restore(bfd->main, curscreen, curscene);
-		curscene = curscreen->scene;
+		/* curscreen might not be set when loading without ui (see T44217) so only re-assign if available */
+		if (curscreen) {
+			curscene = curscreen->scene;
+		}
 
 		if (track_undo_scene) {
 			wmWindowManager *wm = bfd->main->wm.first;
 			if (wm_scene_is_visible(wm, bfd->curscene) == false) {
 				curscene = bfd->curscene;
 				curscreen->scene = curscene;
+				BKE_screen_view3d_scene_sync(curscreen);
 			}
 		}
 	}
@@ -305,8 +309,6 @@ static void setup_app_data(bContext *C, BlendFileData *bfd, const char *filepath
 
 	CTX_data_main_set(C, G.main);
 
-	sound_init_main(G.main);
-	
 	if (bfd->user) {
 		
 		/* only here free userdef themes... */
@@ -415,6 +417,7 @@ static void setup_app_data(bContext *C, BlendFileData *bfd, const char *filepath
 	BKE_scene_set_background(G.main, curscene);
 
 	if (mode != LOAD_UNDO) {
+		RE_FreeAllPersistentData();
 		IMB_colormanagement_check_file_config(G.main);
 	}
 
@@ -619,7 +622,7 @@ int BKE_write_file_userdef(const char *filepath, ReportList *reports)
 
 static void (*blender_test_break_cb)(void) = NULL;
 
-void set_blender_test_break_cb(void (*func)(void))
+void BKE_blender_callback_test_break_set(void (*func)(void))
 {
 	blender_test_break_cb = func;
 }
@@ -683,7 +686,7 @@ static int read_undosave(bContext *C, UndoElem *uel)
 }
 
 /* name can be a dynamic string */
-void BKE_write_undo(bContext *C, const char *name)
+void BKE_undo_write(bContext *C, const char *name)
 {
 	uintptr_t maxmem, totmem, memused;
 	int nr /*, success */ /* UNUSED */;
@@ -701,7 +704,7 @@ void BKE_write_undo(bContext *C, const char *name)
 	while (undobase.last != curundo) {
 		uel = undobase.last;
 		BLI_remlink(&undobase, uel);
-		BLO_free_memfile(&uel->memfile);
+		BLO_memfile_free(&uel->memfile);
 		MEM_freeN(uel);
 	}
 	
@@ -723,7 +726,7 @@ void BKE_write_undo(bContext *C, const char *name)
 			UndoElem *first = undobase.first;
 			BLI_remlink(&undobase, first);
 			/* the merge is because of compression */
-			BLO_merge_memfile(&first->memfile, &first->next->memfile);
+			BLO_memfile_merge(&first->memfile, &first->next->memfile);
 			MEM_freeN(first);
 		}
 	}
@@ -778,7 +781,7 @@ void BKE_write_undo(bContext *C, const char *name)
 				UndoElem *first = undobase.first;
 				BLI_remlink(&undobase, first);
 				/* the merge is because of compression */
-				BLO_merge_memfile(&first->memfile, &first->next->memfile);
+				BLO_memfile_merge(&first->memfile, &first->next->memfile);
 				MEM_freeN(first);
 			}
 		}
@@ -817,13 +820,13 @@ void BKE_undo_step(bContext *C, int step)
 	}
 }
 
-void BKE_reset_undo(void)
+void BKE_undo_reset(void)
 {
 	UndoElem *uel;
 	
 	uel = undobase.first;
 	while (uel) {
-		BLO_free_memfile(&uel->memfile);
+		BLO_memfile_free(&uel->memfile);
 		uel = uel->next;
 	}
 	
@@ -850,7 +853,7 @@ void BKE_undo_name(bContext *C, const char *name)
 }
 
 /* name optional */
-int BKE_undo_valid(const char *name)
+bool BKE_undo_is_valid(const char *name)
 {
 	if (name) {
 		UndoElem *uel = BLI_rfindstring(&undobase, name, offsetof(UndoElem, name));
@@ -862,15 +865,16 @@ int BKE_undo_valid(const char *name)
 
 /* get name of undo item, return null if no item with this index */
 /* if active pointer, set it to 1 if true */
-const char *BKE_undo_get_name(int nr, int *active)
+const char *BKE_undo_get_name(int nr, bool *r_active)
 {
 	UndoElem *uel = BLI_findlink(&undobase, nr);
 	
-	if (active) *active = 0;
+	if (r_active) *r_active = false;
 	
 	if (uel) {
-		if (active && uel == curundo)
-			*active = 1;
+		if (r_active && (uel == curundo)) {
+			*r_active = true;
+		}
 		return uel->name;
 	}
 	return NULL;
@@ -936,15 +940,16 @@ bool BKE_undo_save_file(const char *filename)
 }
 
 /* sets curscene */
-Main *BKE_undo_get_main(Scene **scene)
+Main *BKE_undo_get_main(Scene **r_scene)
 {
 	Main *mainp = NULL;
 	BlendFileData *bfd = BLO_read_from_memfile(G.main, G.main->name, &curundo->memfile, NULL);
 	
 	if (bfd) {
 		mainp = bfd->main;
-		if (scene)
-			*scene = bfd->curscene;
+		if (r_scene) {
+			*r_scene = bfd->curscene;
+		}
 		
 		MEM_freeN(bfd);
 	}
@@ -959,12 +964,12 @@ Main *BKE_undo_get_main(Scene **scene)
 void BKE_copybuffer_begin(Main *bmain)
 {
 	/* set all id flags to zero; */
-	BKE_main_id_flag_all(bmain, LIB_NEED_EXPAND | LIB_DOIT, false);
+	BKE_main_id_flag_all(bmain, LIB_TAG_NEED_EXPAND | LIB_TAG_DOIT, false);
 }
 
 void BKE_copybuffer_tag_ID(ID *id)
 {
-	id->flag |= LIB_NEED_EXPAND | LIB_DOIT;
+	id->tag |= LIB_TAG_NEED_EXPAND | LIB_TAG_DOIT;
 }
 
 static void copybuffer_doit(void *UNUSED(handle), Main *UNUSED(bmain), void *vid)
@@ -972,8 +977,8 @@ static void copybuffer_doit(void *UNUSED(handle), Main *UNUSED(bmain), void *vid
 	if (vid) {
 		ID *id = vid;
 		/* only tag for need-expand if not done, prevents eternal loops */
-		if ((id->flag & LIB_DOIT) == 0)
-			id->flag |= LIB_NEED_EXPAND | LIB_DOIT;
+		if ((id->tag & LIB_TAG_DOIT) == 0)
+			id->tag |= LIB_TAG_NEED_EXPAND | LIB_TAG_DOIT;
 	}
 }
 
@@ -1002,7 +1007,7 @@ int BKE_copybuffer_save(const char *filename, ReportList *reports)
 		
 		for (id = lb2->first; id; id = nextid) {
 			nextid = id->next;
-			if (id->flag & LIB_DOIT) {
+			if (id->tag & LIB_TAG_DOIT) {
 				BLI_remlink(lb2, id);
 				BLI_addtail(lb1, id);
 			}
@@ -1029,7 +1034,7 @@ int BKE_copybuffer_save(const char *filename, ReportList *reports)
 	MEM_freeN(mainb);
 	
 	/* set id flag to zero; */
-	BKE_main_id_flag_all(G.main, LIB_NEED_EXPAND | LIB_DOIT, false);
+	BKE_main_id_flag_all(G.main, LIB_TAG_NEED_EXPAND | LIB_TAG_DOIT, false);
 	
 	if (path_list_backup) {
 		BKE_bpath_list_restore(G.main, path_list_flag, path_list_backup);
@@ -1040,10 +1045,11 @@ int BKE_copybuffer_save(const char *filename, ReportList *reports)
 }
 
 /* return success (1) */
-int BKE_copybuffer_paste(bContext *C, const char *libname, ReportList *reports)
+int BKE_copybuffer_paste(bContext *C, const char *libname, const short flag, ReportList *reports)
 {
 	Main *bmain = CTX_data_main(C);
 	Scene *scene = CTX_data_scene(C);
+	View3D *v3d = CTX_wm_view3d(C);
 	Main *mainl = NULL;
 	Library *lib;
 	BlendHandle *bh;
@@ -1060,15 +1066,15 @@ int BKE_copybuffer_paste(bContext *C, const char *libname, ReportList *reports)
 	/* tag everything, all untagged data can be made local
 	 * its also generally useful to know what is new
 	 *
-	 * take extra care BKE_main_id_flag_all(bmain, LIB_LINK_TAG, false) is called after! */
-	BKE_main_id_flag_all(bmain, LIB_PRE_EXISTING, true);
+	 * take extra care BKE_main_id_flag_all(bmain, LIB_TAG_PRE_EXISTING, false) is called after! */
+	BKE_main_id_flag_all(bmain, LIB_TAG_PRE_EXISTING, true);
 	
 	/* here appending/linking starts */
-	mainl = BLO_library_append_begin(bmain, &bh, libname);
+	mainl = BLO_library_link_begin(bmain, &bh, libname);
 	
-	BLO_library_append_all(mainl, bh);
+	BLO_library_link_copypaste(mainl, bh);
 
-	BLO_library_append_end(C, mainl, &bh, 0, 0);
+	BLO_library_link_end(mainl, &bh, flag, scene, v3d);
 	
 	/* mark all library linked objects to be updated */
 	BKE_main_lib_objects_recalc_all(bmain);
@@ -1076,11 +1082,11 @@ int BKE_copybuffer_paste(bContext *C, const char *libname, ReportList *reports)
 	
 	/* append, rather than linking */
 	lib = BLI_findstring(&bmain->library, libname, offsetof(Library, filepath));
-	BKE_library_make_local(bmain, lib, true);
+	BKE_library_make_local(bmain, lib, true, false);
 	
 	/* important we unset, otherwise these object wont
 	 * link into other scenes from this blend file */
-	BKE_main_id_flag_all(bmain, LIB_PRE_EXISTING, false);
+	BKE_main_id_flag_all(bmain, LIB_TAG_PRE_EXISTING, false);
 	
 	/* recreate dependency graph to include new objects */
 	DAG_relations_tag_update(bmain);

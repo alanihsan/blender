@@ -62,8 +62,7 @@ extern "C" {
 	__declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
 }
 
-GHOST_WindowWin32::GHOST_WindowWin32(
-        GHOST_SystemWin32 *system,
+GHOST_WindowWin32::GHOST_WindowWin32(GHOST_SystemWin32 *system,
         const STR_String &title,
         GHOST_TInt32 left,
         GHOST_TInt32 top,
@@ -73,7 +72,8 @@ GHOST_WindowWin32::GHOST_WindowWin32(
         GHOST_TDrawingContextType type,
         bool wantStereoVisual,
         GHOST_TUns16 wantNumOfAASamples,
-        GHOST_TEmbedderWindowID parentwindowhwnd)
+        GHOST_TEmbedderWindowID parentwindowhwnd,
+        bool is_debug)
     : GHOST_Window(width, height, state,
                    wantStereoVisual, false, wantNumOfAASamples),
       m_inLiveResize(false),
@@ -88,7 +88,8 @@ GHOST_WindowWin32::GHOST_WindowWin32(
       m_tablet(0),
       m_maxPressure(0),
       m_normal_state(GHOST_kWindowStateNormal),
-      m_parentWindowHwnd(parentwindowhwnd)
+      m_parentWindowHwnd(parentwindowhwnd),
+      m_debug_context(is_debug)
 {
 	OSVERSIONINFOEX versionInfo;
 	bool hasMinVersionForTaskbar = false;
@@ -625,7 +626,7 @@ GHOST_Context *GHOST_WindowWin32::newDrawingContext(GHOST_TDrawingContextType ty
 		        m_wantNumOfAASamples,
 		        m_hWnd,
 		        m_hDC,
-		        WGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
+		        WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
 		        3, 2,
 		        GHOST_OPENGL_WGL_CONTEXT_FLAGS,
 		        GHOST_OPENGL_WGL_RESET_NOTIFICATION_STRATEGY);
@@ -645,8 +646,14 @@ GHOST_Context *GHOST_WindowWin32::newDrawingContext(GHOST_TDrawingContextType ty
 		        m_wantNumOfAASamples,
 		        m_hWnd,
 		        m_hDC,
+#if 1
 		        0, // profile bit
-		        0, 0,
+		        2, 1, // GL version requested
+#else
+		        // switch to this for Blender 2.8 development
+		        WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
+		        3, 2,
+#endif
 		        GHOST_OPENGL_WGL_CONTEXT_FLAGS,
 		        GHOST_OPENGL_WGL_RESET_NOTIFICATION_STRATEGY);
 #else
@@ -683,8 +690,14 @@ GHOST_Context *GHOST_WindowWin32::newDrawingContext(GHOST_TDrawingContextType ty
 		        m_wantNumOfAASamples,
 		        m_hWnd,
 		        m_hDC,
+#if 1
 		        0, // profile bit
-		        0, 0,
+		        2, 1, // GL version requested
+#else
+		        // switch to this for Blender 2.8 development
+		        EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT,
+		        3, 2,
+#endif
 		        GHOST_OPENGL_EGL_CONTEXT_FLAGS,
 		        GHOST_OPENGL_EGL_RESET_NOTIFICATION_STRATEGY,
 		        EGL_OPENGL_API);
@@ -1054,12 +1067,12 @@ GHOST_TSuccess GHOST_WindowWin32::endProgressBar()
 #ifdef WITH_INPUT_IME
 void GHOST_WindowWin32::beginIME(GHOST_TInt32 x, GHOST_TInt32 y, GHOST_TInt32 w, GHOST_TInt32 h, int completed)
 {
-	this->getImeInput()->BeginIME(this->getHWND(),	GHOST_Rect(x, y - h , x, y), (bool)completed);
+	m_imeImput.BeginIME(m_hWnd, GHOST_Rect(x, y - h, x, y), (bool)completed);
 }
 
 
 void GHOST_WindowWin32::endIME()
 {
-	this->getImeInput()->EndIME(this->getHWND());
+	m_imeImput.EndIME(m_hWnd);
 }
 #endif /* WITH_INPUT_IME */

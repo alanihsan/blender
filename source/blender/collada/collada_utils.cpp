@@ -131,7 +131,7 @@ Object *bc_add_object(Scene *scene, int type, const char *name)
 {
 	Object *ob = BKE_object_add_only_object(G.main, type, name);
 
-	ob->data = BKE_object_obdata_add_from_type(G.main, type);
+	ob->data = BKE_object_obdata_add_from_type(G.main, type, name);
 	ob->lay = scene->lay;
 	DAG_id_tag_update(&ob->id, OB_RECALC_OB | OB_RECALC_DATA | OB_RECALC_TIME);
 
@@ -144,6 +144,7 @@ Mesh *bc_get_mesh_copy(Scene *scene, Object *ob, BC_export_mesh_type export_mesh
 {
 	Mesh *tmpmesh;
 	CustomDataMask mask = CD_MASK_MESH;
+	Mesh *mesh = (Mesh *)ob->data;
 	DerivedMesh *dm = NULL;
 	if (apply_modifiers) {
 		switch (export_mesh_type) {
@@ -164,16 +165,13 @@ Mesh *bc_get_mesh_copy(Scene *scene, Object *ob, BC_export_mesh_type export_mesh
 	}
 
 	tmpmesh = BKE_mesh_add(G.main, "ColladaMesh"); // name is not important here
-	DM_to_mesh(dm, tmpmesh, ob, CD_MASK_MESH);
-	dm->release(dm);
+	DM_to_mesh(dm, tmpmesh, ob, CD_MASK_MESH, true);
+	tmpmesh->flag = mesh->flag;
 
 	if (triangulate) {
 		bc_triangulate_mesh(tmpmesh);
 	}
-
-	// XXX Not sure if we need that for ngon_export as well.
 	BKE_mesh_tessface_ensure(tmpmesh);
-
 	return tmpmesh;
 }
 
@@ -200,7 +198,7 @@ Object *bc_get_assigned_armature(Object *ob)
 // returns NULL if no ancestor is selected
 // IMPORTANT: This function expects that
 // all exported objects have set:
-// ob->id.flag & LIB_DOIT
+// ob->id.tag & LIB_TAG_DOIT
 Object *bc_get_highest_selected_ancestor_or_self(LinkNode *export_set, Object *ob) 
 {
 	Object *ancestor = ob;
@@ -239,17 +237,17 @@ bool bc_has_object_type(LinkNode *export_set, short obtype)
 
 int bc_is_marked(Object *ob)
 {
-	return ob && (ob->id.flag & LIB_DOIT);
+	return ob && (ob->id.tag & LIB_TAG_DOIT);
 }
 
 void bc_remove_mark(Object *ob)
 {
-	ob->id.flag &= ~LIB_DOIT;
+	ob->id.tag &= ~LIB_TAG_DOIT;
 }
 
 void bc_set_mark(Object *ob)
 {
-	ob->id.flag |= LIB_DOIT;
+	ob->id.tag |= LIB_TAG_DOIT;
 }
 
 // Use bubble sort algorithm for sorting the export set
@@ -360,7 +358,7 @@ void bc_triangulate_mesh(Mesh *me)
 	 
 	BMesh *bm = BM_mesh_create(&bm_mesh_allocsize_default);
 	BM_mesh_bm_from_me(bm, me, true, false, 0);
-	BM_mesh_triangulate(bm, quad_method, use_beauty, tag_only, NULL, NULL);
+	BM_mesh_triangulate(bm, quad_method, use_beauty, tag_only, NULL, NULL, NULL);
 
 	BM_mesh_bm_to_me(bm, me, false);
 	BM_mesh_free(bm);

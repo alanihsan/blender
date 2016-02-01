@@ -81,12 +81,12 @@ class PHYSICS_PT_smoke(PhysicButtonsPanel, Panel):
 
             layout.prop(flow, "smoke_flow_type", expand=False)
 
-            if flow.smoke_flow_type != "OUTFLOW":
+            if flow.smoke_flow_type != 'OUTFLOW':
                 split = layout.split()
                 col = split.column()
                 col.label(text="Flow Source:")
                 col.prop(flow, "smoke_flow_source", expand=False, text="")
-                if flow.smoke_flow_source == "PARTICLES":
+                if flow.smoke_flow_source == 'PARTICLES':
                     col.label(text="Particle System:")
                     col.prop_search(flow, "particle_system", ob, "particle_systems", text="")
                     col.prop(flow, "use_particle_size", text="Set Size")
@@ -103,7 +103,7 @@ class PHYSICS_PT_smoke(PhysicButtonsPanel, Panel):
                 sub = sub.column()
                 sub.active = flow.use_initial_velocity
                 sub.prop(flow, "velocity_factor")
-                if flow.smoke_flow_source == "MESH":
+                if flow.smoke_flow_source == 'MESH':
                     sub.prop(flow, "velocity_normal")
                     #sub.prop(flow, "velocity_random")
 
@@ -135,7 +135,7 @@ class PHYSICS_PT_smoke_flow_advanced(PhysicButtonsPanel, Panel):
     @classmethod
     def poll(cls, context):
         md = context.smoke
-        return md and (md.smoke_type == 'FLOW') and (md.flow_settings.smoke_flow_source == "MESH")
+        return md and (md.smoke_type == 'FLOW') and (md.flow_settings.smoke_flow_source == 'MESH')
 
     def draw(self, context):
         layout = self.layout
@@ -151,9 +151,9 @@ class PHYSICS_PT_smoke_flow_advanced(PhysicButtonsPanel, Panel):
         sub.prop(flow, "noise_texture", text="")
         sub.label(text="Mapping:")
         sub.prop(flow, "texture_map_type", expand=False, text="")
-        if flow.texture_map_type == "UV":
+        if flow.texture_map_type == 'UV':
             sub.prop_search(flow, "uv_layer", ob.data, "uv_textures", text="")
-        if flow.texture_map_type == "AUTO":
+        if flow.texture_map_type == 'AUTO':
             sub.prop(flow, "texture_size")
         sub.prop(flow, "texture_offset")
 
@@ -304,12 +304,26 @@ class PHYSICS_PT_smoke_cache(PhysicButtonsPanel, Panel):
     def draw(self, context):
         layout = self.layout
 
-        md = context.smoke.domain_settings
-        cache = md.point_cache
+        domain = context.smoke.domain_settings
+        cache_file_format = domain.cache_file_format
 
-        layout.label(text="Compression:")
-        layout.prop(md, "point_cache_compress_type", expand=True)
+        layout.prop(domain, "cache_file_format")
 
+        if cache_file_format == 'POINTCACHE':
+            layout.label(text="Compression:")
+            layout.prop(domain, "point_cache_compress_type", expand=True)
+        elif cache_file_format == 'OPENVDB':
+            if not bpy.app.build_options.openvdb:
+                layout.label("Built without OpenVDB support")
+                return
+
+            layout.label(text="Compression:")
+            layout.prop(domain, "openvdb_cache_compress_type", expand=True)
+            row = layout.row()
+            row.label("Data Depth:")
+            row.prop(domain, "data_depth", expand=True, text="Data Depth")
+
+        cache = domain.point_cache
         point_cache_ui(self, context, cache, (cache.is_baked is False), 'SMOKE')
 
 

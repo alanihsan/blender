@@ -216,6 +216,32 @@ void ED_fsmenu_entry_set_name(struct FSMenuEntry *fsentry, const char *name)
 	}
 }
 
+void fsmenu_entry_refresh_valid(struct FSMenuEntry *fsentry)
+{
+	if (fsentry->path && fsentry->path[0]) {
+#ifdef WIN32
+		/* XXX Special case, always consider those as valid.
+		 *     Thanks to Windows, which can spend five seconds to perform a mere stat() call on those paths...
+		 *     See T43684.
+		 */
+		const char *exceptions[] = {"A:\\", "B:\\", NULL};
+		const size_t exceptions_len[] = {strlen(exceptions[0]), strlen(exceptions[1]), 0};
+		int i;
+
+		for (i = 0; exceptions[i]; i++) {
+			if (STRCASEEQLEN(fsentry->path, exceptions[i], exceptions_len[i])) {
+				fsentry->valid = true;
+				return;
+			}
+		}
+#endif
+		fsentry->valid = BLI_is_dir(fsentry->path);
+	}
+	else {
+		fsentry->valid = false;
+	}
+}
+
 short fsmenu_can_save(struct FSMenu *fsmenu, FSMenuCategory category, int idx)
 {
 	FSMenuEntry *fsm_iter;
@@ -266,12 +292,37 @@ void fsmenu_insert_entry(struct FSMenu *fsmenu, FSMenuCategory category, const c
 	fsm_iter = MEM_mallocN(sizeof(*fsm_iter), "fsme");
 	fsm_iter->path = BLI_strdup(path);
 	fsm_iter->save = (flag & FS_INSERT_SAVE) != 0;
+
+	if ((category == FS_CATEGORY_RECENT) && (!name || !name[0])) {
+		/* Special handling when adding new recent entry - check if dir exists in some other categories,
+		 * and try to use name from there if so. */
+		FSMenuCategory cats[] = {FS_CATEGORY_SYSTEM, FS_CATEGORY_SYSTEM_BOOKMARKS, FS_CATEGORY_BOOKMARKS};
+		int i = ARRAY_SIZE(cats);
+
+		while (i--) {
+			FSMenuEntry *tfsm = ED_fsmenu_get_category(fsmenu, cats[i]);
+
+			for (; tfsm; tfsm = tfsm->next) {
+				if (STREQ(tfsm->path, fsm_iter->path)) {
+					if (tfsm->name[0]) {
+						name = tfsm->name;
+					}
+					break;
+				}
+			}
+			if (tfsm) {
+				break;
+			}
+		}
+	}
+
 	if (name && name[0]) {
 		BLI_strncpy(fsm_iter->name, name, sizeof(fsm_iter->name));
 	}
 	else {
 		fsm_iter->name[0] = '\0';
 	}
+	fsmenu_entry_refresh_valid(fsm_iter);
 
 	if (fsm_prev) {
 		if (flag & FS_INSERT_FIRST) {
@@ -410,84 +461,54 @@ void fsmenu_read_system(struct FSMenu *fsmenu, int read_bookmarks)
 #ifdef WIN32
 	/* Add the drive names to the listing */
 	{
+		wchar_t wline[FILE_MAXDIR];
 		__int64 tmp;
-		char tmps[4];
+		char tmps[4], *name;
 		int i;
-			
+
 		tmp = GetLogicalDrives();
-		
+
 		for (i = 0; i < 26; i++) {
 			if ((tmp >> i) & 1) {
 				tmps[0] = 'A' + i;
 				tmps[1] = ':';
 				tmps[2] = '\\';
-				tmps[3] = 0;
-				
-				fsmenu_insert_entry(fsmenu, FS_CATEGORY_SYSTEM, tmps, NULL, FS_INSERT_SORTED);
+				tmps[3] = '\0';
+				name = NULL;
+
+				/* Flee from horrible win querying hover floppy drives! */
+				if (i > 1) {
+					/* Try to get volume label as well... */
+					BLI_strncpy_wchar_from_utf8(wline, tmps, 4);
+					if (GetVolumeInformationW(wline, wline + 4, FILE_MAXDIR - 4, NULL, NULL, NULL, NULL, 0)) {
+						size_t label_len;
+
+						BLI_strncpy_wchar_as_utf8(line, wline + 4, FILE_MAXDIR - 4);
+
+						label_len = MIN2(strlen(line), FILE_MAXDIR - 6);
+						BLI_snprintf(line + label_len, 6, " (%.2s)", tmps);
+
+						name = line;
+					}
+				}
+
+				fsmenu_insert_entry(fsmenu, FS_CATEGORY_SYSTEM, tmps, name, FS_INSERT_SORTED);
 			}
 		}
 
 		/* Adding Desktop and My Documents */
 		if (read_bookmarks) {
-			SHGetSpecialFolderPath(0, line, CSIDL_PERSONAL, 0);
+			SHGetSpecialFolderPathW(0, wline, CSIDL_PERSONAL, 0);
+			BLI_strncpy_wchar_as_utf8(line, wline, FILE_MAXDIR);
 			fsmenu_insert_entry(fsmenu, FS_CATEGORY_SYSTEM_BOOKMARKS, line, NULL, FS_INSERT_SORTED);
-			SHGetSpecialFolderPath(0, line, CSIDL_DESKTOPDIRECTORY, 0);
+			SHGetSpecialFolderPathW(0, wline, CSIDL_DESKTOPDIRECTORY, 0);
+			BLI_strncpy_wchar_as_utf8(line, wline, FILE_MAXDIR);
 			fsmenu_insert_entry(fsmenu, FS_CATEGORY_SYSTEM_BOOKMARKS, line, NULL, FS_INSERT_SORTED);
 		}
 	}
 #else
 #ifdef __APPLE__
 	{
-#if (MAC_OS_X_VERSION_MIN_REQUIRED <= 1050)
-		OSErr err = noErr;
-		int i;
-		const char *home;
-		
-		/* loop through all the OS X Volumes, and add them to the SYSTEM section */
-		for (i = 1; err != nsvErr; i++) {
-			FSRef dir;
-			unsigned char path[FILE_MAX];
-			
-			err = FSGetVolumeInfo(kFSInvalidVolumeRefNum, i, NULL, kFSVolInfoNone, NULL, NULL, &dir);
-			if (err != noErr)
-				continue;
-			
-			FSRefMakePath(&dir, path, FILE_MAX);
-			if (!STREQ((char *)path, "/home") && !STREQ((char *)path, "/net")) {
-				/* /net and /home are meaningless on OSX, home folders are stored in /Users */
-				fsmenu_insert_entry(fsmenu, FS_CATEGORY_SYSTEM, (char *)path, NULL, FS_INSERT_SORTED);
-			}
-		}
-
-		/* As 10.4 doesn't provide proper API to retrieve the favorite places,
-		 * assume they are the standard ones 
-		 * TODO : replace hardcoded paths with proper BKE_appdir_folder_id calls */
-		home = getenv("HOME");
-		if (read_bookmarks && home) {
-			BLI_snprintf(line, sizeof(line), "%s/", home);
-			fsmenu_insert_entry(fsmenu, FS_CATEGORY_SYSTEM_BOOKMARKS, line, NULL, FS_INSERT_SORTED);
-			BLI_snprintf(line, sizeof(line), "%s/Desktop/", home);
-			if (BLI_exists(line)) {
-				fsmenu_insert_entry(fsmenu, FS_CATEGORY_SYSTEM_BOOKMARKS, line, NULL, FS_INSERT_SORTED);
-			}
-			BLI_snprintf(line, sizeof(line), "%s/Documents/", home);
-			if (BLI_exists(line)) {
-				fsmenu_insert_entry(fsmenu, FS_CATEGORY_SYSTEM_BOOKMARKS, line, NULL, FS_INSERT_SORTED);
-			}
-			BLI_snprintf(line, sizeof(line), "%s/Pictures/", home);
-			if (BLI_exists(line)) {
-				fsmenu_insert_entry(fsmenu, FS_CATEGORY_SYSTEM_BOOKMARKS, line, NULL, FS_INSERT_SORTED);
-			}
-			BLI_snprintf(line, sizeof(line), "%s/Music/", home);
-			if (BLI_exists(line)) {
-				fsmenu_insert_entry(fsmenu, FS_CATEGORY_SYSTEM_BOOKMARKS, line, NULL, FS_INSERT_SORTED);
-			}
-			BLI_snprintf(line, sizeof(line), "%s/Movies/", home);
-			if (BLI_exists(line)) {
-				fsmenu_insert_entry(fsmenu, FS_CATEGORY_SYSTEM_BOOKMARKS, line, NULL, FS_INSERT_SORTED);
-			}
-		}
-#else /* OSX 10.6+ */
 		/* Get mounted volumes better method OSX 10.6 and higher, see: */
 		/*https://developer.apple.com/library/mac/#documentation/CoreFOundation/Reference/CFURLRef/Reference/reference.html*/
 		/* we get all volumes sorted including network and do not relay on user-defined finder visibility, less confusing */
@@ -535,7 +556,7 @@ void fsmenu_read_system(struct FSMenu *fsmenu, int read_bookmarks)
 				
 				pathString = CFURLCopyFileSystemPath(cfURL, kCFURLPOSIXPathStyle);
 				
-				if (pathString == NULL || !CFStringGetCString(pathString, line, sizeof(line), kCFStringEncodingASCII))
+				if (pathString == NULL || !CFStringGetCString(pathString, line, sizeof(line), kCFStringEncodingUTF8))
 					continue;
 
 				/* Exclude "all my files" as it makes no sense in blender fileselector */
@@ -551,7 +572,6 @@ void fsmenu_read_system(struct FSMenu *fsmenu, int read_bookmarks)
 			CFRelease(pathesArray);
 			CFRelease(list);
 		}
-#endif /* OSX 10.6+ */
 	}
 #else
 	/* unix */
@@ -638,6 +658,19 @@ void fsmenu_refresh_system_category(struct FSMenu *fsmenu)
 
 	/* Add all entries to system category */
 	fsmenu_read_system(fsmenu, true);
+}
+
+void fsmenu_refresh_bookmarks_status(struct FSMenu *fsmenu)
+{
+	int categories[] = {FS_CATEGORY_SYSTEM, FS_CATEGORY_SYSTEM_BOOKMARKS, FS_CATEGORY_BOOKMARKS, FS_CATEGORY_RECENT};
+	int i;
+
+	for (i = sizeof(categories) / sizeof(*categories); i--; ) {
+		FSMenuEntry *fsm_iter = ED_fsmenu_get_category(fsmenu, categories[i]);
+		for ( ; fsm_iter; fsm_iter = fsm_iter->next) {
+			fsmenu_entry_refresh_valid(fsm_iter);
+		}
+	}
 }
 
 void fsmenu_free(void)

@@ -37,12 +37,14 @@
 
 #include "DNA_armature_types.h"
 #include "DNA_curve_types.h"
+#include "DNA_gpencil_types.h"
 #include "DNA_lattice_types.h"
 #include "DNA_meta_types.h"
 #include "DNA_screen_types.h"
 #include "DNA_scene_types.h"
 #include "DNA_view3d_types.h"
 
+#include "BLI_listbase.h"
 #include "BLI_math.h"
 #include "BLI_utildefines.h"
 
@@ -268,11 +270,12 @@ static int calc_manipulator_stats(const bContext *C)
 	ARegion *ar = CTX_wm_region(C);
 	Scene *scene = CTX_data_scene(C);
 	Object *obedit = CTX_data_edit_object(C);
-	ToolSettings *ts = CTX_data_tool_settings(C);
 	View3D *v3d = sa->spacedata.first;
 	RegionView3D *rv3d = ar->regiondata;
 	Base *base;
 	Object *ob = OBACT;
+	bGPdata *gpd = CTX_data_gpencil_data(C);
+	const bool is_gp_edit = ((gpd) && (gpd->flag & GP_DATA_STROKE_EDITMODE));
 	int a, totsel = 0;
 
 	/* transform widget matrix */
@@ -283,8 +286,32 @@ static int calc_manipulator_stats(const bContext *C)
 	/* transform widget centroid/center */
 	INIT_MINMAX(scene->twmin, scene->twmax);
 	zero_v3(scene->twcent);
-
-	if (obedit) {
+	
+	if (is_gp_edit) {
+		CTX_DATA_BEGIN(C, bGPDstroke *, gps, editable_gpencil_strokes)
+		{
+			/* we're only interested in selected points here... */
+			if (gps->flag & GP_STROKE_SELECT) {
+				bGPDspoint *pt;
+				int i;
+				
+				/* Change selection status of all points, then make the stroke match */
+				for (i = 0, pt = gps->points; i < gps->totpoints; i++, pt++) {
+					if (pt->flag & GP_SPOINT_SELECT) {
+						calc_tw_center(scene, &pt->x);
+						totsel++;
+					}
+				}
+			}
+		}
+		CTX_DATA_END;
+		
+		/* selection center */
+		if (totsel) {
+			mul_v3_fl(scene->twcent, 1.0f / (float)totsel);   /* centroid! */
+		}
+	}
+	else if (obedit) {
 		ob = obedit;
 		if ((ob->lay & v3d->lay) == 0) return 0;
 
@@ -294,7 +321,7 @@ static int calc_manipulator_stats(const bContext *C)
 			float vec[3] = {0, 0, 0};
 
 			/* USE LAST SELECTE WITH ACTIVE */
-			if ((v3d->around == V3D_ACTIVE) && BM_select_history_active_get(em->bm, &ese)) {
+			if ((v3d->around == V3D_AROUND_ACTIVE) && BM_select_history_active_get(em->bm, &ese)) {
 				BM_editselection_center(&ese, vec);
 				calc_tw_center(scene, vec);
 				totsel = 1;
@@ -305,48 +332,11 @@ static int calc_manipulator_stats(const bContext *C)
 
 				BMIter iter;
 
-				/* do vertices/edges/faces for center depending on selection
-				 * mode. note we can't use just vertex selection flag because
-				 * it is not flush down on changes */
-				if (ts->selectmode & SCE_SELECT_VERTEX) {
-					BM_ITER_MESH (eve, &iter, bm, BM_VERTS_OF_MESH) {
-						if (!BM_elem_flag_test(eve, BM_ELEM_HIDDEN)) {
-							if (BM_elem_flag_test(eve, BM_ELEM_SELECT)) {
-								totsel++;
-								calc_tw_center(scene, eve->co);
-							}
-						}
-					}
-				}
-				else if (ts->selectmode & SCE_SELECT_EDGE) {
-					BMIter itersub;
-					BMEdge *eed;
-					BM_ITER_MESH (eve, &iter, bm, BM_VERTS_OF_MESH) {
-						if (!BM_elem_flag_test(eve, BM_ELEM_HIDDEN)) {
-							/* check the vertex has a selected edge, only add it once */
-							BM_ITER_ELEM (eed, &itersub, eve, BM_EDGES_OF_VERT) {
-								if (BM_elem_flag_test(eed, BM_ELEM_SELECT)) {
-									totsel++;
-									calc_tw_center(scene, eve->co);
-									break;
-								}
-							}
-						}
-					}
-				}
-				else {
-					BMIter itersub;
-					BMFace *efa;
-					BM_ITER_MESH (eve, &iter, bm, BM_VERTS_OF_MESH) {
-						if (!BM_elem_flag_test(eve, BM_ELEM_HIDDEN)) {
-							/* check the vertex has a selected face, only add it once */
-							BM_ITER_ELEM (efa, &itersub, eve, BM_FACES_OF_VERT) {
-								if (BM_elem_flag_test(efa, BM_ELEM_SELECT)) {
-									totsel++;
-									calc_tw_center(scene, eve->co);
-									break;
-								}
-							}
+				BM_ITER_MESH (eve, &iter, bm, BM_VERTS_OF_MESH) {
+					if (!BM_elem_flag_test(eve, BM_ELEM_HIDDEN)) {
+						if (BM_elem_flag_test(eve, BM_ELEM_SELECT)) {
+							totsel++;
+							calc_tw_center(scene, eve->co);
 						}
 					}
 				}
@@ -356,7 +346,7 @@ static int calc_manipulator_stats(const bContext *C)
 			bArmature *arm = obedit->data;
 			EditBone *ebo;
 
-			if ((v3d->around == V3D_ACTIVE) && (ebo = arm->act_edbone)) {
+			if ((v3d->around == V3D_AROUND_ACTIVE) && (ebo = arm->act_edbone)) {
 				/* doesn't check selection or visibility intentionally */
 				if (ebo->flag & BONE_TIPSEL) {
 					calc_tw_center(scene, ebo->tail);
@@ -392,7 +382,7 @@ static int calc_manipulator_stats(const bContext *C)
 			Curve *cu = obedit->data;
 			float center[3];
 
-			if (v3d->around == V3D_ACTIVE && ED_curve_active_center(cu, center)) {
+			if (v3d->around == V3D_AROUND_ACTIVE && ED_curve_active_center(cu, center)) {
 				calc_tw_center(scene, center);
 				totsel++;
 			}
@@ -424,11 +414,11 @@ static int calc_manipulator_stats(const bContext *C)
 							}
 							else {
 								if (bezt->f1 & SELECT) {
-									calc_tw_center(scene, bezt->vec[(v3d->around == V3D_LOCAL) ? 1 : 0]);
+									calc_tw_center(scene, bezt->vec[(v3d->around == V3D_AROUND_LOCAL_ORIGINS) ? 1 : 0]);
 									totsel++;
 								}
 								if (bezt->f3 & SELECT) {
-									calc_tw_center(scene, bezt->vec[(v3d->around == V3D_LOCAL) ? 1 : 2]);
+									calc_tw_center(scene, bezt->vec[(v3d->around == V3D_AROUND_LOCAL_ORIGINS) ? 1 : 2]);
 									totsel++;
 								}
 							}
@@ -454,7 +444,7 @@ static int calc_manipulator_stats(const bContext *C)
 			MetaBall *mb = (MetaBall *)obedit->data;
 			MetaElem *ml;
 
-			if ((v3d->around == V3D_ACTIVE) && (ml = mb->lastelem)) {
+			if ((v3d->around == V3D_AROUND_ACTIVE) && (ml = mb->lastelem)) {
 				calc_tw_center(scene, &ml->x);
 				totsel++;
 			}
@@ -471,7 +461,7 @@ static int calc_manipulator_stats(const bContext *C)
 			Lattice *lt = ((Lattice *)obedit->data)->editlatt->latt;
 			BPoint *bp;
 
-			if ((v3d->around == V3D_ACTIVE) && (bp = BKE_lattice_active_point_get(lt))) {
+			if ((v3d->around == V3D_AROUND_ACTIVE) && (bp = BKE_lattice_active_point_get(lt))) {
 				calc_tw_center(scene, bp->vec);
 				totsel++;
 			}
@@ -503,7 +493,7 @@ static int calc_manipulator_stats(const bContext *C)
 
 		if ((ob->lay & v3d->lay) == 0) return 0;
 
-		if ((v3d->around == V3D_ACTIVE) && (pchan = BKE_pose_channel_active(ob))) {
+		if ((v3d->around == V3D_AROUND_ACTIVE) && (pchan = BKE_pose_channel_active(ob))) {
 			/* doesn't check selection or visibility intentionally */
 			Bone *bone = pchan->bone;
 			if (bone) {
@@ -550,7 +540,7 @@ static int calc_manipulator_stats(const bContext *C)
 
 				for (k = 0, ek = point->keys; k < point->totkey; k++, ek++) {
 					if (ek->flag & PEK_SELECT) {
-						calc_tw_center(scene, ek->flag & PEK_USE_WCO ? ek->world_co : ek->co);
+						calc_tw_center(scene, (ek->flag & PEK_USE_WCO) ? ek->world_co : ek->co);
 						totsel++;
 					}
 				}
@@ -584,7 +574,7 @@ static int calc_manipulator_stats(const bContext *C)
 	}
 
 	/* global, local or normal orientation? */
-	if (ob && totsel) {
+	if (ob && totsel && !is_gp_edit) {
 
 		switch (v3d->twmode) {
 		
@@ -606,7 +596,7 @@ static int calc_manipulator_stats(const bContext *C)
 			{
 				if (obedit || ob->mode & OB_MODE_POSE) {
 					float mat[3][3];
-					ED_getTransformOrientationMatrix(C, mat, (v3d->around == V3D_ACTIVE));
+					ED_getTransformOrientationMatrix(C, mat, v3d->around);
 					copy_m4_m3(rv3d->twmat, mat);
 					break;
 				}
@@ -621,7 +611,7 @@ static int calc_manipulator_stats(const bContext *C)
 					 * and users who select many bones will understand whats going on and what local means
 					 * when they start transforming */
 					float mat[3][3];
-					ED_getTransformOrientationMatrix(C, mat, (v3d->around == V3D_ACTIVE));
+					ED_getTransformOrientationMatrix(C, mat, v3d->around);
 					copy_m4_m3(rv3d->twmat, mat);
 					break;
 				}
@@ -640,7 +630,7 @@ static int calc_manipulator_stats(const bContext *C)
 			default: /* V3D_MANIP_CUSTOM */
 			{
 				float mat[3][3];
-				if (applyTransformOrientation(C, mat, NULL)) {
+				if (applyTransformOrientation(C, mat, NULL, v3d->twmode - V3D_MANIP_CUSTOM)) {
 					copy_m4_m3(rv3d->twmat, mat);
 				}
 				break;
@@ -681,7 +671,7 @@ static void test_manipulator_axis(const bContext *C)
 
 static float screen_aligned(RegionView3D *rv3d, float mat[4][4])
 {
-	glTranslatef(mat[3][0], mat[3][1], mat[3][2]);
+	glTranslate3fv(mat[3]);
 
 	/* sets view screen aligned */
 	glRotatef(-360.0f * saacos(rv3d->viewquat[0]) / (float)M_PI, rv3d->viewquat[1], rv3d->viewquat[2], rv3d->viewquat[3]);
@@ -933,6 +923,11 @@ static void postOrtho(const bool ortho)
 	}
 }
 
+BLI_INLINE bool manipulator_rotate_is_visible(const int drawflags)
+{
+	return (drawflags & (MAN_ROT_X | MAN_ROT_Y | MAN_ROT_Z));
+}
+
 static void draw_manipulator_rotate(
         View3D *v3d, RegionView3D *rv3d, const int drawflags, const int combo,
         const bool is_moving, const bool is_picksel)
@@ -946,8 +941,8 @@ static void draw_manipulator_rotate(
 	const int colcode = (is_moving) ? MAN_MOVECOL : MAN_RGB;
 	bool ortho;
 
-	/* when called while moving in mixed mode, do not draw when... */
-	if ((drawflags & MAN_ROT_C) == 0) return;
+	/* skip drawing if all axes are locked */
+	if (manipulator_rotate_is_visible(drawflags) == false) return;
 
 	/* Init stuff */
 	glDisable(GL_DEPTH_TEST);
@@ -956,7 +951,7 @@ static void draw_manipulator_rotate(
 	/* prepare for screen aligned draw */
 	size = len_v3(rv3d->twmat[0]);
 	glPushMatrix();
-	glTranslatef(rv3d->twmat[3][0], rv3d->twmat[3][1], rv3d->twmat[3][2]);
+	glTranslate3fv(rv3d->twmat[3]);
 
 	if (arcs) {
 		/* clipplane makes nice handles, calc here because of multmatrix but with translate! */
@@ -991,8 +986,8 @@ static void draw_manipulator_rotate(
 
 		if (is_moving) {
 			float vec[3];
-			vec[0] = 0; // XXX (float)(t->imval[0] - t->center2d[0]);
-			vec[1] = 0; // XXX (float)(t->imval[1] - t->center2d[1]);
+			vec[0] = 0; // XXX (float)(t->mouse.imval[0] - t->center2d[0]);
+			vec[1] = 0; // XXX (float)(t->mouse.imval[1] - t->center2d[1]);
 			vec[2] = 0.0f;
 			normalize_v3(vec);
 			mul_v3_fl(vec, 1.2f * size);
@@ -1089,8 +1084,6 @@ static void draw_manipulator_rotate(
 			glRotatef(90.0, 1.0, 0.0, 0.0);
 			postOrtho(ortho);
 		}
-
-		if (arcs) glDisable(GL_CLIP_PLANE0);
 	}
 	// donut arcs
 	if (arcs) {
@@ -1333,6 +1326,7 @@ static void draw_manipulator_scale(
 		}
 	}
 
+#if 0 // XXX
 	/* if shiftkey, center point as last, for selectbuffer order */
 	if (is_picksel) {
 		int shift = 0; // XXX
@@ -1340,11 +1334,13 @@ static void draw_manipulator_scale(
 		if (shift) {
 			glTranslatef(0.0, -dz, 0.0);
 			GPU_select_load_id(MAN_SCALE_C);
+			/* TODO: set glPointSize before drawing center point */
 			glBegin(GL_POINTS);
 			glVertex3f(0.0, 0.0, 0.0);
 			glEnd();
 		}
 	}
+#endif
 
 	/* restore */
 	glLoadMatrixf(rv3d->viewmat);
@@ -1397,7 +1393,7 @@ static void draw_manipulator_translate(
 
 	manipulator_axis_order(rv3d, axis_order);
 
-	// XXX if (moving) glTranslatef(t->vec[0], t->vec[1], t->vec[2]);
+	// XXX if (moving) glTranslate3fv(t->vec);
 	glDisable(GL_DEPTH_TEST);
 
 	/* center circle, do not add to selection when shift is pressed (planar constraint) */
@@ -1486,8 +1482,8 @@ static void draw_manipulator_rotate_cyl(
 	int axis_order[3] = {2, 0, 1};
 	int i;
 
-	/* when called while moving in mixed mode, do not draw when... */
-	if ((drawflags & MAN_ROT_C) == 0) return;
+	/* skip drawing if all axes are locked */
+	if (manipulator_rotate_is_visible(drawflags) == false) return;
 
 	manipulator_axis_order(rv3d, axis_order);
 
@@ -1511,8 +1507,8 @@ static void draw_manipulator_rotate_cyl(
 
 		if (is_moving) {
 			float vec[3];
-			vec[0] = 0; // XXX (float)(t->imval[0] - t->center2d[0]);
-			vec[1] = 0; // XXX (float)(t->imval[1] - t->center2d[1]);
+			vec[0] = 0; // XXX (float)(t->mouse.imval[0] - t->center2d[0]);
+			vec[1] = 0; // XXX (float)(t->mouse.imval[1] - t->center2d[1]);
 			vec[2] = 0.0f;
 			normalize_v3(vec);
 			mul_v3_fl(vec, 1.2f * size);
@@ -1617,6 +1613,8 @@ void BIF_draw_manipulator(const bContext *C)
 
 	if (!(v3d->twflag & V3D_USE_MANIPULATOR)) return;
 
+	if ((v3d->twtype & (V3D_MANIP_TRANSLATE | V3D_MANIP_ROTATE | V3D_MANIP_SCALE)) == 0) return;
+
 	{
 		v3d->twflag &= ~V3D_DRAW_MANIPULATOR;
 
@@ -1627,12 +1625,15 @@ void BIF_draw_manipulator(const bContext *C)
 
 		/* now we can define center */
 		switch (v3d->around) {
-			case V3D_CENTER:
-			case V3D_ACTIVE:
+			case V3D_AROUND_CENTER_BOUNDS:
+			case V3D_AROUND_ACTIVE:
 			{
-				Object *ob;
-				if (((v3d->around == V3D_ACTIVE) && (scene->obedit == NULL)) &&
-				    ((ob = OBACT) && !(ob->mode & OB_MODE_POSE)))
+				bGPdata *gpd = CTX_data_gpencil_data(C);
+				Object *ob = OBACT;
+
+				if (((v3d->around == V3D_AROUND_ACTIVE) && (scene->obedit == NULL)) &&
+				    ((gpd == NULL) || !(gpd->flag & GP_DATA_STROKE_EDITMODE)) &&
+				    (!(ob->mode & OB_MODE_POSE)))
 				{
 					copy_v3_v3(rv3d->twmat[3], ob->obmat[3]);
 				}
@@ -1641,11 +1642,11 @@ void BIF_draw_manipulator(const bContext *C)
 				}
 				break;
 			}
-			case V3D_LOCAL:
-			case V3D_CENTROID:
+			case V3D_AROUND_LOCAL_ORIGINS:
+			case V3D_AROUND_CENTER_MEAN:
 				copy_v3_v3(rv3d->twmat[3], scene->twcent);
 				break;
-			case V3D_CURSOR:
+			case V3D_AROUND_CURSOR:
 				copy_v3_v3(rv3d->twmat[3], ED_view3d_cursor3d_get(scene, v3d));
 				break;
 		}

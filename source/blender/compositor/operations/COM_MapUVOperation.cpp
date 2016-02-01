@@ -41,7 +41,7 @@ void MapUVOperation::initExecution()
 	this->m_inputUVProgram = this->getInputSocketReader(1);
 }
 
-void MapUVOperation::executePixelSampled(float output[4], float x, float y, PixelSampler sampler)
+void MapUVOperation::executePixelSampled(float output[4], float x, float y, PixelSampler /*sampler*/)
 {
 	float xy[2] = { x, y };
 	float uv[2], deriv[2][2], alpha;
@@ -53,7 +53,7 @@ void MapUVOperation::executePixelSampled(float output[4], float x, float y, Pixe
 	}
 
 	/* EWA filtering */
-	this->m_inputColorProgram->readFiltered(output, uv[0], uv[1], deriv[0], deriv[1], COM_PS_BILINEAR);
+	this->m_inputColorProgram->readFiltered(output, uv[0], uv[1], deriv[0], deriv[1]);
 	
 	/* UV to alpha threshold */
 	const float threshold = this->m_alpha * 0.05f;

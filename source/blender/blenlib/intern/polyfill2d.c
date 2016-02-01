@@ -61,6 +61,9 @@
 #  define USE_KDTREE
 #endif
 
+/* disable in production, it can fail on near zero area ngons */
+// #define USE_STRICT_ASSERT
+
 // #define DEBUG_TIME
 #ifdef DEBUG_TIME
 #  include "PIL_time_utildefines.h"
@@ -179,7 +182,7 @@ BLI_INLINE eSign signum_enum(float a)
  * alternative version of #area_tri_signed_v2
  * needed because of float precision issues
  *
- * \note removes / 2 since its not needed since we only need ths sign.
+ * \note removes / 2 since its not needed since we only need the sign.
  */
 BLI_INLINE float area_tri_signed_v2_alt_2x(const float v1[2], const float v2[2], const float v3[2])
 {
@@ -513,18 +516,6 @@ static void pf_triangulate(PolyFill *pf)
 #endif
 		        );
 
-#ifdef USE_CLIP_SWEEP
-#ifdef USE_CLIP_EVEN
-		if (pi_ear != pi_ear_init) {
-			reverse = !reverse;
-		}
-#else
-		if (pi_ear != pf->indices) {
-			reverse = !reverse;
-		}
-#endif
-#endif
-
 #ifdef USE_CONVEX_SKIP
 		if (pi_ear->sign != CONVEX) {
 			pf->coords_tot_concave -= 1;
@@ -571,6 +562,20 @@ static void pf_triangulate(PolyFill *pf)
 #else
 		pi_ear_init = pi_next->next;
 #endif
+#endif
+
+#ifdef USE_CLIP_EVEN
+#ifdef USE_CLIP_SWEEP
+		if (pi_ear_init->sign != CONVEX) {
+			/* take the extra step since this ear isn't a good candidate */
+			pi_ear_init = reverse ? pi_ear_init->prev : pi_ear_init->next;
+			reverse = !reverse;
+		}
+#endif
+#else
+		if ((reverse ? pi_prev->prev : pi_next->next)->sign != CONVEX) {
+			reverse = !reverse;
+		}
 #endif
 
 	}
@@ -796,7 +801,8 @@ static void polyfill_prepare(
 		coords_sign = (cross_poly_v2(coords, coords_tot) >= 0.0f) ? 1 : -1;
 	}
 	else {
-		/* chech we're passing in correcty args */
+		/* check we're passing in correcty args */
+#ifdef USE_STRICT_ASSERT
 #ifndef NDEBUG
 		if (coords_sign == 1) {
 			BLI_assert(cross_poly_v2(coords, coords_tot) >= 0.0f);
@@ -804,6 +810,7 @@ static void polyfill_prepare(
 		else {
 			BLI_assert(cross_poly_v2(coords, coords_tot) <= 0.0f);
 		}
+#endif
 #endif
 	}
 

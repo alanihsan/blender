@@ -17,18 +17,64 @@
 # <pep8 compliant>
 
 
+def _is_using_buggy_driver():
+    import bgl
+    # We need to be conservative here because in multi-GPU systems display card
+    # might be quite old, but others one might be just good.
+    #
+    # So We shouldn't disable possible good dedicated cards just because display
+    # card seems weak. And instead we only blacklist configurations which are
+    # proven to cause problems.
+    if bgl.glGetString(bgl.GL_VENDOR) == "ATI Technologies Inc.":
+        import re
+        version = bgl.glGetString(bgl.GL_VERSION)
+        if version.endswith("Compatibility Profile Context"):
+            # Old HD 4xxx and 5xxx series drivers did not have driver version
+            # in the version string, but those cards do not quite work and
+            # causing crashes.
+            return True
+        regex = re.compile(".*Compatibility Profile Context ([0-9]+(\.[0-9]+)+)$")
+        if not regex.match(version):
+            # Skip cards like FireGL
+            return False
+        version = regex.sub("\\1", version).split('.')
+        return int(version[0]) == 8
+    return False
+
+
+def _workaround_buggy_drivers():
+    if _is_using_buggy_driver():
+        import _cycles
+        if hasattr(_cycles, "opencl_disable"):
+            print("Cycles: OpenGL driver known to be buggy, disabling OpenCL platform.")
+            _cycles.opencl_disable()
+
+
 def init():
     import bpy
     import _cycles
     import os.path
 
+    # Workaround possibly buggy legacy drivers which crashes on the OpenCL
+    # device enumeration.
+    #
+    # This checks are not really correct because they might still fail
+    # in the case of multiple GPUs. However, currently buggy drivers
+    # are really old and likely to be used in single GPU systems only
+    # anyway.
+    #
+    # Can't do it in the background mode, so we hope OpenCL is no enabled
+    # in the user preferences.
+    if not bpy.app.background:
+        _workaround_buggy_drivers()
+
     path = os.path.dirname(__file__)
     user_path = os.path.dirname(os.path.abspath(bpy.utils.user_resource('CONFIG', '')))
 
-    _cycles.init(path, user_path)
+    _cycles.init(path, user_path, bpy.app.background)
 
 
-def create(engine, data, scene, region=None, v3d=None, rv3d=None, preview_osl=False, background=False):
+def create(engine, data, scene, region=None, v3d=None, rv3d=None, preview_osl=False):
     import bpy
     import _cycles
 
@@ -42,7 +88,12 @@ def create(engine, data, scene, region=None, v3d=None, rv3d=None, preview_osl=Fa
     if rv3d:
         rv3d = rv3d.as_pointer()
 
-    engine.session = _cycles.create(engine.as_pointer(), userpref, data, scene, region, v3d, rv3d, preview_osl, background)
+    if bpy.app.debug_value == 256:
+        _cycles.debug_flags_update(scene)
+    else:
+        _cycles.debug_flags_reset()
+
+    engine.session = _cycles.create(engine.as_pointer(), userpref, data, scene, region, v3d, rv3d, preview_osl)
 
 
 def free(engine):
@@ -59,11 +110,11 @@ def render(engine):
         _cycles.render(engine.session)
 
 
-def bake(engine, obj, pass_type, pixel_array, num_pixels, depth, result):
+def bake(engine, obj, pass_type, pass_filter, object_id, pixel_array, num_pixels, depth, result):
     import _cycles
     session = getattr(engine, "session", None)
     if session is not None:
-        _cycles.bake(engine.session, obj.as_pointer(), pass_type, pixel_array.as_pointer(), num_pixels, depth, result.as_pointer())
+        _cycles.bake(engine.session, obj.as_pointer(), pass_type, pass_filter, object_id, pixel_array.as_pointer(), num_pixels, depth, result.as_pointer())
 
 
 def reset(engine, data, scene):

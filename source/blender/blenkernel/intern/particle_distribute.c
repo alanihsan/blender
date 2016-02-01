@@ -79,7 +79,7 @@ static void alloc_child_particles(ParticleSystem *psys, int tot)
 	}
 }
 
-static void distribute_simple_children(Scene *scene, Object *ob, DerivedMesh *finaldm, ParticleSystem *psys)
+static void distribute_simple_children(Scene *scene, Object *ob, DerivedMesh *finaldm, DerivedMesh *deformdm, ParticleSystem *psys)
 {
 	ChildParticle *cpa = NULL;
 	int i, p;
@@ -106,7 +106,7 @@ static void distribute_simple_children(Scene *scene, Object *ob, DerivedMesh *fi
 		}
 	}
 	/* dmcache must be updated for parent particles if children from faces is used */
-	psys_calc_dmcache(ob, finaldm, psys);
+	psys_calc_dmcache(ob, finaldm, deformdm, psys);
 }
 static void distribute_grid(DerivedMesh *dm, ParticleSystem *psys)
 {
@@ -220,7 +220,7 @@ static void distribute_grid(DerivedMesh *dm, ParticleSystem *psys)
 						copy_v3_v3(v2, mvert[mface->v2].co);
 						copy_v3_v3(v3, mvert[mface->v3].co);
 
-						if (isect_axial_line_tri_v3(a, co1, co2, v2, v3, v1, &lambda)) {
+						if (isect_axial_line_segment_tri_v3(a, co1, co2, v2, v3, v1, &lambda)) {
 							if (from==PART_FROM_FACE)
 								(pa+(int)(lambda*size[a])*a0mul)->flag &= ~PARS_UNEXIST;
 							else /* store number of intersections */
@@ -229,7 +229,7 @@ static void distribute_grid(DerivedMesh *dm, ParticleSystem *psys)
 						else if (mface->v4) {
 							copy_v3_v3(v4, mvert[mface->v4].co);
 
-							if (isect_axial_line_tri_v3(a, co1, co2, v4, v1, v3, &lambda)) {
+							if (isect_axial_line_segment_tri_v3(a, co1, co2, v4, v1, v3, &lambda)) {
 								if (from==PART_FROM_FACE)
 									(pa+(int)(lambda*size[a])*a0mul)->flag &= ~PARS_UNEXIST;
 								else
@@ -332,7 +332,7 @@ static void init_mv_jit(float *jit, int num, int seed2, float amount)
 
 	rng = BLI_rng_new(31415926 + num + seed2);
 	x= 0;
-		num2 = 2 * num;
+	num2 = 2 * num;
 	for (i=0; i<num2; i+=2) {
 	
 		jit[i] = x + amount*rad1*(0.5f - BLI_rng_get_float(rng));
@@ -467,10 +467,9 @@ static void distribute_from_faces_exec(ParticleTask *thread, ParticleData *pa, i
 					psys_uv_to_w(1.0f / 3.0f, 1.0f / 3.0f, mface->v4, pa->fuv);
 			}
 			else {
-				ctx->jitoff[i] = fmod(ctx->jitoff[i],(float)ctx->jitlevel);
-				if (!isnan(ctx->jitoff[i])) {
-					psys_uv_to_w(ctx->jit[2*(int)ctx->jitoff[i]], ctx->jit[2*(int)ctx->jitoff[i]+1], mface->v4, pa->fuv);
-					ctx->jitoff[i]++;
+				float offset = fmod(ctx->jitoff[i] + (float)p, (float)ctx->jitlevel);
+				if (!isnan(offset)) {
+					psys_uv_to_w(ctx->jit[2*(int)offset], ctx->jit[2*(int)offset+1], mface->v4, pa->fuv);
 				}
 			}
 			break;
@@ -491,7 +490,7 @@ static void distribute_from_faces_exec(ParticleTask *thread, ParticleData *pa, i
 static void distribute_from_volume_exec(ParticleTask *thread, ParticleData *pa, int p) {
 	ParticleThreadContext *ctx= thread->ctx;
 	DerivedMesh *dm= ctx->dm;
-	float *v1, *v2, *v3, *v4, nor[3], co1[3], co2[3];
+	float *v1, *v2, *v3, *v4, nor[3], co[3];
 	float cur_d, min_d, randu, randv;
 	int distr= ctx->distr;
 	int i, intersect, tot;
@@ -512,10 +511,9 @@ static void distribute_from_volume_exec(ParticleTask *thread, ParticleData *pa, 
 					psys_uv_to_w(1.0f / 3.0f, 1.0f / 3.0f, mface->v4, pa->fuv);
 			}
 			else {
-				ctx->jitoff[i] = fmod(ctx->jitoff[i],(float)ctx->jitlevel);
-				if (!isnan(ctx->jitoff[i])) {
-					psys_uv_to_w(ctx->jit[2*(int)ctx->jitoff[i]], ctx->jit[2*(int)ctx->jitoff[i]+1], mface->v4, pa->fuv);
-					ctx->jitoff[i]++;
+				float offset = fmod(ctx->jitoff[i] + (float)p, (float)ctx->jitlevel);
+				if (!isnan(offset)) {
+					psys_uv_to_w(ctx->jit[2*(int)offset], ctx->jit[2*(int)offset+1], mface->v4, pa->fuv);
 				}
 			}
 			break;
@@ -532,14 +530,12 @@ static void distribute_from_volume_exec(ParticleTask *thread, ParticleData *pa, 
 	/* experimental */
 	tot=dm->getNumTessFaces(dm);
 	
-	psys_interpolate_face(mvert,mface,0,0,pa->fuv,co1,nor,0,0,0,0);
+	psys_interpolate_face(mvert,mface,0,0,pa->fuv,co,nor,0,0,0,0);
 	
 	normalize_v3(nor);
-	mul_v3_fl(nor,-100.0);
+	negate_v3(nor);
 	
-	add_v3_v3v3(co2,co1,nor);
-	
-	min_d=2.0;
+	min_d=FLT_MAX;
 	intersect=0;
 	
 	for (i=0,mface=dm->getTessFaceDataArray(dm,CD_MFACE); i<tot; i++,mface++) {
@@ -549,20 +545,20 @@ static void distribute_from_volume_exec(ParticleTask *thread, ParticleData *pa, 
 		v2=mvert[mface->v2].co;
 		v3=mvert[mface->v3].co;
 		
-		if (isect_line_tri_v3(co1, co2, v2, v3, v1, &cur_d, 0)) {
+		if (isect_ray_tri_v3(co, nor, v2, v3, v1, &cur_d, NULL)) {
 			if (cur_d<min_d) {
 				min_d=cur_d;
-				pa->foffset=cur_d*50.0f; /* to the middle of volume */
+				pa->foffset=cur_d*0.5f; /* to the middle of volume */
 				intersect=1;
 			}
 		}
 		if (mface->v4) {
 			v4=mvert[mface->v4].co;
 			
-			if (isect_line_tri_v3(co1, co2, v4, v1, v3, &cur_d, 0)) {
+			if (isect_ray_tri_v3(co, nor, v4, v1, v3, &cur_d, NULL)) {
 				if (cur_d<min_d) {
 					min_d=cur_d;
-					pa->foffset=cur_d*50.0f; /* to the middle of volume */
+					pa->foffset=cur_d*0.5f; /* to the middle of volume */
 					intersect=1;
 				}
 			}
@@ -664,12 +660,14 @@ static void distribute_children_exec(ParticleTask *thread, ChildParticle *cpa, i
 		BLI_rng_skip(thread->rng, rng_skip_tot);
 }
 
-static void exec_distribute_parent(TaskPool *UNUSED(pool), void *taskdata, int UNUSED(threadid))
+static void exec_distribute_parent(TaskPool * __restrict UNUSED(pool), void *taskdata, int UNUSED(threadid))
 {
 	ParticleTask *task = taskdata;
 	ParticleSystem *psys= task->ctx->sim.psys;
 	ParticleData *pa;
 	int p;
+
+	BLI_rng_skip(task->rng, PSYS_RND_DIST_SKIP * task->begin);
 	
 	pa= psys->particles + task->begin;
 	switch (psys->part->from) {
@@ -688,7 +686,7 @@ static void exec_distribute_parent(TaskPool *UNUSED(pool), void *taskdata, int U
 	}
 }
 
-static void exec_distribute_child(TaskPool *UNUSED(pool), void *taskdata, int UNUSED(threadid))
+static void exec_distribute_child(TaskPool * __restrict UNUSED(pool), void *taskdata, int UNUSED(threadid))
 {
 	ParticleTask *task = taskdata;
 	ParticleSystem *psys = task->ctx->sim.psys;
@@ -765,7 +763,7 @@ static void distribute_invalid(Scene *scene, ParticleSystem *psys, int from)
 static int psys_thread_context_init_distribute(ParticleThreadContext *ctx, ParticleSimulationData *sim, int from)
 {
 	Scene *scene = sim->scene;
-	DerivedMesh *finaldm = sim->psmd->dm;
+	DerivedMesh *finaldm = sim->psmd->dm_final;
 	Object *ob = sim->ob;
 	ParticleSystem *psys= sim->psys;
 	ParticleData *pa=0, *tpars= 0;
@@ -802,7 +800,7 @@ static int psys_thread_context_init_distribute(ParticleThreadContext *ctx, Parti
 		/* Simple children */
 		if (part->childtype != PART_CHILD_FACES) {
 			BLI_srandom(31415926 + psys->seed + psys->child_seed);
-			distribute_simple_children(scene, ob, finaldm, psys);
+			distribute_simple_children(scene, ob, finaldm, sim->psmd->dm_deformed, psys);
 			return 0;
 		}
 	}
@@ -1112,7 +1110,7 @@ static void distribute_particles_on_dm(ParticleSimulationData *sim, int from)
 	TaskPool *task_pool;
 	ParticleThreadContext ctx;
 	ParticleTask *tasks;
-	DerivedMesh *finaldm = sim->psmd->dm;
+	DerivedMesh *finaldm = sim->psmd->dm_final;
 	int i, totpart, numtasks;
 	
 	/* create a task pool for distribution tasks */
@@ -1123,7 +1121,7 @@ static void distribute_particles_on_dm(ParticleSimulationData *sim, int from)
 	task_pool = BLI_task_pool_create(task_scheduler, &ctx);
 	
 	totpart = (from == PART_FROM_CHILD ? sim->psys->totchild : sim->psys->totpart);
-	psys_tasks_create(&ctx, totpart, &tasks, &numtasks);
+	psys_tasks_create(&ctx, 0, totpart, &tasks, &numtasks);
 	for (i = 0; i < numtasks; ++i) {
 		ParticleTask *task = &tasks[i];
 		
@@ -1137,7 +1135,7 @@ static void distribute_particles_on_dm(ParticleSimulationData *sim, int from)
 	
 	BLI_task_pool_free(task_pool);
 	
-	psys_calc_dmcache(sim->ob, finaldm, sim->psys);
+	psys_calc_dmcache(sim->ob, finaldm, sim->psmd->dm_deformed, sim->psys);
 	
 	if (ctx.dm != finaldm)
 		ctx.dm->release(ctx.dm);
@@ -1161,7 +1159,7 @@ void distribute_particles(ParticleSimulationData *sim, int from)
 	int distr_error=0;
 
 	if (psmd) {
-		if (psmd->dm)
+		if (psmd->dm_final)
 			distribute_particles_on_dm(sim, from);
 		else
 			distr_error=1;

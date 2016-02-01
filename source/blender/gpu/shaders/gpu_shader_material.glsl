@@ -149,8 +149,36 @@ void geom(vec3 co, vec3 nor, mat4 viewinvmat, vec3 attorco, vec2 attuv, vec4 att
 	uv_attribute(attuv, uv);
 	normal = -normalize(nor);	/* blender render normal is negated */
 	vcol_attribute(attvcol, vcol);
+	srgb_to_linearrgb(vcol, vcol);
 	vcol_alpha = attvcol.a;
 	frontback = (gl_FrontFacing)? 1.0: 0.0;
+}
+
+void particle_info(vec4 sprops, vec3 loc, vec3 vel, vec3 avel, out float index, out float age, out float life_time, out vec3 location, out float size, out vec3 velocity, out vec3 angular_velocity)
+{
+    index = sprops.x;
+    age = sprops.y;
+    life_time = sprops.z;
+    size = sprops.w;
+
+    location = loc;
+    velocity = vel;
+    angular_velocity = avel;
+}
+
+void vect_normalize(vec3 vin, out vec3 vout)
+{
+	vout = normalize(vin);
+}
+
+void direction_transform_m4v3(vec3 vin, mat4 mat, out vec3 vout)
+{
+	vout = (mat*vec4(vin, 0.0)).xyz;
+}
+
+void point_transform_m4v3(vec3 vin, mat4 mat, out vec3 vout)
+{
+	vout = (mat*vec4(vin, 1.0)).xyz;
 }
 
 void mapping(vec3 vec, mat4 mat, vec3 minvec, vec3 maxvec, float domin, float domax, out vec3 outvec)
@@ -354,6 +382,12 @@ void vec_math_normalize(vec3 v, out vec3 outvec, out float outval)
 void vec_math_negate(vec3 v, out vec3 outv)
 {
 	outv = -v;
+}
+
+void invert_z(vec3 v, out vec3 outv)
+{
+        v.z = -v.z;
+        outv = v;
 }
 
 void normal(vec3 dir, vec3 nor, out vec3 outnor, out float outdot)
@@ -698,22 +732,7 @@ void mix_linear(float fac, vec4 col1, vec4 col2, out vec4 outcol)
 {
 	fac = clamp(fac, 0.0, 1.0);
 
-	outcol = col1;
-
-	if(col2.r > 0.5)
-		outcol.r= col1.r + fac*(2.0*(col2.r - 0.5));
-	else
-		outcol.r= col1.r + fac*(2.0*(col2.r) - 1.0);
-
-	if(col2.g > 0.5)
-		outcol.g= col1.g + fac*(2.0*(col2.g - 0.5));
-	else
-		outcol.g= col1.g + fac*(2.0*(col2.g) - 1.0);
-
-	if(col2.b > 0.5)
-		outcol.b= col1.b + fac*(2.0*(col2.b - 0.5));
-	else
-		outcol.b= col1.b + fac*(2.0*(col2.b) - 1.0);
+	outcol = col1 + fac*(2.0*(col2 - vec4(0.5)));
 }
 
 void valtorgb(float fac, sampler2D colormap, out vec4 outcol, out float outalpha)
@@ -1191,6 +1210,11 @@ void mtex_alpha_to_col(vec4 col, float alpha, out vec4 outcol)
 	outcol = vec4(col.rgb, alpha);
 }
 
+void mtex_alpha_multiply_value(vec4 col, float value, out vec4 outcol)
+{
+    outcol = vec4(col.rgb, col.a * value);
+}
+
 void mtex_rgbtoint(vec4 rgb, out float intensity)
 {
 	intensity = dot(vec3(0.35, 0.45, 0.2), rgb.rgb);
@@ -1238,6 +1262,12 @@ void mtex_2d_mapping(vec3 vec, out vec3 outvec)
 vec3 mtex_2d_mapping(vec3 vec)
 {
 	return vec3(vec.xy*0.5 + vec2(0.5), vec.z);
+}
+
+void mtex_cube_map(vec3 co, samplerCube ima, out float value, out vec4 color)
+{
+	color = textureCube(ima, co);
+	value = 1.0;
 }
 
 void mtex_image(vec3 texco, sampler2D ima, out float value, out vec4 color)
@@ -1586,11 +1616,13 @@ void lamp_visibility_sphere(float lampdist, float dist, float visifac, out float
 	outvisifac= visifac*max(t, 0.0)/lampdist;
 }
 
-void lamp_visibility_spot_square(vec3 lampvec, mat4 lampimat, vec3 lv, out float inpr)
+void lamp_visibility_spot_square(vec3 lampvec, mat4 lampimat, vec2 scale, vec3 lv, out float inpr)
 {
 	if(dot(lv, lampvec) > 0.0) {
 		vec3 lvrot = (lampimat*vec4(lv, 0.0)).xyz;
-		float x = max(abs(lvrot.x/lvrot.z), abs(lvrot.y/lvrot.z));
+		/* without clever non-uniform scale, we could do: */
+		// float x = max(abs(lvrot.x / lvrot.z), abs(lvrot.y / lvrot.z));
+		float x = max(abs((lvrot.x / scale.x) / lvrot.z), abs((lvrot.y / scale.y) / lvrot.z));
 
 		inpr = 1.0/sqrt(1.0 + x*x);
 	}
@@ -1598,9 +1630,21 @@ void lamp_visibility_spot_square(vec3 lampvec, mat4 lampimat, vec3 lv, out float
 		inpr = 0.0;
 }
 
-void lamp_visibility_spot_circle(vec3 lampvec, vec3 lv, out float inpr)
+void lamp_visibility_spot_circle(vec3 lampvec, mat4 lampimat, vec2 scale, vec3 lv, out float inpr)
 {
-	inpr = dot(lv, lampvec);
+	/* without clever non-uniform scale, we could do: */
+	// inpr = dot(lv, lampvec);
+	if (dot(lv, lampvec) > 0.0) {
+		vec3 lvrot = (lampimat * vec4(lv, 0.0)).xyz;
+		float x = abs(lvrot.x / lvrot.z);
+		float y = abs(lvrot.y / lvrot.z);
+
+		float ellipse = abs((x * x) / (scale.x * scale.x) + (y * y) / (scale.y * scale.y));
+
+		inpr = 1.0 / sqrt(1.0 + ellipse);
+	}
+	else
+		inpr = 0.0;
 }
 
 void lamp_visibility_spot(float spotsi, float spotbl, float inpr, float visifac, out float outvisifac)
@@ -1624,6 +1668,40 @@ void lamp_visibility_spot(float spotsi, float spotbl, float inpr, float visifac,
 void lamp_visibility_clamp(float visifac, out float outvisifac)
 {
 	outvisifac = (visifac < 0.001)? 0.0: visifac;
+}
+
+void world_paper_view(vec3 vec, out vec3 outvec)
+{
+	vec3 nvec = normalize(vec);
+	outvec = (gl_ProjectionMatrix[3][3] == 0.0) ? vec3(nvec.x, 0.0, nvec.y) : vec3(0.0, 0.0, -1.0);
+}
+
+void world_zen_mapping(vec3 view, float zenup, float zendown, out float zenfac)
+{
+	if (view.z >= 0.0)
+		zenfac = zenup;
+	else
+		zenfac = zendown;
+}
+
+void world_blend_paper_real(vec3 vec, out float blend)
+{
+	blend = abs(vec.y);
+}
+
+void world_blend_paper(vec3 vec, out float blend)
+{
+	blend = (vec.y + 1.0) * 0.5;
+}
+
+void world_blend_real(vec3 vec, out float blend)
+{
+	blend = abs(normalize(vec).z);
+}
+
+void world_blend(vec3 vec, out float blend)
+{
+	blend = (normalize(vec).z + 1) * 0.5;
 }
 
 void shade_view(vec3 co, out vec3 view)
@@ -2114,18 +2192,23 @@ void shade_exposure_correct(vec3 col, float linfac, float logfac, out vec3 outco
 	outcol = linfac*(1.0 - exp(col*logfac));
 }
 
-void shade_mist_factor(vec3 co, float miststa, float mistdist, float misttype, float misi, out float outfac)
+void shade_mist_factor(vec3 co, float enable, float miststa, float mistdist, float misttype, float misi, out float outfac)
 {
-	float fac, zcor;
+	if(enable == 1.0) {
+		float fac, zcor;
 
-	zcor = (gl_ProjectionMatrix[3][3] == 0.0)? length(co): -co[2];
-	
-	fac = clamp((zcor-miststa)/mistdist, 0.0, 1.0);
-	if(misttype == 0.0) fac *= fac;
-	else if(misttype == 1.0);
-	else fac = sqrt(fac);
+		zcor = (gl_ProjectionMatrix[3][3] == 0.0)? length(co): -co[2];
+		
+		fac = clamp((zcor - miststa) / mistdist, 0.0, 1.0);
+		if(misttype == 0.0) fac *= fac;
+		else if(misttype == 1.0);
+		else fac = sqrt(fac);
 
-	outfac = 1.0 - (1.0-fac)*(1.0-misi);
+		outfac = 1.0 - (1.0 - fac) * (1.0 - misi);
+	}
+	else {
+		outfac = 0.0;
+	}
 }
 
 void shade_world_mix(vec3 hor, vec4 col, out vec4 outcol)
@@ -2256,6 +2339,16 @@ void node_subsurface_scattering(vec4 color, float scale, vec3 radius, float shar
 }
 
 void node_bsdf_hair(vec4 color, float offset, float roughnessu, float roughnessv, out vec4 result)
+{
+	result = color;
+}
+
+void node_bsdf_refraction(vec4 color, float roughness, float ior, vec3 N, out vec4 result)
+{
+	node_bsdf_diffuse(color, 0.0, N, result);
+}
+
+void node_ambient_occlusion(vec4 color, out vec4 result)
 {
 	result = color;
 }
@@ -2554,7 +2647,8 @@ void node_light_path(
 	out float is_transmission_ray,
 	out float ray_length,
 	out float ray_depth,
-	out float transparent_depth)
+	out float transparent_depth,
+	out float transmission_depth)
 {
 	is_camera_ray = 1.0;
 	is_shadow_ray = 0.0;
@@ -2566,6 +2660,7 @@ void node_light_path(
 	ray_length = 1.0;
 	ray_depth = 1.0;
 	transparent_depth = 1.0;
+	transmission_depth = 1.0;
 }
 
 void node_light_falloff(float strength, float tsmooth, out float quadratic, out float linear, out float constant)
@@ -2612,6 +2707,7 @@ void material_preview_matcap(vec4 color, sampler2D ima, vec4 N, vec4 mask, out v
 	vec3 normal;
 	vec2 tex;
 	
+#ifndef USE_OPENSUBDIV
 	/* remap to 0.0 - 1.0 range. This is done because OpenGL 2.0 clamps colors 
 	 * between shader stages and we want the full range of the normal */
 	normal = vec3(2.0, 2.0, 2.0) * vec3(N.x, N.y, N.z) - vec3(1.0, 1.0, 1.0);
@@ -2619,6 +2715,10 @@ void material_preview_matcap(vec4 color, sampler2D ima, vec4 N, vec4 mask, out v
 		normal.z = 0.0;
 	}
 	normal = normalize(normal);
+#else
+	normal = inpt.v.normal;
+	mask = vec4(1.0, 1.0, 1.0, 1.0);
+#endif
 
 	tex.x = 0.5 + 0.49 * normal.x;
 	tex.y = 0.5 + 0.49 * normal.y;

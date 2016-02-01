@@ -34,10 +34,11 @@
 
 #include "DNA_scene_types.h"
 #include "DNA_object_types.h"
+#include "DNA_gpencil_types.h"
 
 #include "BLI_utildefines.h"
 
-#include "BLF_translation.h"
+#include "BLT_translation.h"
 
 #include "BKE_context.h"
 #include "BKE_depsgraph.h"
@@ -105,8 +106,8 @@ static void view3d_layers_editmode_ensure(Scene *scene, View3D *v3d)
 	if (scene->obedit && (scene->obedit->lay & v3d->lay) == 0) {
 		int bit;
 		for (bit = 0; bit < 32; bit++) {
-			if (scene->obedit->lay & (1 << bit)) {
-				v3d->lay |= 1 << bit;
+			if (scene->obedit->lay & (1u << bit)) {
+				v3d->lay |= (1u << bit);
 				break;
 			}
 		}
@@ -161,8 +162,8 @@ static int view3d_layers_exec(bContext *C, wmOperator *op)
 			v3d->layact = 1 << nr;
 		else if ((v3d->lay & v3d->layact) == 0) {
 			for (bit = 0; bit < 32; bit++) {
-				if (v3d->lay & (1 << bit)) {
-					v3d->layact = 1 << bit;
+				if (v3d->lay & (1u << bit)) {
+					v3d->layact = (1u << bit);
 					break;
 				}
 			}
@@ -287,6 +288,7 @@ void uiTemplateHeader3D(uiLayout *layout, struct bContext *C)
 	PointerRNA v3dptr, toolsptr, sceneptr;
 	Object *ob = OBACT;
 	Object *obedit = CTX_data_edit_object(C);
+	bGPdata *gpd = CTX_data_gpencil_data(C);
 	uiBlock *block;
 	uiLayout *row;
 	bool is_paint = false;
@@ -303,7 +305,10 @@ void uiTemplateHeader3D(uiLayout *layout, struct bContext *C)
 	UI_block_emboss_set(block, UI_EMBOSS);
 	
 	/* mode */
-	if (ob) {
+	if ((gpd) && (gpd->flag & GP_DATA_STROKE_EDITMODE)) {
+		modeselect = OB_MODE_GPENCIL;
+	}
+	else if (ob) {
 		modeselect = ob->mode;
 		is_paint = ELEM(ob->mode, OB_MODE_SCULPT, OB_MODE_VERTEX_PAINT, OB_MODE_WEIGHT_PAINT, OB_MODE_TEXTURE_PAINT);
 	}
@@ -313,7 +318,7 @@ void uiTemplateHeader3D(uiLayout *layout, struct bContext *C)
 
 	row = uiLayoutRow(layout, false);
 	{
-		EnumPropertyItem *item = object_mode_items;
+		EnumPropertyItem *item = rna_enum_object_mode_items;
 		const char *name = "";
 		int icon = ICON_OBJECT_DATAMODE;
 

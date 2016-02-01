@@ -92,6 +92,7 @@ static void rna_World_update(Main *UNUSED(bmain), Scene *UNUSED(scene), PointerR
 	WM_main_add_notifier(NC_WORLD | ND_WORLD, wo);
 }
 
+#if 0
 static void rna_World_draw_update(Main *UNUSED(bmain), Scene *UNUSED(scene), PointerRNA *ptr)
 {
 	World *wo = ptr->id.data;
@@ -99,6 +100,7 @@ static void rna_World_draw_update(Main *UNUSED(bmain), Scene *UNUSED(scene), Poi
 	DAG_id_tag_update(&wo->id, 0);
 	WM_main_add_notifier(NC_WORLD | ND_WORLD_DRAW, wo);
 }
+#endif
 
 /* so camera mist limits redraw */
 static void rna_World_draw_mist_update(Main *UNUSED(bmain), Scene *UNUSED(scene), PointerRNA *ptr)
@@ -140,7 +142,7 @@ static void rna_def_world_mtex(BlenderRNA *brna)
 
 	srna = RNA_def_struct(brna, "WorldTextureSlot", "TextureSlot");
 	RNA_def_struct_sdna(srna, "MTex");
-	RNA_def_struct_ui_text(srna, "World Texture Slot", "Texture slot for textures in a World datablock");
+	RNA_def_struct_ui_text(srna, "World Texture Slot", "Texture slot for textures in a World data-block");
 
 	/* map to */
 	prop = RNA_def_property(srna, "use_map_blend", PROP_BOOLEAN, PROP_NONE);
@@ -236,7 +238,7 @@ static void rna_def_lighting(BlenderRNA *brna)
 	srna = RNA_def_struct(brna, "WorldLighting", NULL);
 	RNA_def_struct_sdna(srna, "World");
 	RNA_def_struct_nested(brna, srna, "World");
-	RNA_def_struct_ui_text(srna, "Lighting", "Lighting for a World datablock");
+	RNA_def_struct_ui_text(srna, "Lighting", "Lighting for a World data-block");
 
 	/* ambient occlusion */
 	prop = RNA_def_property(srna, "use_ambient_occlusion", PROP_BOOLEAN, PROP_NONE);
@@ -403,13 +405,13 @@ static void rna_def_world_mist(BlenderRNA *brna)
 	prop = RNA_def_property(srna, "use_mist", PROP_BOOLEAN, PROP_NONE);
 	RNA_def_property_boolean_sdna(prop, NULL, "mode", WO_MIST);
 	RNA_def_property_ui_text(prop, "Use Mist", "Occlude objects with the environment color as they are further away");
-	RNA_def_property_update(prop, 0, "rna_World_draw_update");
+	RNA_def_property_update(prop, 0, "rna_World_draw_mist_update");
 
 	prop = RNA_def_property(srna, "intensity", PROP_FLOAT, PROP_NONE);
 	RNA_def_property_float_sdna(prop, NULL, "misi");
 	RNA_def_property_range(prop, 0, 1);
 	RNA_def_property_ui_text(prop, "Minimum", "Overall minimum intensity of the mist effect");
-	RNA_def_property_update(prop, 0, "rna_World_update");
+	RNA_def_property_update(prop, 0, "rna_World_draw_mist_update");
 
 	prop = RNA_def_property(srna, "start", PROP_FLOAT, PROP_DISTANCE);
 	RNA_def_property_float_sdna(prop, NULL, "miststa");
@@ -435,7 +437,7 @@ static void rna_def_world_mist(BlenderRNA *brna)
 	RNA_def_property_enum_sdna(prop, NULL, "mistype");
 	RNA_def_property_enum_items(prop, falloff_items);
 	RNA_def_property_ui_text(prop, "Falloff", "Type of transition used to fade mist");
-	RNA_def_property_update(prop, 0, "rna_World_update");
+	RNA_def_property_update(prop, 0, "rna_World_draw_mist_update");
 }
 
 void RNA_def_world(BlenderRNA *brna)
@@ -445,7 +447,7 @@ void RNA_def_world(BlenderRNA *brna)
 
 	srna = RNA_def_struct(brna, "World", "ID");
 	RNA_def_struct_ui_text(srna, "World",
-	                       "World datablock describing the environment and ambient lighting of a scene");
+	                       "World data-block describing the environment and ambient lighting of a scene");
 	RNA_def_struct_ui_icon(srna, ICON_WORLD_DATA);
 
 	rna_def_animdata_common(srna);
@@ -460,8 +462,7 @@ void RNA_def_world(BlenderRNA *brna)
 	RNA_def_property_ui_text(prop, "Horizon Color", "Color at the horizon");
 	/* RNA_def_property_update(prop, 0, "rna_World_update"); */
 	/* render-only uses this */
-	RNA_def_property_update(prop, NC_WORLD | ND_WORLD_DRAW, "rna_World_update");
-
+	RNA_def_property_update(prop, 0, "rna_World_draw_mist_update");
 	
 	prop = RNA_def_property(srna, "zenith_color", PROP_FLOAT, PROP_COLOR);
 	RNA_def_property_float_sdna(prop, NULL, "zenr");
@@ -473,7 +474,7 @@ void RNA_def_world(BlenderRNA *brna)
 	RNA_def_property_float_sdna(prop, NULL, "ambr");
 	RNA_def_property_array(prop, 3);
 	RNA_def_property_ui_text(prop, "Ambient Color", "Ambient color of the world");
-	RNA_def_property_update(prop, 0, "rna_World_update");
+	RNA_def_property_update(prop, 0, "rna_World_draw_mist_update");
 
 	/* exp, range */
 	prop = RNA_def_property(srna, "exposure", PROP_FLOAT, PROP_NONE);

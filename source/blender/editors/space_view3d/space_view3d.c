@@ -54,9 +54,9 @@
 #include "ED_space_api.h"
 #include "ED_screen.h"
 
-#include "GPU_extensions.h"
-#include "GPU_material.h"
 #include "GPU_compositing.h"
+#include "GPU_framebuffer.h"
+#include "GPU_material.h"
 
 #include "BIF_gl.h"
 
@@ -73,6 +73,8 @@
 #ifdef WITH_PYTHON
 #  include "BPY_extern.h"
 #endif
+
+#include "DEG_depsgraph.h"
 
 #include "view3d_intern.h"  /* own include */
 
@@ -266,7 +268,7 @@ void ED_view3d_check_mats_rv3d(struct RegionView3D *rv3d)
 }
 #endif
 
-static void view3d_stop_render_preview(wmWindowManager *wm, ARegion *ar)
+void ED_view3d_stop_render_preview(wmWindowManager *wm, ARegion *ar)
 {
 	RegionView3D *rv3d = ar->regiondata;
 
@@ -297,7 +299,7 @@ void ED_view3d_shade_update(Main *bmain, Scene *scene, View3D *v3d, ScrArea *sa)
 
 		for (ar = sa->regionbase.first; ar; ar = ar->next) {
 			if (ar->regiondata)
-				view3d_stop_render_preview(wm, ar);
+				ED_view3d_stop_render_preview(wm, ar);
 		}
 	}
 	else if (scene->obedit != NULL && scene->obedit->type == OB_MESH) {
@@ -340,11 +342,17 @@ static SpaceLink *view3d_new(const bContext *C)
 
 	v3d->twflag |= U.tw_flag & V3D_USE_MANIPULATOR;
 	v3d->twtype = V3D_MANIP_TRANSLATE;
-	v3d->around = V3D_CENTROID;
+	v3d->around = V3D_AROUND_CENTER_MEAN;
 	
 	v3d->bundle_size = 0.2f;
 	v3d->bundle_drawtype = OB_PLAINAXES;
-	
+
+	/* stereo */
+	v3d->stereo3d_camera = STEREO_3D_ID;
+	v3d->stereo3d_flag |= V3D_S3D_DISPPLANE;
+	v3d->stereo3d_convergence_alpha = 0.15f;
+	v3d->stereo3d_volume_alpha = 0.05f;
+
 	/* header */
 	ar = MEM_callocN(sizeof(ARegion), "header for view3d");
 	
@@ -376,8 +384,8 @@ static SpaceLink *view3d_new(const bContext *C)
 	ar->alignment = RGN_ALIGN_RIGHT;
 	ar->flag = RGN_FLAG_HIDDEN;
 	
-	/* main area */
-	ar = MEM_callocN(sizeof(ARegion), "main area for view3d");
+	/* main region */
+	ar = MEM_callocN(sizeof(ARegion), "main region for view3d");
 	
 	BLI_addtail(&v3d->regionbase, ar);
 	ar->regiontype = RGN_TYPE_WINDOW;
@@ -386,7 +394,7 @@ static SpaceLink *view3d_new(const bContext *C)
 	rv3d = ar->regiondata;
 	rv3d->viewquat[0] = 1.0f;
 	rv3d->persp = RV3D_PERSP;
-	rv3d->view = RV3D_VIEW_PERSPORTHO;
+	rv3d->view = RV3D_VIEW_USER;
 	rv3d->dist = 10.0;
 	
 	return (SpaceLink *)v3d;
@@ -420,10 +428,10 @@ static void view3d_free(SpaceLink *sl)
 		MEM_freeN(vd->defmaterial);
 	}
 
-		if (vd->fx_settings.ssao)
-			MEM_freeN(vd->fx_settings.ssao);
-		if (vd->fx_settings.dof)
-			MEM_freeN(vd->fx_settings.dof);
+	if (vd->fx_settings.ssao)
+		MEM_freeN(vd->fx_settings.ssao);
+	if (vd->fx_settings.dof)
+		MEM_freeN(vd->fx_settings.dof);
 }
 
 
@@ -474,7 +482,7 @@ static SpaceLink *view3d_duplicate(SpaceLink *sl)
 }
 
 /* add handlers, stuff you only do once or on area/region changes */
-static void view3d_main_area_init(wmWindowManager *wm, ARegion *ar)
+static void view3d_main_region_init(wmWindowManager *wm, ARegion *ar)
 {
 	ListBase *lb;
 	wmKeyMap *keymap;
@@ -559,11 +567,11 @@ static void view3d_main_area_init(wmWindowManager *wm, ARegion *ar)
 	
 }
 
-static void view3d_main_area_exit(wmWindowManager *wm, ARegion *ar)
+static void view3d_main_region_exit(wmWindowManager *wm, ARegion *ar)
 {
 	RegionView3D *rv3d = ar->regiondata;
 
-	view3d_stop_render_preview(wm, ar);
+	ED_view3d_stop_render_preview(wm, ar);
 
 	if (rv3d->gpuoffscreen) {
 		GPU_offscreen_free(rv3d->gpuoffscreen);
@@ -707,7 +715,7 @@ static void view3d_dropboxes(void)
 
 
 /* type callback, not region itself */
-static void view3d_main_area_free(ARegion *ar)
+static void view3d_main_region_free(ARegion *ar)
 {
 	RegionView3D *rv3d = ar->regiondata;
 	
@@ -738,7 +746,7 @@ static void view3d_main_area_free(ARegion *ar)
 }
 
 /* copy regiondata */
-static void *view3d_main_area_duplicate(void *poin)
+static void *view3d_main_region_duplicate(void *poin)
 {
 	if (poin) {
 		RegionView3D *rv3d = poin, *new;
@@ -791,7 +799,7 @@ static void view3d_recalc_used_layers(ARegion *ar, wmNotifier *wmn, Scene *scene
 	}
 }
 
-static void view3d_main_area_listener(bScreen *sc, ScrArea *sa, ARegion *ar, wmNotifier *wmn)
+static void view3d_main_region_listener(bScreen *sc, ScrArea *sa, ARegion *ar, wmNotifier *wmn)
 {
 	Scene *scene = sc->scene;
 	View3D *v3d = sa->spacedata.first;
@@ -904,20 +912,31 @@ static void view3d_main_area_listener(bScreen *sc, ScrArea *sa, ARegion *ar, wmN
 			ED_region_tag_redraw(ar);
 			break;
 		case NC_BRUSH:
-			if (wmn->action == NA_EDITED)
-				ED_region_tag_redraw_overlay(ar);
+			switch (wmn->action) {
+				case NA_EDITED:
+					ED_region_tag_redraw_overlay(ar);
+					break;
+				case NA_SELECTED:
+					/* used on brush changes - needed because 3d cursor
+					 * has to be drawn if clone brush is selected */
+					ED_region_tag_redraw(ar);
+					break;
+			}
 			break;
 		case NC_MATERIAL:
 			switch (wmn->data) {
 				case ND_SHADING:
 				case ND_NODES:
 				{
+#ifdef WITH_LEGACY_DEPSGRAPH
 					Object *ob = OBACT;
 					if ((v3d->drawtype == OB_MATERIAL) ||
 					    (ob && (ob->mode == OB_MODE_TEXTURE_PAINT)) ||
 					    (v3d->drawtype == OB_TEXTURE &&
 					     (scene->gm.matmode == GAME_MAT_GLSL ||
-					      BKE_scene_use_new_shading_nodes(scene))))
+					      BKE_scene_use_new_shading_nodes(scene))) ||
+					    !DEG_depsgraph_use_legacy())
+#endif
 					{
 						ED_region_tag_redraw(ar);
 					}
@@ -940,7 +959,8 @@ static void view3d_main_area_listener(bScreen *sc, ScrArea *sa, ARegion *ar, wmN
 			switch (wmn->data) {
 				case ND_LIGHTING:
 					if ((v3d->drawtype == OB_MATERIAL) ||
-					    (v3d->drawtype == OB_TEXTURE && (scene->gm.matmode == GAME_MAT_GLSL)))
+					    (v3d->drawtype == OB_TEXTURE && (scene->gm.matmode == GAME_MAT_GLSL)) ||
+					    !DEG_depsgraph_use_legacy())
 					{
 						ED_region_tag_redraw(ar);
 					}
@@ -997,7 +1017,7 @@ static void view3d_main_area_listener(bScreen *sc, ScrArea *sa, ARegion *ar, wmN
 
 			break;
 		case NC_GPENCIL:
-			if (ELEM(wmn->action, NA_EDITED, NA_SELECTED)) {
+			if (wmn->data == ND_DATA || ELEM(wmn->action, NA_EDITED, NA_SELECTED)) {
 				ED_region_tag_redraw(ar);
 			}
 			break;
@@ -1005,7 +1025,7 @@ static void view3d_main_area_listener(bScreen *sc, ScrArea *sa, ARegion *ar, wmN
 }
 
 /* concept is to retrieve cursor type context-less */
-static void view3d_main_area_cursor(wmWindow *win, ScrArea *UNUSED(sa), ARegion *UNUSED(ar))
+static void view3d_main_region_cursor(wmWindow *win, ScrArea *UNUSED(sa), ARegion *UNUSED(ar))
 {
 	Scene *scene = win->screen->scene;
 
@@ -1018,7 +1038,7 @@ static void view3d_main_area_cursor(wmWindow *win, ScrArea *UNUSED(sa), ARegion 
 }
 
 /* add handlers, stuff you only do once or on area/region changes */
-static void view3d_header_area_init(wmWindowManager *wm, ARegion *ar)
+static void view3d_header_region_init(wmWindowManager *wm, ARegion *ar)
 {
 	wmKeyMap *keymap = WM_keymap_find(wm->defaultconf, "3D View Generic", SPACE_VIEW3D, 0);
 	
@@ -1027,12 +1047,12 @@ static void view3d_header_area_init(wmWindowManager *wm, ARegion *ar)
 	ED_region_header_init(ar);
 }
 
-static void view3d_header_area_draw(const bContext *C, ARegion *ar)
+static void view3d_header_region_draw(const bContext *C, ARegion *ar)
 {
 	ED_region_header(C, ar);
 }
 
-static void view3d_header_area_listener(bScreen *UNUSED(sc), ScrArea *UNUSED(sa), ARegion *ar, wmNotifier *wmn)
+static void view3d_header_region_listener(bScreen *UNUSED(sc), ScrArea *UNUSED(sa), ARegion *ar, wmNotifier *wmn)
 {
 	/* context changes */
 	switch (wmn->category) {
@@ -1063,7 +1083,7 @@ static void view3d_header_area_listener(bScreen *UNUSED(sc), ScrArea *UNUSED(sa)
 }
 
 /* add handlers, stuff you only do once or on area/region changes */
-static void view3d_buttons_area_init(wmWindowManager *wm, ARegion *ar)
+static void view3d_buttons_region_init(wmWindowManager *wm, ARegion *ar)
 {
 	wmKeyMap *keymap;
 
@@ -1073,12 +1093,12 @@ static void view3d_buttons_area_init(wmWindowManager *wm, ARegion *ar)
 	WM_event_add_keymap_handler(&ar->handlers, keymap);
 }
 
-static void view3d_buttons_area_draw(const bContext *C, ARegion *ar)
+static void view3d_buttons_region_draw(const bContext *C, ARegion *ar)
 {
-	ED_region_panels(C, ar, 1, NULL, -1);
+	ED_region_panels(C, ar, NULL, -1, true);
 }
 
-static void view3d_buttons_area_listener(bScreen *UNUSED(sc), ScrArea *UNUSED(sa), ARegion *ar, wmNotifier *wmn)
+static void view3d_buttons_region_listener(bScreen *UNUSED(sc), ScrArea *UNUSED(sa), ARegion *ar, wmNotifier *wmn)
 {
 	/* context changes */
 	switch (wmn->category) {
@@ -1144,7 +1164,8 @@ static void view3d_buttons_area_listener(bScreen *UNUSED(sc), ScrArea *UNUSED(sa
 			ED_region_tag_redraw(ar);
 			break;
 		case NC_BRUSH:
-			if (wmn->action == NA_EDITED)
+			/* NA_SELECTED is used on brush changes */
+			if (ELEM(wmn->action, NA_EDITED, NA_SELECTED))
 				ED_region_tag_redraw(ar);
 			break;
 		case NC_SPACE:
@@ -1168,7 +1189,7 @@ static void view3d_buttons_area_listener(bScreen *UNUSED(sc), ScrArea *UNUSED(sa
 }
 
 /* add handlers, stuff you only do once or on area/region changes */
-static void view3d_tools_area_init(wmWindowManager *wm, ARegion *ar)
+static void view3d_tools_region_init(wmWindowManager *wm, ARegion *ar)
 {
 	wmKeyMap *keymap;
 	
@@ -1178,12 +1199,12 @@ static void view3d_tools_area_init(wmWindowManager *wm, ARegion *ar)
 	WM_event_add_keymap_handler(&ar->handlers, keymap);
 }
 
-static void view3d_tools_area_draw(const bContext *C, ARegion *ar)
+static void view3d_tools_region_draw(const bContext *C, ARegion *ar)
 {
-	ED_region_panels(C, ar, 1, CTX_data_mode_string(C), -1);
+	ED_region_panels(C, ar, CTX_data_mode_string(C), -1, true);
 }
 
-static void view3d_props_area_listener(bScreen *UNUSED(sc), ScrArea *UNUSED(sa), ARegion *ar, wmNotifier *wmn)
+static void view3d_props_region_listener(bScreen *UNUSED(sc), ScrArea *UNUSED(sa), ARegion *ar, wmNotifier *wmn)
 {
 	/* context changes */
 	switch (wmn->category) {
@@ -1202,7 +1223,7 @@ static void view3d_props_area_listener(bScreen *UNUSED(sc), ScrArea *UNUSED(sa),
 	}
 }
 
-/*area (not region) level listener*/
+/* area (not region) level listener */
 static void space_view3d_listener(bScreen *UNUSED(sc), ScrArea *sa, struct wmNotifier *wmn)
 {
 	View3D *v3d = sa->spacedata.first;
@@ -1403,13 +1424,13 @@ void ED_spacetype_view3d(void)
 	art = MEM_callocN(sizeof(ARegionType), "spacetype view3d main region");
 	art->regionid = RGN_TYPE_WINDOW;
 	art->keymapflag = ED_KEYMAP_GPENCIL;
-	art->draw = view3d_main_area_draw;
-	art->init = view3d_main_area_init;
-	art->exit = view3d_main_area_exit;
-	art->free = view3d_main_area_free;
-	art->duplicate = view3d_main_area_duplicate;
-	art->listener = view3d_main_area_listener;
-	art->cursor = view3d_main_area_cursor;
+	art->draw = view3d_main_region_draw;
+	art->init = view3d_main_region_init;
+	art->exit = view3d_main_region_exit;
+	art->free = view3d_main_region_free;
+	art->duplicate = view3d_main_region_duplicate;
+	art->listener = view3d_main_region_listener;
+	art->cursor = view3d_main_region_cursor;
 	art->lock = 1;   /* can become flag, see BKE_spacedata_draw_locks */
 	BLI_addhead(&st->regiontypes, art);
 	
@@ -1418,9 +1439,9 @@ void ED_spacetype_view3d(void)
 	art->regionid = RGN_TYPE_UI;
 	art->prefsizex = 180; /* XXX */
 	art->keymapflag = ED_KEYMAP_UI | ED_KEYMAP_FRAMES;
-	art->listener = view3d_buttons_area_listener;
-	art->init = view3d_buttons_area_init;
-	art->draw = view3d_buttons_area_draw;
+	art->listener = view3d_buttons_region_listener;
+	art->init = view3d_buttons_region_init;
+	art->draw = view3d_buttons_region_draw;
 	BLI_addhead(&st->regiontypes, art);
 
 	view3d_buttons_register(art);
@@ -1431,9 +1452,9 @@ void ED_spacetype_view3d(void)
 	art->prefsizex = 160; /* XXX */
 	art->prefsizey = 50; /* XXX */
 	art->keymapflag = ED_KEYMAP_UI | ED_KEYMAP_FRAMES;
-	art->listener = view3d_buttons_area_listener;
-	art->init = view3d_tools_area_init;
-	art->draw = view3d_tools_area_draw;
+	art->listener = view3d_buttons_region_listener;
+	art->init = view3d_tools_region_init;
+	art->draw = view3d_tools_region_draw;
 	BLI_addhead(&st->regiontypes, art);
 	
 #if 0
@@ -1447,9 +1468,9 @@ void ED_spacetype_view3d(void)
 	art->prefsizex = 0;
 	art->prefsizey = 120;
 	art->keymapflag = ED_KEYMAP_UI | ED_KEYMAP_FRAMES;
-	art->listener = view3d_props_area_listener;
-	art->init = view3d_tools_area_init;
-	art->draw = view3d_tools_area_draw;
+	art->listener = view3d_props_region_listener;
+	art->init = view3d_tools_region_init;
+	art->draw = view3d_tools_region_draw;
 	BLI_addhead(&st->regiontypes, art);
 	
 	view3d_tool_props_register(art);
@@ -1460,9 +1481,9 @@ void ED_spacetype_view3d(void)
 	art->regionid = RGN_TYPE_HEADER;
 	art->prefsizey = HEADERY;
 	art->keymapflag = ED_KEYMAP_UI | ED_KEYMAP_VIEW2D | ED_KEYMAP_FRAMES | ED_KEYMAP_HEADER;
-	art->listener = view3d_header_area_listener;
-	art->init = view3d_header_area_init;
-	art->draw = view3d_header_area_draw;
+	art->listener = view3d_header_region_listener;
+	art->init = view3d_header_region_init;
+	art->draw = view3d_header_region_draw;
 	BLI_addhead(&st->regiontypes, art);
 	
 	BKE_spacetype_register(st);

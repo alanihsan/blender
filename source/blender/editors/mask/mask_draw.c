@@ -197,7 +197,6 @@ static void draw_single_handle(const MaskLayer *mask_layer, const MaskSplinePoin
 		glVertex2fv(point_pos);
 		glVertex2fv(handle_pos);
 		glEnd();
-		glLineWidth(1);
 	}
 
 	switch (handle_type) {
@@ -213,6 +212,7 @@ static void draw_single_handle(const MaskLayer *mask_layer, const MaskSplinePoin
 			break;
 	}
 
+	glLineWidth(1);
 	glBegin(GL_LINES);
 	glVertex2fv(point_pos);
 	glVertex2fv(handle_pos);
@@ -253,7 +253,7 @@ static void draw_spline_points(const bContext *C, MaskLayer *masklay, MaskSpline
 		return;
 
 	if (sc)
-		undistort = sc->clip && (sc->user.render_flag & MCLIP_PROXY_RENDER_UNDISTORT) != 0;
+		undistort = sc->clip && (sc->user.render_flag & MCLIP_PROXY_RENDER_UNDISTORT);
 
 	/* TODO, add this to sequence editor */
 	handle_size = UI_GetThemeValuef(TH_HANDLE_VERTEX_SIZE) * U.pixelsize;
@@ -387,8 +387,6 @@ static void draw_spline_points(const bContext *C, MaskLayer *masklay, MaskSpline
 		draw_circle(x, y, 6.0f, false, xscale, yscale);
 	}
 
-	glPointSize(1.0f);
-
 	if (is_smooth) {
 		glDisable(GL_LINE_SMOOTH);
 		glDisable(GL_BLEND);
@@ -422,7 +420,7 @@ static void mask_draw_curve_type(const bContext *C, MaskSpline *spline, float (*
 	float (*points)[2] = orig_points;
 
 	if (sc) {
-		int undistort = sc->clip && sc->user.render_flag & MCLIP_PROXY_RENDER_UNDISTORT;
+		const bool undistort = sc->clip && (sc->user.render_flag & MCLIP_PROXY_RENDER_UNDISTORT);
 
 		if (undistort) {
 			int i;
@@ -669,7 +667,7 @@ typedef struct ThreadedMaskRasterizeData {
 	int num_scanlines;
 } ThreadedMaskRasterizeData;
 
-static void mask_rasterize_func(TaskPool *pool, void *taskdata, int UNUSED(threadid))
+static void mask_rasterize_func(TaskPool * __restrict pool, void *taskdata, int UNUSED(threadid))
 {
 	ThreadedMaskRasterizeState *state = (ThreadedMaskRasterizeState *) BLI_task_pool_userdata(pool);
 	ThreadedMaskRasterizeData *data = (ThreadedMaskRasterizeData *) taskdata;

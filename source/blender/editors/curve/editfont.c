@@ -51,6 +51,7 @@
 #include "BKE_curve.h"
 #include "BKE_depsgraph.h"
 #include "BKE_font.h"
+#include "BKE_library.h"
 #include "BKE_main.h"
 #include "BKE_object.h"
 #include "BKE_report.h"
@@ -275,57 +276,6 @@ static void text_update_edited(bContext *C, Object *obedit, int mode)
 	WM_event_add_notifier(C, NC_GEOM | ND_DATA, obedit->data);
 }
 
-/********************** insert lorem operator *********************/
-
-static int insert_lorem_exec(bContext *C, wmOperator *UNUSED(op))
-{
-	Object *obedit = CTX_data_edit_object(C);
-	const char *p, *p2;
-	int i;
-	static const char *lastlorem = NULL;
-	
-	if (lastlorem)
-		p = lastlorem;
-	else
-		p = ED_lorem;
-	
-	i = rand() / (RAND_MAX / 6) + 4;
-		
-	for (p2 = p; *p2 && i; p2++) {
-		insert_into_textbuf(obedit, *p2);
-
-		if (*p2 == '.')
-			i--;
-	}
-
-	lastlorem = p2 + 1;
-	if (strlen(lastlorem) < 5)
-		lastlorem = ED_lorem;
-	
-	insert_into_textbuf(obedit, '\n');
-	insert_into_textbuf(obedit, '\n');
-
-	DAG_id_tag_update(obedit->data, 0);
-	WM_event_add_notifier(C, NC_GEOM | ND_DATA, obedit->data);
-
-	return OPERATOR_FINISHED;
-}
-
-void FONT_OT_insert_lorem(wmOperatorType *ot)
-{
-	/* identifiers */
-	ot->name = "Insert Lorem";
-	ot->description = "Insert placeholder text";
-	ot->idname = "FONT_OT_insert_lorem";
-	
-	/* api callbacks */
-	ot->exec = insert_lorem_exec;
-	ot->poll = ED_operator_editfont;
-	
-	/* flags */
-	ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
-}
-
 /* -------------------------------------------------------------------- */
 /* Generic Paste Functions */
 
@@ -395,50 +345,18 @@ static bool font_paste_utf8(bContext *C, const char *str, const size_t str_len)
 static int paste_from_file(bContext *C, ReportList *reports, const char *filename)
 {
 	Object *obedit = CTX_data_edit_object(C);
-	FILE *fp;
 	char *strp;
-	int filelen;
+	size_t filelen;
 	int retval;
 
-	fp = BLI_fopen(filename, "r");
-
-	if (!fp) {
+	strp = BLI_file_read_text_as_mem(filename, 1, &filelen);
+	if (strp == NULL) {
 		BKE_reportf(reports, RPT_ERROR, "Failed to open file '%s'", filename);
 		return OPERATOR_CANCELLED;
 	}
+	strp[filelen] = 0;
 
-	fseek(fp, 0L, SEEK_END);
-
-	errno = 0;
-	filelen = ftell(fp);
-	if (filelen == -1) {
-		goto fail;
-	}
-
-	if (filelen <= MAXTEXT) {
-		strp = MEM_mallocN(filelen + 4, "tempstr");
-
-		fseek(fp, 0L, SEEK_SET);
-
-		/* fread() instead of read(), because windows read() converts text
-		 * to DOS \r\n linebreaks, causing double linebreaks in the 3d text */
-		errno = 0;
-		filelen = fread(strp, 1, filelen, fp);
-		if (filelen == -1) {
-			MEM_freeN(strp);
-			goto fail;
-		}
-
-		strp[filelen] = 0;
-	}
-	else {
-		strp = NULL;
-	}
-
-	fclose(fp);
-
-
-	if (strp && font_paste_utf8(C, strp, filelen)) {
+	if (font_paste_utf8(C, strp, filelen)) {
 		text_update_edited(C, obedit, FO_EDIT);
 		retval = OPERATOR_FINISHED;
 
@@ -448,18 +366,9 @@ static int paste_from_file(bContext *C, ReportList *reports, const char *filenam
 		retval = OPERATOR_CANCELLED;
 	}
 
-	if (strp) {
-		MEM_freeN(strp);
-	}
+	MEM_freeN(strp);
 
 	return retval;
-
-
-	/* failed to seek or read */
-fail:
-	BKE_reportf(reports, RPT_ERROR, "Failed to read file '%s', %s", filename, strerror(errno));
-	fclose(fp);
-	return OPERATOR_CANCELLED;
 }
 
 static int paste_from_file_exec(bContext *C, wmOperator *op)
@@ -501,7 +410,7 @@ void FONT_OT_text_paste_from_file(wmOperatorType *ot)
 
 	/* properties */
 	WM_operator_properties_filesel(ot, FILE_TYPE_FOLDER | FILE_TYPE_TEXT, FILE_SPECIAL, FILE_OPENFILE,
-	                               WM_FILESEL_FILEPATH, FILE_DEFAULTDISPLAY);
+	                               WM_FILESEL_FILEPATH, FILE_DEFAULTDISPLAY, FILE_SORT_ALPHA);
 }
 
 
@@ -559,7 +468,7 @@ void FONT_OT_text_paste_from_clipboard(wmOperatorType *ot)
 
 	/* properties */
 	WM_operator_properties_filesel(ot, FILE_TYPE_FOLDER | FILE_TYPE_TEXT, FILE_SPECIAL, FILE_OPENFILE,
-	                               WM_FILESEL_FILEPATH, FILE_DEFAULTDISPLAY);
+	                               WM_FILESEL_FILEPATH, FILE_DEFAULTDISPLAY, FILE_SORT_ALPHA);
 }
 
 /******************* text to object operator ********************/
@@ -577,7 +486,7 @@ static void txt_add_object(bContext *C, TextLine *firstline, int totline, const 
 	int a;
 	float rot[3] = {0.f, 0.f, 0.f};
 	
-	obedit = BKE_object_add(bmain, scene, OB_FONT);
+	obedit = BKE_object_add(bmain, scene, OB_FONT, NULL);
 	base = scene->basact;
 
 	/* seems to assume view align ? TODO - look into this, could be an operator option */
@@ -589,7 +498,7 @@ static void txt_add_object(bContext *C, TextLine *firstline, int totline, const 
 
 	cu = obedit->data;
 	cu->vfont = BKE_vfont_builtin_get();
-	cu->vfont->id.us++;
+	id_us_plus(&cu->vfont->id);
 
 	for (tmp = firstline, a = 0; nbytes < MAXTEXT && a < totline; tmp = tmp->next, a++) {
 		size_t nchars_line, nbytes_line;
@@ -1417,7 +1326,7 @@ static int insert_text_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 				accentcode = 0;
 			}
 			else if (event->utf8_buf[0]) {
-				BLI_strncpy_wchar_from_utf8(inserted_text, event->utf8_buf, 2);
+				inserted_text[0] = BLI_str_utf8_as_unicode(event->utf8_buf);
 				ascii = inserted_text[0];
 				insert_into_textbuf(obedit, ascii);
 				accentcode = 0;
@@ -1560,7 +1469,7 @@ void FONT_OT_textbox_remove(wmOperatorType *ot)
 
 /***************** editmode enter/exit ********************/
 
-void make_editText(Object *obedit)
+void ED_curve_editfont_make(Object *obedit)
 {
 	Curve *cu = obedit->data;
 	EditFont *ef = cu->editfont;
@@ -1596,7 +1505,7 @@ void make_editText(Object *obedit)
 	BKE_vfont_select_clamp(obedit);
 }
 
-void load_editText(Object *obedit)
+void ED_curve_editfont_load(Object *obedit)
 {
 	Curve *cu = obedit->data;
 	EditFont *ef = cu->editfont;
@@ -1625,7 +1534,7 @@ void load_editText(Object *obedit)
 	cu->selend = ef->selend;
 }
 
-void free_editText(Object *obedit)
+void ED_curve_editfont_free(Object *obedit)
 {
 	BKE_curve_editfont_free((Curve *)obedit->data);
 }
@@ -1778,7 +1687,7 @@ static int font_open_exec(bContext *C, wmOperator *op)
 	if (pprop->prop) {
 		/* when creating new ID blocks, use is already 1, but RNA
 		 * pointer se also increases user, so this compensates it */
-		font->id.us--;
+		id_us_min(&font->id);
 	
 		RNA_id_pointer_create(&font->id, &idptr);
 		RNA_property_pointer_set(&pprop->ptr, pprop->prop, idptr);
@@ -1836,7 +1745,7 @@ void FONT_OT_open(wmOperatorType *ot)
 	
 	/* properties */
 	WM_operator_properties_filesel(ot, FILE_TYPE_FOLDER | FILE_TYPE_FTFONT, FILE_SPECIAL, FILE_OPENFILE,
-	                               WM_FILESEL_FILEPATH | WM_FILESEL_RELPATH, FILE_DEFAULTDISPLAY);
+	                               WM_FILESEL_FILEPATH | WM_FILESEL_RELPATH, FILE_DEFAULTDISPLAY, FILE_SORT_ALPHA);
 }
 
 /******************* delete operator *********************/
@@ -1936,7 +1845,7 @@ void undo_push_font(bContext *C, const char *name)
 /**
  * TextBox selection
  */
-bool mouse_font(bContext *C, const int mval[2], bool extend, bool deselect, bool toggle)
+bool ED_curve_editfont_select_pick(bContext *C, const int mval[2], bool extend, bool deselect, bool toggle)
 {
 	Object *obedit = CTX_data_edit_object(C);
 	Curve *cu = obedit->data;

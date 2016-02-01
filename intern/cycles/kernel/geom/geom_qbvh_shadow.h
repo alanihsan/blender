@@ -55,8 +55,11 @@ ccl_device bool BVH_FUNCTION_FULL_NAME(QBVH)(KernelGlobals *kg,
 	float isect_t = tmax;
 
 #if BVH_FEATURE(BVH_MOTION)
-	Transform ob_tfm;
+	Transform ob_itfm;
 #endif
+
+	*num_hits = 0;
+	isect_array->t = tmax;
 
 #ifndef __KERNEL_SSE41__
 	if(!isfinite(P.x)) {
@@ -67,9 +70,6 @@ ccl_device bool BVH_FUNCTION_FULL_NAME(QBVH)(KernelGlobals *kg,
 #if BVH_FEATURE(BVH_INSTANCING)
 	int num_hits_in_instance = 0;
 #endif
-
-	*num_hits = 0;
-	isect_array->t = tmax;
 
 	ssef tnear(0.0f), tfar(tmax);
 	sse3f idir4(ssef(idir.x), ssef(idir.y), ssef(idir.z));
@@ -155,11 +155,11 @@ ccl_device bool BVH_FUNCTION_FULL_NAME(QBVH)(KernelGlobals *kg,
 					++stackPtr;
 					kernel_assert(stackPtr < BVH_QSTACK_SIZE);
 					traversalStack[stackPtr].addr = c1;
-					traversalStack[stackPtr].dist = c1;
+					traversalStack[stackPtr].dist = d1;
 					++stackPtr;
 					kernel_assert(stackPtr < BVH_QSTACK_SIZE);
 					traversalStack[stackPtr].addr = c0;
-					traversalStack[stackPtr].dist = c0;
+					traversalStack[stackPtr].dist = d0;
 
 					/* Three children are hit, push all onto stack and sort 3
 					 * stack items, continue with closest child.
@@ -206,7 +206,7 @@ ccl_device bool BVH_FUNCTION_FULL_NAME(QBVH)(KernelGlobals *kg,
 
 			/* If node is leaf, fetch triangle list. */
 			if(nodeAddr < 0) {
-				float4 leaf = kernel_tex_fetch(__bvh_nodes, (-nodeAddr-1)*BVH_QNODE_SIZE+6);
+				float4 leaf = kernel_tex_fetch(__bvh_leaf_nodes, (-nodeAddr-1)*BVH_QNODE_LEAF_SIZE);
 #ifdef __VISIBILITY_FLAG__
 				if((__float_as_uint(leaf.z) & PATH_RAY_SHADOW) == 0) {
 					/* Pop. */
@@ -241,7 +241,7 @@ ccl_device bool BVH_FUNCTION_FULL_NAME(QBVH)(KernelGlobals *kg,
 
 						switch(p_type) {
 							case PRIMITIVE_TRIANGLE: {
-								hit = triangle_intersect(kg, &isect_precalc, isect_array, P, dir, PATH_RAY_SHADOW, object, primAddr);
+								hit = triangle_intersect(kg, &isect_precalc, isect_array, P, PATH_RAY_SHADOW, object, primAddr);
 								break;
 							}
 #if BVH_FEATURE(BVH_MOTION)
@@ -279,7 +279,7 @@ ccl_device bool BVH_FUNCTION_FULL_NAME(QBVH)(KernelGlobals *kg,
 							if(kernel_tex_fetch(__prim_type, isect_array->prim) & PRIMITIVE_ALL_TRIANGLE)
 #endif
 							{
-								shader =  kernel_tex_fetch(__tri_shader, prim);
+								shader = kernel_tex_fetch(__tri_shader, prim);
 							}
 #ifdef __HAIR__
 							else {
@@ -317,7 +317,7 @@ ccl_device bool BVH_FUNCTION_FULL_NAME(QBVH)(KernelGlobals *kg,
 					object = kernel_tex_fetch(__prim_object, -primAddr-1);
 
 #if BVH_FEATURE(BVH_MOTION)
-					bvh_instance_motion_push(kg, object, ray, &P, &dir, &idir, &isect_t, &ob_tfm);
+					bvh_instance_motion_push(kg, object, ray, &P, &dir, &idir, &isect_t, &ob_itfm);
 #else
 					bvh_instance_push(kg, object, ray, &P, &dir, &idir, &isect_t);
 #endif
@@ -357,7 +357,7 @@ ccl_device bool BVH_FUNCTION_FULL_NAME(QBVH)(KernelGlobals *kg,
 				float t_fac;
 
 #if BVH_FEATURE(BVH_MOTION)
-				bvh_instance_motion_pop_factor(kg, object, ray, &P, &dir, &idir, &t_fac, &ob_tfm);
+				bvh_instance_motion_pop_factor(kg, object, ray, &P, &dir, &idir, &t_fac, &ob_itfm);
 #else
 				bvh_instance_pop_factor(kg, object, ray, &P, &dir, &idir, &t_fac);
 #endif
@@ -370,7 +370,7 @@ ccl_device bool BVH_FUNCTION_FULL_NAME(QBVH)(KernelGlobals *kg,
 				float ignore_t = FLT_MAX;
 
 #if BVH_FEATURE(BVH_MOTION)
-				bvh_instance_motion_pop(kg, object, ray, &P, &dir, &idir, &ignore_t, &ob_tfm);
+				bvh_instance_motion_pop(kg, object, ray, &P, &dir, &idir, &ignore_t, &ob_itfm);
 #else
 				bvh_instance_pop(kg, object, ray, &P, &dir, &idir, &ignore_t);
 #endif

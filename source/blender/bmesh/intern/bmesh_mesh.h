@@ -49,8 +49,9 @@ void bmesh_edit_begin(BMesh *bm, const BMOpTypeFlag type_flag);
 void bmesh_edit_end(BMesh *bm, const BMOpTypeFlag type_flag);
 
 void BM_mesh_elem_index_ensure(BMesh *bm, const char hflag);
-void BM_mesh_elem_index_validate(BMesh *bm, const char *location, const char *func,
-                                 const char *msg_a, const char *msg_b);
+void BM_mesh_elem_index_validate(
+        BMesh *bm, const char *location, const char *func,
+        const char *msg_a, const char *msg_b);
 
 #ifndef NDEBUG
 bool BM_mesh_elem_table_check(BMesh *bm);
@@ -67,6 +68,10 @@ BMFace *BM_face_at_index(BMesh *bm, const int index);
 BMVert *BM_vert_at_index_find(BMesh *bm, const int index);
 BMEdge *BM_edge_at_index_find(BMesh *bm, const int index);
 BMFace *BM_face_at_index_find(BMesh *bm, const int index);
+
+BMVert *BM_vert_at_index_find_or_table(BMesh *bm, const int index);
+BMEdge *BM_edge_at_index_find_or_table(BMesh *bm, const int index);
+BMFace *BM_face_at_index_find_or_table(BMesh *bm, const int index);
 
 // XXX
 
@@ -89,8 +94,26 @@ extern const BMAllocTemplate bm_mesh_chunksize_default;
 	(bm)->totvert), (bm)->totedge, (bm)->totloop, (bm)->totface}
 #define BMALLOC_TEMPLATE_FROM_ME(me) { (CHECK_TYPE_INLINE(me, Mesh *), \
 	(me)->totvert), (me)->totedge, (me)->totloop, (me)->totpoly}
-#define BMALLOC_TEMPLATE_FROM_DM(dm) { (CHECK_TYPE_INLINE(dm, DerivedMesh *), \
-	(dm)->getNumVerts(dm)), (dm)->getNumEdges(dm), (dm)->getNumLoops(dm), (dm)->getNumPolys(dm)}
+
+#define _VA_BMALLOC_TEMPLATE_FROM_DM_1(dm) { \
+	(CHECK_TYPE_INLINE(dm, DerivedMesh *), \
+	(dm)->getNumVerts(dm)),		\
+	(dm)->getNumEdges(dm),		\
+	(dm)->getNumLoops(dm),		\
+	(dm)->getNumPolys(dm),		\
+	}
+#define _VA_BMALLOC_TEMPLATE_FROM_DM_2(dm_a, dm_b) { \
+	(CHECK_TYPE_INLINE(dm_a, DerivedMesh *), \
+	 CHECK_TYPE_INLINE(dm_b, DerivedMesh *), \
+	(dm_a)->getNumVerts(dm_a)) + (dm_b)->getNumVerts(dm_b),	\
+	(dm_a)->getNumEdges(dm_a)  + (dm_b)->getNumEdges(dm_b),	\
+	(dm_a)->getNumLoops(dm_a)  + (dm_b)->getNumLoops(dm_b),	\
+	(dm_a)->getNumPolys(dm_a)  + (dm_b)->getNumPolys(dm_b),	\
+	}
+
+#define BMALLOC_TEMPLATE_FROM_DM(...) VA_NARGS_CALL_OVERLOAD(_VA_BMALLOC_TEMPLATE_FROM_DM_, __VA_ARGS__)
+
+
 
 enum {
 	BM_MESH_CREATE_USE_TOOLFLAGS = (1 << 0)

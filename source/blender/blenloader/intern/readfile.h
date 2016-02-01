@@ -38,12 +38,10 @@
 
 struct OldNewMap;
 struct MemFile;
-struct bheadsort;
 struct ReportList;
 struct Object;
 struct PartEff;
 struct View3D;
-struct bNodeTree;
 struct Key;
 
 typedef struct FileData {
@@ -77,7 +75,7 @@ typedef struct FileData {
 	// general reading variables
 	struct SDNA *filesdna;
 	struct SDNA *memsdna;
-	char *compflags;
+	char *compflags;        /* array of eSDNA_StructCompare */
 	
 	int fileversion;
 	int id_name_offs;       /* used to retrieve ID names from (bhead+1) */
@@ -93,9 +91,13 @@ typedef struct FileData {
 	
 	struct BHeadSort *bheadmap;
 	int tot_bheadmap;
+
+	/* see: USE_GHASH_BHEAD */
+	struct GHash *bhead_idname_hash;
 	
 	ListBase *mainlist;
-	
+	ListBase *old_mainlist;  /* Used for undo. */
+
 	/* ick ick, used to return
 	 * data through streamglue.
 	 */
@@ -108,13 +110,15 @@ typedef struct BHeadN {
 	struct BHead bhead;
 } BHeadN;
 
-
-#define FD_FLAGS_SWITCH_ENDIAN             (1 << 0)
-#define FD_FLAGS_FILE_POINTSIZE_IS_4       (1 << 1)
-#define FD_FLAGS_POINTSIZE_DIFFERS         (1 << 2)
-#define FD_FLAGS_FILE_OK                   (1 << 3)
-#define FD_FLAGS_NOT_MY_BUFFER             (1 << 4)
-#define FD_FLAGS_NOT_MY_LIBMAP             (1 << 5)
+/* FileData->flags */
+enum {
+	FD_FLAGS_SWITCH_ENDIAN         = 1 << 0,
+	FD_FLAGS_FILE_POINTSIZE_IS_4   = 1 << 1,
+	FD_FLAGS_POINTSIZE_DIFFERS     = 1 << 2,
+	FD_FLAGS_FILE_OK               = 1 << 3,
+	FD_FLAGS_NOT_MY_BUFFER         = 1 << 4,
+	FD_FLAGS_NOT_MY_LIBMAP         = 1 << 5,  /* XXX Unused in practice (checked once but never set). */
+};
 
 #define SIZEOFBLENDERHEADER 12
 
@@ -138,7 +142,7 @@ void blo_make_sound_pointer_map(FileData *fd, Main *oldmain);
 void blo_end_sound_pointer_map(FileData *fd, Main *oldmain);
 void blo_make_packed_pointer_map(FileData *fd, Main *oldmain);
 void blo_end_packed_pointer_map(FileData *fd, Main *oldmain);
-void blo_add_library_pointer_map(ListBase *mainlist, FileData *fd);
+void blo_add_library_pointer_map(ListBase *old_mainlist, FileData *fd);
 
 void blo_freefiledata(FileData *fd);
 
@@ -146,7 +150,7 @@ BHead *blo_firstbhead(FileData *fd);
 BHead *blo_nextbhead(FileData *fd, BHead *thisblock);
 BHead *blo_prevbhead(FileData *fd, BHead *thisblock);
 
-char *bhead_id_name(FileData *fd, BHead *bhead);
+const char *bhead_id_name(const FileData *fd, const BHead *bhead);
 
 /* do versions stuff */
 

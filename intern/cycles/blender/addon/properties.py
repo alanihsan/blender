@@ -54,11 +54,12 @@ enum_bvh_types = (
 enum_filter_types = (
     ('BOX', "Box", "Box filter"),
     ('GAUSSIAN', "Gaussian", "Gaussian filter"),
+    ('BLACKMAN_HARRIS', "Blackman-Harris", "Blackman-Harris filter"),
     )
 
 enum_aperture_types = (
     ('RADIUS', "Radius", "Directly change the size of the aperture"),
-    ('FSTOP', "F/stop", "Change the size of the aperture by f/stops"),
+    ('FSTOP', "F-stop", "Change the size of the aperture by f-stop"),
     )
 
 enum_panorama_types = (
@@ -66,6 +67,7 @@ enum_panorama_types = (
     ('FISHEYE_EQUIDISTANT', "Fisheye Equidistant", "Ideal for fulldomes, ignore the sensor dimensions"),
     ('FISHEYE_EQUISOLID', "Fisheye Equisolid",
                           "Similar to most fisheye modern lens, takes sensor dimensions into consideration"),
+    ('MIRRORBALL', "Mirror Ball", "Uses the mirror ball mapping"),
     )
 
 enum_curve_primitives = (
@@ -90,6 +92,7 @@ enum_tile_order = (
     ('LEFT_TO_RIGHT', "Left to Right", "Render from left to right"),
     ('TOP_TO_BOTTOM', "Top to Bottom", "Render from top to bottom"),
     ('BOTTOM_TO_TOP', "Bottom to Top", "Render from bottom to top"),
+    ('HILBERT_SPIRAL', "Hilbert Spiral", "Render in a Hilbert Spiral"),
     )
 
 enum_use_layer_samples = (
@@ -116,7 +119,7 @@ enum_volume_sampling = (
 
 enum_volume_interpolation = (
     ('LINEAR', "Linear", "Good smoothness and speed"),
-    ('CUBIC', 'Cubic', 'Smoothed high quality interpolation, but slower')
+    ('CUBIC', "Cubic", "Smoothed high quality interpolation, but slower")
     )
 
 
@@ -162,13 +165,13 @@ class CyclesRenderSettings(bpy.types.PropertyGroup):
                 name="Samples",
                 description="Number of samples to render for each pixel",
                 min=1, max=2147483647,
-                default=10,
+                default=128,
                 )
         cls.preview_samples = IntProperty(
                 name="Preview Samples",
                 description="Number of samples to render in the viewport, unlimited if 0",
                 min=0, max=2147483647,
-                default=10,
+                default=32,
                 )
         cls.preview_pause = BoolProperty(
                 name="Pause Preview",
@@ -377,7 +380,7 @@ class CyclesRenderSettings(bpy.types.PropertyGroup):
                 name="Filter Type",
                 description="Pixel filter type",
                 items=enum_filter_types,
-                default='GAUSSIAN',
+                default='BLACKMAN_HARRIS',
                 )
         cls.filter_width = FloatProperty(
                 name="Filter Width",
@@ -391,6 +394,12 @@ class CyclesRenderSettings(bpy.types.PropertyGroup):
                 description="Seed value for integrator to get different noise patterns",
                 min=0, max=2147483647,
                 default=0,
+                )
+
+        cls.use_animated_seed = BoolProperty(
+                name="Use Animated Seed",
+                description="Use different seed values (and hence noise patterns) at different frames",
+                default=False,
                 )
 
         cls.sample_clamp_direct = FloatProperty(
@@ -456,16 +465,11 @@ class CyclesRenderSettings(bpy.types.PropertyGroup):
                 description="Use BVH spatial splits: longer builder time, faster render",
                 default=False,
                 )
-        cls.use_cache = BoolProperty(
-                name="Cache BVH",
-                description="Cache last built BVH to disk for faster re-render if no geometry changed",
-                default=False,
-                )
         cls.tile_order = EnumProperty(
                 name="Tile Order",
                 description="Tile order for rendering",
                 items=enum_tile_order,
-                default='CENTER',
+                default='HILBERT_SPIRAL',
                 options=set(),  # Not animatable!
                 )
         cls.use_progressive_refine = BoolProperty(
@@ -489,20 +493,95 @@ class CyclesRenderSettings(bpy.types.PropertyGroup):
                 ('UV', "UV", ""),
                 ('EMIT', "Emit", ""),
                 ('ENVIRONMENT', "Environment", ""),
-                ('DIFFUSE_DIRECT', "Diffuse Direct", ""),
-                ('DIFFUSE_INDIRECT', "Diffuse Indirect", ""),
-                ('DIFFUSE_COLOR', "Diffuse Color", ""),
-                ('GLOSSY_DIRECT', "Glossy Direct", ""),
-                ('GLOSSY_INDIRECT', "Glossy Indirect", ""),
-                ('GLOSSY_COLOR', "Glossy Color", ""),
-                ('TRANSMISSION_DIRECT', "Transmission Direct", ""),
-                ('TRANSMISSION_INDIRECT', "Transmission Indirect", ""),
-                ('TRANSMISSION_COLOR', "Transmission Color", ""),
-                ('SUBSURFACE_DIRECT', "Subsurface Direct", ""),
-                ('SUBSURFACE_INDIRECT', "Subsurface Indirect", ""),
-                ('SUBSURFACE_COLOR', "Subsurface Color", ""),
+                ('DIFFUSE', "Diffuse", ""),
+                ('GLOSSY', "Glossy", ""),
+                ('TRANSMISSION', "Transmission", ""),
+                ('SUBSURFACE', "Subsurface", ""),
                 ),
             )
+
+        cls.use_camera_cull = BoolProperty(
+                name="Use Camera Cull",
+                description="Allow objects to be culled based on the camera frustum",
+                default=False,
+                )
+
+        cls.camera_cull_margin = FloatProperty(
+                name="Camera Cull Margin",
+                description="Margin for the camera space culling",
+                default=0.1,
+                min=0.0, max=5.0
+                )
+
+        cls.motion_blur_position = EnumProperty(
+            name="Motion Blur Position",
+            default='CENTER',
+            description="Offset for the shutter's time interval, allows to change the motion blur trails",
+            items=(
+                ('START', "Start on Frame", "The shutter opens at the current frame"),
+                ('CENTER', "Center on Frame", "The shutter is open during the current frame"),
+                ('END', "End on Frame", "The shutter closes at the current frame"),
+                ),
+            )
+
+        cls.rolling_shutter_type = EnumProperty(
+            name="Shutter Type",
+            default='NONE',
+            description="Type of rolling shutter effect matching CMOS-based cameras",
+            items=(
+                ('NONE', "None", "No rolling shutter effect used"),
+                ('TOP', "Top-Bottom", "Sensor is being scanned from top to bottom")
+                # TODO(seergey): Are there real cameras with different scanning direction?
+                ),
+            )
+
+        cls.rolling_shutter_duration = FloatProperty(
+            name="Rolling Shutter Duration",
+            description="Scanline \"exposure\" time for the rolling shutter effect",
+            default=0.1,
+            min=0.0, max=1.0,
+            )
+
+        # Various fine-tuning debug flags
+
+        def devices_update_callback(self, context):
+            import _cycles
+            scene = context.scene.as_pointer()
+            return _cycles.debug_flags_update(scene)
+
+        cls.debug_use_cpu_avx2 = BoolProperty(name="AVX2", default=True)
+        cls.debug_use_cpu_avx = BoolProperty(name="AVX", default=True)
+        cls.debug_use_cpu_sse41 = BoolProperty(name="SSE41", default=True)
+        cls.debug_use_cpu_sse3 = BoolProperty(name="SSE3", default=True)
+        cls.debug_use_cpu_sse2 = BoolProperty(name="SSE2", default=True)
+        cls.debug_use_qbvh = BoolProperty(name="QBVH", default=True)
+
+        cls.debug_opencl_kernel_type = EnumProperty(
+            name="OpenCL Kernel Type",
+            default='DEFAULT',
+            items=(
+                ('DEFAULT', "Default", ""),
+                ('MEGA', "Mega", ""),
+                ('SPLIT', "Split", ""),
+                ),
+            update=devices_update_callback
+            )
+
+        cls.debug_opencl_device_type = EnumProperty(
+            name="OpenCL Device Type",
+            default='ALL',
+            items=(
+                ('NONE', "None", ""),
+                ('ALL', "All", ""),
+                ('DEFAULT', "Default", ""),
+                ('CPU', "CPU", ""),
+                ('GPU', "GPU", ""),
+                ('ACCELERATOR', "Accelerator", ""),
+                ),
+            update=devices_update_callback
+            )
+
+        cls.debug_use_opencl_debug = BoolProperty(name="Debug OpenCL", default=False)
 
     @classmethod
     def unregister(cls):
@@ -522,13 +601,13 @@ class CyclesCameraSettings(bpy.types.PropertyGroup):
 
         cls.aperture_type = EnumProperty(
                 name="Aperture Type",
-                description="Use F/stop number or aperture radius",
+                description="Use f-stop number or aperture radius",
                 items=enum_aperture_types,
                 default='RADIUS',
                 )
         cls.aperture_fstop = FloatProperty(
-                name="Aperture F/stop",
-                description="F/stop ratio (lower numbers give more defocus, higher numbers give a sharper image)",
+                name="Aperture f-stop",
+                description="F-stop ratio (lower numbers give more defocus, higher numbers give a sharper image)",
                 min=0.0, soft_min=0.1, soft_max=64.0,
                 default=5.6,
                 step=10,
@@ -647,12 +726,12 @@ class CyclesMaterialSettings(bpy.types.PropertyGroup):
                 name="Volume Sampling",
                 description="Sampling method to use for volumes",
                 items=enum_volume_sampling,
-                default='DISTANCE',
+                default='MULTIPLE_IMPORTANCE',
                 )
 
         cls.volume_interpolation = EnumProperty(
                 name="Volume Interpolation",
-                description="Interpolation method to use for volumes",
+                description="Interpolation method to use for smoke/fire volumes",
                 items=enum_volume_interpolation,
                 default='LINEAR',
                 )
@@ -691,6 +770,12 @@ class CyclesLampSettings(bpy.types.PropertyGroup):
                 name="Multiple Importance Sample",
                 description="Use multiple importance sampling for the lamp, "
                             "reduces noise for area lamps and sharp glossy materials",
+                default=True,
+                )
+        cls.is_portal = BoolProperty(
+                name="Is Portal",
+                description="Use this area lamp to guide sampling of the background, "
+                            "note that this will make the lamp invisible",
                 default=False,
                 )
 
@@ -717,7 +802,7 @@ class CyclesWorldSettings(bpy.types.PropertyGroup):
                 name="Map Resolution",
                 description="Importance map size is resolution x resolution; "
                             "higher values potentially produce less noise, at the cost of memory and speed",
-                min=4, max=8096,
+                min=4, max=8192,
                 default=256,
                 )
         cls.samples = IntProperty(
@@ -725,6 +810,12 @@ class CyclesWorldSettings(bpy.types.PropertyGroup):
                 description="Number of light samples to render for each AA sample",
                 min=1, max=10000,
                 default=4,
+                )
+        cls.max_bounces = IntProperty(
+                name="Max Bounces",
+                description="Maximum number of bounces the background light will contribute to the render",
+                min=0, max=1024,
+                default=1024,
                 )
         cls.homogeneous_volume = BoolProperty(
                 name="Homogeneous Volume",
@@ -875,6 +966,12 @@ class CyclesObjectBlurSettings(bpy.types.PropertyGroup):
                 description="Control accuracy of deformation motion blur, more steps gives more memory usage (actual number of steps is 2^(steps - 1))",
                 min=1, soft_max=8,
                 default=1,
+                )
+
+        cls.use_camera_cull = BoolProperty(
+                name="Use Camera Cull",
+                description="Allow this object and its duplicators to be culled by camera space culling",
+                default=False,
                 )
 
     @classmethod

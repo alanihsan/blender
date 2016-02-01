@@ -140,14 +140,12 @@ GHOST_WindowHandle GHOST_CreateWindow(GHOST_SystemHandle systemhandle,
                                       GHOST_TUns32 height,
                                       GHOST_TWindowState state,
                                       GHOST_TDrawingContextType type,
-                                      const int stereoVisual,
-                                      const GHOST_TUns16 numOfAASamples)
+                                      GHOST_GLSettings glSettings)
 {
 	GHOST_ISystem *system = (GHOST_ISystem *) systemhandle;
 
 	return (GHOST_WindowHandle) system->createWindow(title, left, top, width, height,
-	                                                 state, type, stereoVisual != 0, false,
-	                                                 numOfAASamples);
+	                                                 state, type, glSettings, false);
 }
 
 GHOST_TUserDataPtr GHOST_GetWindowUserData(GHOST_WindowHandle windowhandle)
@@ -232,11 +230,11 @@ int GHOST_ProcessEvents(GHOST_SystemHandle systemhandle, int waitForEvent)
 
 
 
-int GHOST_DispatchEvents(GHOST_SystemHandle systemhandle)
+void GHOST_DispatchEvents(GHOST_SystemHandle systemhandle)
 {
 	GHOST_ISystem *system = (GHOST_ISystem *) systemhandle;
 	
-	return (int) system->dispatchEvents();
+	system->dispatchEvents();
 }
 
 
@@ -360,27 +358,20 @@ GHOST_TSuccess GHOST_SetCursorGrab(GHOST_WindowHandle windowhandle,
                                    int bounds[4], const int mouse_ungrab_xy[2])
 {
 	GHOST_IWindow *window = (GHOST_IWindow *) windowhandle;
-	GHOST_Rect bounds_rect, bounds_win;
-	GHOST_TInt32 mouse_ungrab_xy_global[2];
+	GHOST_Rect bounds_rect;
+	GHOST_TInt32 mouse_xy[2];
 
 	if (bounds) {
-		/* if this is X11 specific we need a function that converts */
-		window->getClientBounds(bounds_win);
-		window->clientToScreen(bounds[0], bounds_win.getHeight() - bounds[1], bounds_rect.m_l, bounds_rect.m_t);
-		window->clientToScreen(bounds[2], bounds_win.getHeight() - bounds[3], bounds_rect.m_r, bounds_rect.m_b);
-
+		bounds_rect = GHOST_Rect(bounds[0], bounds[1], bounds[2], bounds[3]);
 	}
-	
 	if (mouse_ungrab_xy) {
-		if (bounds == NULL)
-			window->getClientBounds(bounds_win);
-		window->clientToScreen(mouse_ungrab_xy[0], bounds_win.getHeight() - mouse_ungrab_xy[1],
-		                       mouse_ungrab_xy_global[0], mouse_ungrab_xy_global[1]);
+		mouse_xy[0] = mouse_ungrab_xy[0];
+		mouse_xy[1] = mouse_ungrab_xy[1];
 	}
 
 	return window->setCursorGrab(mode,
 	                             bounds ? &bounds_rect : NULL,
-	                             mouse_ungrab_xy ? mouse_ungrab_xy_global : NULL);
+	                             mouse_ungrab_xy ? mouse_xy : NULL);
 }
 
 
@@ -412,6 +403,13 @@ GHOST_TSuccess GHOST_GetButtonState(GHOST_SystemHandle systemhandle,
 	*isDown = (int) isdown;
 
 	return result;
+}
+
+
+void GHOST_setNDOFDeadZone(float deadzone)
+{
+	GHOST_ISystem *system = GHOST_ISystem::getSystem();
+	system->setNDOFDeadZone(deadzone);
 }
 
 

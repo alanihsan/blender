@@ -190,9 +190,8 @@ public:
 	/**
 	 * Dispatches all the events on the stack.
 	 * The event stack will be empty afterwards.
-	 * \return Indication as to whether any of the consumers handled the events.
 	 */
-	bool dispatchEvents();
+	void dispatchEvents();
 
 	/**
 	 * Adds the given event consumer to our list.
@@ -237,6 +236,16 @@ public:
 	 */
 	GHOST_TSuccess getButtonState(GHOST_TButtonMask mask, bool& isDown) const;
 	
+	/***************************************************************************************
+	 * Access to 3D mouse.
+	 ***************************************************************************************/
+
+	/**
+	 * Sets 3D mouse deadzone
+	 * \param deadzone: Deadzone of the 3D mouse (both for rotation and pan) relative to full range
+	 */
+	void setNDOFDeadZone(float deadzone);
+
 	/***************************************************************************************
 	 * Other (internal) functionality.
 	 ***************************************************************************************/

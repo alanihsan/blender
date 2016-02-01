@@ -36,12 +36,14 @@
 #include "util_map.h"
 #include "util_param.h"
 #include "util_string.h"
+#include "util_thread.h"
 #include "util_types.h"
 
 CCL_NAMESPACE_BEGIN
 
 class Device;
 class DeviceScene;
+class DeviceRequestedFeatures;
 class Mesh;
 class Progress;
 class Scene;
@@ -103,10 +105,10 @@ public:
 	bool has_volume;
 	bool has_displacement;
 	bool has_surface_bssrdf;
-	bool has_converter_blackbody;
 	bool has_bssrdf_bump;
 	bool has_heterogeneous_volume;
 	bool has_object_dependency;
+	bool has_integrator_dependency;
 
 	/* requested mesh attributes */
 	AttributeRequestSet attributes;
@@ -116,10 +118,10 @@ public:
 
 #ifdef WITH_OSL
 	/* osl shading state references */
-	OSL::ShadingAttribStateRef osl_surface_ref;
-	OSL::ShadingAttribStateRef osl_surface_bump_ref;
-	OSL::ShadingAttribStateRef osl_volume_ref;
-	OSL::ShadingAttribStateRef osl_displacement_ref;
+	OSL::ShaderGroupRef osl_surface_ref;
+	OSL::ShaderGroupRef osl_surface_bump_ref;
+	OSL::ShaderGroupRef osl_volume_ref;
+	OSL::ShaderGroupRef osl_displacement_ref;
 #endif
 
 	Shader();
@@ -165,17 +167,23 @@ public:
 	 * have any shader assigned explicitly */
 	static void add_default(Scene *scene);
 
+	/* Selective nodes compilation. */
+	void get_requested_features(Scene *scene,
+	                            DeviceRequestedFeatures *requested_features);
+
 protected:
 	ShaderManager();
 
 	typedef unordered_map<ustring, uint, ustringHash> AttributeIDMap;
 	AttributeIDMap unique_attribute_id;
 
-	vector<float> blackbody_table;
-	vector<float> beckmann_table;
+	thread_mutex lookup_table_mutex;
+	static vector<float> beckmann_table;
 
-	size_t blackbody_table_offset;
 	size_t beckmann_table_offset;
+
+	void get_requested_graph_features(ShaderGraph *graph,
+	                                  DeviceRequestedFeatures *requested_features);
 };
 
 CCL_NAMESPACE_END

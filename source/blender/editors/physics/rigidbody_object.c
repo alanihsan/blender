@@ -40,7 +40,7 @@
 
 #include "BLI_blenlib.h"
 
-#include "BLF_translation.h"
+#include "BLT_translation.h"
 
 #include "BKE_context.h"
 #include "BKE_depsgraph.h"
@@ -179,7 +179,7 @@ void RIGIDBODY_OT_object_add(wmOperatorType *ot)
 	ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
 
 	/* properties */
-	ot->prop = RNA_def_enum(ot->srna, "type", rigidbody_object_type_items, RBO_TYPE_ACTIVE, "Rigid Body Type", "");
+	ot->prop = RNA_def_enum(ot->srna, "type", rna_enum_rigidbody_object_type_items, RBO_TYPE_ACTIVE, "Rigid Body Type", "");
 }
 
 /* ************ Remove Rigid Body ************** */
@@ -270,7 +270,7 @@ void RIGIDBODY_OT_objects_add(wmOperatorType *ot)
 	ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
 
 	/* properties */
-	ot->prop = RNA_def_enum(ot->srna, "type", rigidbody_object_type_items, RBO_TYPE_ACTIVE, "Rigid Body Type", "");
+	ot->prop = RNA_def_enum(ot->srna, "type", rna_enum_rigidbody_object_type_items, RBO_TYPE_ACTIVE, "Rigid Body Type", "");
 }
 
 /* ************ Remove Rigid Bodies ************** */
@@ -348,6 +348,7 @@ static int rigidbody_objects_shape_change_exec(bContext *C, wmOperator *op)
 	if (changed) {
 		/* send updates */
 		WM_event_add_notifier(C, NC_OBJECT | ND_POINTCACHE, NULL);
+		WM_event_add_notifier(C, NC_SPACE | ND_SPACE_VIEW3D, NULL);
 
 		/* done */
 		return OPERATOR_FINISHED;
@@ -373,7 +374,7 @@ void RIGIDBODY_OT_shape_change(wmOperatorType *ot)
 	ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
 
 	/* properties */
-	ot->prop = RNA_def_enum(ot->srna, "type", rigidbody_object_shape_items, RB_SHAPE_TRIMESH, "Rigid Body Shape", "");
+	ot->prop = RNA_def_enum(ot->srna, "type", rna_enum_rigidbody_object_shape_items, RB_SHAPE_TRIMESH, "Rigid Body Shape", "");
 }
 
 /* ************ Calculate Mass ************** */

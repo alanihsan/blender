@@ -34,14 +34,10 @@
 #ifndef __MESH_INTERN_H__
 #define __MESH_INTERN_H__
 
-struct BMEdge;
 struct BMEditMesh;
-struct BMFace;
-struct BMHeader;
 struct BMOperator;
-struct BMesh;
+struct BMElem;
 struct EnumPropertyItem;
-struct ViewContext;
 struct bContext;
 struct wmKeyConfig;
 struct wmKeyMap;
@@ -79,6 +75,11 @@ void EDBM_stats_update(struct BMEditMesh *em);
 
 int  EDBM_view3d_poll(struct bContext *C);
 
+struct BMElem *EDBM_elem_from_selectmode(
+        struct BMEditMesh *em,
+        struct BMVert *eve, struct BMEdge *eed, struct BMFace *efa);
+int            EDBM_elem_to_index_any(struct BMEditMesh *em, struct BMElem *ele);
+struct BMElem *EDBM_elem_from_index_any(struct BMEditMesh *em, int index);
 
 /* *** editmesh_add.c *** */
 void MESH_OT_primitive_plane_add(struct wmOperatorType *ot);
@@ -114,6 +115,7 @@ void MESH_OT_inset(struct wmOperatorType *ot);
 
 /* *** editmesh_intersect.c *** */
 void MESH_OT_intersect(struct wmOperatorType *ot);
+void MESH_OT_intersect_boolean(struct wmOperatorType *ot);
 void MESH_OT_face_split_by_edges(struct wmOperatorType *ot);
 
 
@@ -159,7 +161,6 @@ void MESH_OT_select_non_manifold(struct wmOperatorType *ot);
 void MESH_OT_select_random(struct wmOperatorType *ot);
 void MESH_OT_select_ungrouped(struct wmOperatorType *ot);
 void MESH_OT_select_axis(struct wmOperatorType *ot);
-void MESH_OT_select_next_loop(struct wmOperatorType *ot);
 void MESH_OT_region_to_loop(struct wmOperatorType *ot);
 void MESH_OT_loop_to_region(struct wmOperatorType *ot);
 void MESH_OT_shortest_path_select(struct wmOperatorType *ot);
@@ -175,10 +176,13 @@ void MESH_OT_normals_make_consistent(struct wmOperatorType *ot);
 void MESH_OT_vertices_smooth(struct wmOperatorType *ot);
 void MESH_OT_vertices_smooth_laplacian(struct wmOperatorType *ot);
 void MESH_OT_vert_connect(struct wmOperatorType *ot);
+void MESH_OT_vert_connect_path(struct wmOperatorType *ot);
 void MESH_OT_vert_connect_concave(struct wmOperatorType *ot);
 void MESH_OT_vert_connect_nonplanar(struct wmOperatorType *ot);
+void MESH_OT_face_make_planar(struct wmOperatorType *ot);
 void MESH_OT_edge_split(struct wmOperatorType *ot);
 void MESH_OT_bridge_edge_loops(struct wmOperatorType *ot);
+void MESH_OT_offset_edge_loops(struct wmOperatorType *ot);
 void MESH_OT_wireframe(struct wmOperatorType *ot);
 void MESH_OT_convex_hull(struct wmOperatorType *ot);
 void MESH_OT_symmetrize(struct wmOperatorType *ot);
@@ -240,8 +244,9 @@ void MESH_OT_ptex_remove(struct wmOperatorType *ot);
 void MESH_OT_ptex_res_change(struct wmOperatorType *ot);
 void MESH_OT_ptex_import(struct wmOperatorType *ot);
 /* no create_mask yet */
-void MESH_OT_customdata_clear_mask(struct wmOperatorType *ot);
-void MESH_OT_customdata_clear_skin(struct wmOperatorType *ot);
+void MESH_OT_customdata_mask_clear(struct wmOperatorType *ot);
+void MESH_OT_customdata_skin_add(struct wmOperatorType *ot);
+void MESH_OT_customdata_skin_clear(struct wmOperatorType *ot);
 void MESH_OT_customdata_custom_splitnormals_add(struct wmOperatorType *ot);
 void MESH_OT_customdata_custom_splitnormals_clear(struct wmOperatorType *ot);
 void MESH_OT_drop_named_image(struct wmOperatorType *ot);

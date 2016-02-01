@@ -61,6 +61,7 @@
 #include "ED_armature.h"
 #include "ED_keyframes_draw.h"
 
+#include "GPU_basic_shader.h"
 
 #include "UI_resources.h"
 
@@ -118,11 +119,12 @@ static void set_pchan_colorset(Object *ob, bPoseChannel *pchan)
 		bcolor = &btheme->tarm[(color_index - 1)];
 	}
 	else if (color_index == -1) {
-		/* use the group's own custom color set */
-		bcolor = (grp) ? &grp->cs : NULL;
+		/* use the group's own custom color set (grp is always != NULL here) */
+		bcolor = &grp->cs;
 	}
-	else 
+	else {
 		bcolor = NULL;
+	}
 }
 
 /* This function is for brightening/darkening a given color (like UI_ThemeColorShade()) */
@@ -884,8 +886,7 @@ static void draw_sphere_bone(const short dt, int armflag, int boneflag, short co
 
 	if (dt == OB_SOLID) {
 		/* set up solid drawing */
-		glEnable(GL_COLOR_MATERIAL);
-		glEnable(GL_LIGHTING);
+		GPU_basic_shader_bind(GPU_SHADER_LIGHTING | GPU_SHADER_USE_COLOR);
 		
 		gluQuadricDrawStyle(qobj, GLU_FILL); 
 		glShadeModel(GL_SMOOTH);
@@ -967,8 +968,7 @@ static void draw_sphere_bone(const short dt, int armflag, int boneflag, short co
 	/* restore */
 	if (dt == OB_SOLID) {
 		glShadeModel(GL_FLAT);
-		glDisable(GL_LIGHTING);
-		glDisable(GL_COLOR_MATERIAL);
+		GPU_basic_shader_bind(GPU_SHADER_USE_COLOR);
 	}
 	
 	glPopMatrix();
@@ -1000,6 +1000,12 @@ static void draw_line_bone(int armflag, int boneflag, short constflag, unsigned 
 	/* this chunk not in object mode */
 	if (armflag & (ARM_EDITMODE | ARM_POSEMODE)) {
 		glLineWidth(4.0f);
+		if (G.f & G_PICKSEL) {
+			/* no bitmap in selection mode, crashes 3d cards...
+			 * instead draw a solid point the same size */
+			glPointSize(8.0f);
+		}
+
 		if (armflag & ARM_POSEMODE)
 			set_pchan_glColor(PCHAN_COLOR_NORMAL, boneflag, constflag);
 		else if (armflag & ARM_EDITMODE) {
@@ -1008,7 +1014,7 @@ static void draw_line_bone(int armflag, int boneflag, short constflag, unsigned 
 		
 		/*	Draw root point if we are not connected */
 		if ((boneflag & BONE_CONNECTED) == 0) {
-			if (G.f & G_PICKSEL) {  /* no bitmap in selection mode, crashes 3d cards... */
+			if (G.f & G_PICKSEL) {
 				GPU_select_load_id(id | BONESEL_ROOT);
 				glBegin(GL_POINTS);
 				glVertex3f(0.0f, 0.0f, 0.0f);
@@ -1083,8 +1089,6 @@ static void draw_line_bone(int armflag, int boneflag, short constflag, unsigned 
 		glRasterPos3f(0.0f, 1.0f, 0.0f);
 		glBitmap(8, 8, 4, 4, 0, 0, bm_dot5);
 	}
-	
-	glLineWidth(1.0);
 	
 	glPopMatrix();
 }
@@ -1166,8 +1170,7 @@ static void draw_b_bone(const short dt, int armflag, int boneflag, short constfl
 	
 	/* set up solid drawing */
 	if (dt > OB_WIRE) {
-		glEnable(GL_COLOR_MATERIAL);
-		glEnable(GL_LIGHTING);
+		GPU_basic_shader_bind(GPU_SHADER_LIGHTING | GPU_SHADER_USE_COLOR);
 		
 		if (armflag & ARM_POSEMODE)
 			set_pchan_glColor(PCHAN_COLOR_SOLID, boneflag, constflag);
@@ -1177,8 +1180,7 @@ static void draw_b_bone(const short dt, int armflag, int boneflag, short constfl
 		draw_b_bone_boxes(OB_SOLID, pchan, xwidth, length, zwidth);
 		
 		/* disable solid drawing */
-		glDisable(GL_COLOR_MATERIAL);
-		glDisable(GL_LIGHTING);
+		GPU_basic_shader_bind(GPU_SHADER_USE_COLOR);
 	}
 	else {
 		/* wire */
@@ -1297,8 +1299,7 @@ static void draw_bone(const short dt, int armflag, int boneflag, short constflag
 
 	/* set up solid drawing */
 	if (dt > OB_WIRE) {
-		glEnable(GL_COLOR_MATERIAL);
-		glEnable(GL_LIGHTING);
+		GPU_basic_shader_bind(GPU_SHADER_LIGHTING | GPU_SHADER_USE_COLOR);
 		UI_ThemeColor(TH_BONE_SOLID);
 	}
 	
@@ -1352,8 +1353,7 @@ static void draw_bone(const short dt, int armflag, int boneflag, short constflag
 
 	/* disable solid drawing */
 	if (dt > OB_WIRE) {
-		glDisable(GL_COLOR_MATERIAL);
-		glDisable(GL_LIGHTING);
+		GPU_basic_shader_bind(GPU_SHADER_USE_COLOR);
 	}
 }
 
@@ -1440,7 +1440,8 @@ static void pchan_draw_IK_root_lines(bPoseChannel *pchan, short only_temp)
 					if (segcount == data->chainlen || segcount > 255) break;  /* 255 is weak */
 					parchan = parchan->parent;
 				}
-				if (parchan)  /* XXX revise the breaking conditions to only stop at the tail? */
+				/* Only draw line in case our chain is more than one bone long! */
+				if (parchan != pchan)  /* XXX revise the breaking conditions to only stop at the tail? */
 					glVertex3fv(parchan->pose_head);
 
 				glEnd();
@@ -1547,7 +1548,7 @@ static void draw_pose_dofs(Object *ob)
 							glPushMatrix();
 							
 							copy_v3_v3(posetrans, pchan->pose_mat[3]);
-							glTranslatef(posetrans[0], posetrans[1], posetrans[2]);
+							glTranslate3fv(posetrans);
 							
 							if (pchan->parent) {
 								copy_m4_m4(mat, pchan->parent->pose_mat);
@@ -1778,7 +1779,7 @@ static void draw_pose_bones(Scene *scene, View3D *v3d, ARegion *ar, Base *base,
 							}
 
 							draw_custom_bone(scene, v3d, rv3d, pchan->custom,
-							                 OB_SOLID, arm->flag, flag, index, bone->length);
+							                 OB_SOLID, arm->flag, flag, index, PCHAN_CUSTOM_DRAW_SIZE(pchan));
 						}
 					}
 					else {
@@ -1869,7 +1870,7 @@ static void draw_pose_bones(Scene *scene, View3D *v3d, ARegion *ar, Base *base,
 								flag |= BONE_DRAW_ACTIVE;
 							
 							draw_custom_bone(scene, v3d, rv3d, pchan->custom,
-							                 OB_WIRE, arm->flag, flag, index, bone->length);
+							                 OB_WIRE, arm->flag, flag, index, PCHAN_CUSTOM_DRAW_SIZE(pchan));
 							
 							glPopMatrix();
 						}
@@ -2366,7 +2367,7 @@ static void draw_ghost_poses_range(Scene *scene, View3D *v3d, ARegion *ar, Base 
 	bArmature *arm = ob->data;
 	bPose *posen, *poseo;
 	float start, end, stepsize, range, colfac;
-	int cfrao, flago, ipoflago;
+	int cfrao, flago;
 	
 	start = (float)arm->ghostsf;
 	end = (float)arm->ghostef;
@@ -2381,8 +2382,6 @@ static void draw_ghost_poses_range(Scene *scene, View3D *v3d, ARegion *ar, Base 
 	cfrao = CFRA;
 	flago = arm->flag;
 	arm->flag &= ~(ARM_DRAWNAMES | ARM_DRAWAXES);
-	ipoflago = ob->ipoflag;
-	ob->ipoflag |= OB_DISABLE_PATH;
 	
 	/* copy the pose */
 	poseo = ob->pose;
@@ -2418,7 +2417,6 @@ static void draw_ghost_poses_range(Scene *scene, View3D *v3d, ARegion *ar, Base 
 	ob->pose = poseo;
 	arm->flag = flago;
 	ob->mode |= OB_MODE_POSE;
-	ob->ipoflag = ipoflago;
 }
 
 /* draw ghosts on keyframes in action within range 
@@ -2462,8 +2460,7 @@ static void draw_ghost_poses_keys(Scene *scene, View3D *v3d, ARegion *ar, Base *
 	cfrao = CFRA;
 	flago = arm->flag;
 	arm->flag &= ~(ARM_DRAWNAMES | ARM_DRAWAXES);
-	ob->ipoflag |= OB_DISABLE_PATH;
-	
+
 	/* copy the pose */
 	poseo = ob->pose;
 	BKE_pose_copy_data(&posen, ob->pose, 1);
@@ -2594,7 +2591,7 @@ static void draw_ghost_poses(Scene *scene, View3D *v3d, ARegion *ar, Base *base)
 
 /* ********************************** Armature Drawing - Main ************************* */
 
-/* called from drawobject.c, return 1 if nothing was drawn
+/* called from drawobject.c, return true if nothing was drawn
  * (ob_wire_col == NULL) when drawing ghost */
 bool draw_armature(Scene *scene, View3D *v3d, ARegion *ar, Base *base,
                    const short dt, const short dflag, const unsigned char ob_wire_col[4],
@@ -2606,13 +2603,20 @@ bool draw_armature(Scene *scene, View3D *v3d, ARegion *ar, Base *base,
 
 	if (v3d->flag2 & V3D_RENDER_OVERRIDE)
 		return true;
-	
-	if (dt > OB_WIRE && !ELEM(arm->drawtype, ARM_LINE, ARM_WIRE)) {
+
+	if (dt > OB_WIRE) {
 		/* we use color for solid lighting */
-		const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-		glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, white);
-		glColorMaterial(GL_FRONT_AND_BACK, GL_DIFFUSE);
-		glFrontFace((ob->transflag & OB_NEG_SCALE) ? GL_CW : GL_CCW);  /* only for lighting... */
+		if (ELEM(arm->drawtype, ARM_LINE, ARM_WIRE)) {
+			const float diffuse[3] = {0.64f, 0.64f, 0.64f};
+			const float specular[3] = {0.5f, 0.5f, 0.5f};
+			GPU_basic_shader_colors(diffuse, specular, 35, 1.0f);
+		}
+		else {
+			const float diffuse[3] = {1.0f, 1.0f, 1.0f};
+			const float specular[3] = {1.0f, 1.0f, 1.0f};
+			GPU_basic_shader_colors(diffuse, specular, 35, 1.0f);
+			glFrontFace((ob->transflag & OB_NEG_SCALE) ? GL_CW : GL_CCW);  /* only for lighting... */
+		}
 	}
 	
 	/* arm->flag is being used to detect mode... */

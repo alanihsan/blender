@@ -40,7 +40,7 @@
 
 #include "BLI_utildefines.h"
 
-#include "BLF_translation.h"
+#include "BLT_translation.h"
 
 #include "BKE_blender.h"
 #include "BKE_context.h"
@@ -76,7 +76,6 @@
 
 void ED_undo_push(bContext *C, const char *str)
 {
-	wmWindowManager *wm = CTX_wm_manager(C);
 	Object *obedit = CTX_data_edit_object(C);
 	Object *obact = CTX_data_active_object(C);
 
@@ -108,14 +107,10 @@ void ED_undo_push(bContext *C, const char *str)
 		/* do nothing for now */
 	}
 	else {
-		BKE_write_undo(C, str);
+		BKE_undo_write(C, str);
 	}
 
-	if (wm->file_saved) {
-		wm->file_saved = 0;
-		/* notifier that data changed, for save-over warning or header */
-		WM_event_add_notifier(C, NC_WM | ND_DATACHANGED, NULL);
-	}
+	WM_file_tag_modified(C);
 }
 
 /* note: also check undo_history_exec() in bottom if you change notifiers */
@@ -244,7 +239,7 @@ void ED_undo_pop_op(bContext *C, wmOperator *op)
 }
 
 /* name optionally, function used to check for operator redo panel */
-int ED_undo_valid(const bContext *C, const char *undoname)
+bool ED_undo_is_valid(const bContext *C, const char *undoname)
 {
 	Object *obedit = CTX_data_edit_object(C);
 	Object *obact = CTX_data_active_object(C);
@@ -263,7 +258,7 @@ int ED_undo_valid(const bContext *C, const char *undoname)
 	}
 	else if (obedit) {
 		if (OB_TYPE_SUPPORT_EDITMODE(obedit->type)) {
-			return undo_editmode_valid(undoname);
+			return undo_editmode_is_valid(undoname);
 		}
 	}
 	else {
@@ -271,19 +266,19 @@ int ED_undo_valid(const bContext *C, const char *undoname)
 		/* if below tests fail, global undo gets executed */
 		
 		if (obact && obact->mode & OB_MODE_TEXTURE_PAINT) {
-			if (ED_undo_paint_valid(UNDO_PAINT_IMAGE, undoname))
+			if (ED_undo_paint_is_valid(UNDO_PAINT_IMAGE, undoname))
 				return 1;
 		}
 		else if (obact && obact->mode & OB_MODE_SCULPT) {
-			if (ED_undo_paint_valid(UNDO_PAINT_MESH, undoname))
+			if (ED_undo_paint_is_valid(UNDO_PAINT_MESH, undoname))
 				return 1;
 		}
 		else if (obact && obact->mode & OB_MODE_PARTICLE_EDIT) {
-			return PE_undo_valid(CTX_data_scene(C));
+			return PE_undo_is_valid(CTX_data_scene(C));
 		}
 		
 		if (U.uiflag & USER_GLOBALUNDO) {
-			return BKE_undo_valid(undoname);
+			return BKE_undo_is_valid(undoname);
 		}
 	}
 	return 0;
@@ -466,8 +461,6 @@ static int get_undo_system(bContext *C)
 		}
 	}
 	else {
-		Object *obact = CTX_data_active_object(C);
-		
 		if (obact) {
 			if (obact->mode & OB_MODE_PARTICLE_EDIT)
 				return UNDOSYSTEM_PARTICLE;
@@ -487,7 +480,8 @@ static int get_undo_system(bContext *C)
 static EnumPropertyItem *rna_undo_itemf(bContext *C, int undosys, int *totitem)
 {
 	EnumPropertyItem item_tmp = {0}, *item = NULL;
-	int active, i = 0;
+	int i = 0;
+	bool active;
 	
 	while (true) {
 		const char *name = NULL;

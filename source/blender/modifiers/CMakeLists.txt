@@ -30,12 +30,14 @@ set(INC
 	../blenkernel
 	../blenlib
 	../blenfont
+	../depsgraph
 	../makesdna
 	../makesrna
 	../bmesh
 	../render/extern/include
 	../../../intern/elbeem/extern
 	../../../intern/guardedalloc
+	../../../intern/eigen
 )
 
 set(INC_SYS
@@ -51,6 +53,7 @@ set(SRC
 	intern/MOD_cast.c
 	intern/MOD_cloth.c
 	intern/MOD_collision.c
+	intern/MOD_correctivesmooth.c
 	intern/MOD_curve.c
 	intern/MOD_datatransfer.c
 	intern/MOD_decimate.c
@@ -142,11 +145,8 @@ if(WITH_INTERNATIONAL)
 	add_definitions(-DWITH_INTERNATIONAL)
 endif()
 
-if(WITH_OPENNL)
-	add_definitions(-DWITH_OPENNL)
-	list(APPEND INC_SYS
-		../../../intern/opennl/extern
-	)
+if(WITH_OPENSUBDIV)
+	add_definitions(-DWITH_OPENSUBDIV)
 endif()
 
 blender_add_lib(bf_modifiers "${SRC}" "${INC}" "${INC_SYS}")

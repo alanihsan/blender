@@ -24,6 +24,7 @@ from bpy.app.translations import pgettext_iface as iface_
 from bl_ui.properties_grease_pencil_common import (
         GreasePencilDrawingToolsPanel,
         GreasePencilStrokeEditPanel,
+        GreasePencilStrokeSculptPanel,
         GreasePencilDataPanel
         )
 
@@ -37,7 +38,7 @@ class CLIP_UL_tracking_objects(UIList):
             layout.prop(tobj, "name", text="", emboss=False,
                         icon='CAMERA_DATA' if tobj.is_camera
                         else 'OBJECT_DATA')
-        elif self.layout_type in {'GRID'}:
+        elif self.layout_type == 'GRID':
             layout.alignment = 'CENTER'
             layout.label(text="",
                          icon='CAMERA_DATA' if tobj.is_camera
@@ -147,7 +148,7 @@ class CLIP_HT_header(Header):
 
         sc = context.space_data
 
-        if sc.mode in {'TRACKING'}:
+        if sc.mode == 'TRACKING':
             self._draw_tracking(context)
         else:
             self._draw_masking(context)
@@ -467,6 +468,7 @@ class CLIP_PT_tools_cleanup(CLIP_PT_tracking_panel, Panel):
         layout.prop(settings, "clean_frames", text="Frames")
         layout.prop(settings, "clean_error", text="Error")
         layout.prop(settings, "clean_action", text="")
+        layout.operator("clip.filter_tracks")
 
 
 class CLIP_PT_tools_geometry(CLIP_PT_tracking_panel, Panel):
@@ -519,6 +521,7 @@ class CLIP_PT_tools_object(CLIP_PT_reconstruction_panel, Panel):
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'TOOLS'
     bl_label = "Object"
+    bl_category = "Solve"
 
     @classmethod
     def poll(cls, context):
@@ -715,7 +718,7 @@ class CLIP_PT_tracking_camera(Panel):
         if CLIP_PT_clip_view_panel.poll(context):
             sc = context.space_data
 
-            return sc.mode in {'TRACKING'} and sc.clip
+            return sc.mode == 'TRACKING' and sc.clip
 
         return False
 
@@ -755,7 +758,7 @@ class CLIP_PT_tracking_lens(Panel):
         if CLIP_PT_clip_view_panel.poll(context):
             sc = context.space_data
 
-            return sc.mode in {'TRACKING'} and sc.clip
+            return sc.mode == 'TRACKING' and sc.clip
 
         return False
 
@@ -892,7 +895,7 @@ class CLIP_PT_stabilization(CLIP_PT_reconstruction_panel, Panel):
         if CLIP_PT_clip_view_panel.poll(context):
             sc = context.space_data
 
-            return sc.mode in {'TRACKING'} and sc.clip
+            return sc.mode == 'TRACKING' and sc.clip
 
         return False
 
@@ -986,7 +989,9 @@ class CLIP_PT_proxy(CLIP_PT_clip_view_panel, Panel):
         if clip.use_proxy_custom_directory:
             col.prop(clip.proxy, "directory")
 
-        col.operator("clip.rebuild_proxy", text="Build Proxy")
+        col.operator("clip.rebuild_proxy",
+                     text="Build Proxy / Timecode" if clip.source == 'MOVIE'
+                                                   else "Build Proxy")
 
         if clip.source == 'MOVIE':
             col2 = col.column()
@@ -1131,6 +1136,11 @@ class CLIP_PT_tools_grease_pencil_edit(GreasePencilStrokeEditPanel, Panel):
     bl_space_type = 'CLIP_EDITOR'
 
 
+# Grease Pencil stroke sculpting tools
+class CLIP_PT_tools_grease_pencil_sculpt(GreasePencilStrokeSculptPanel, Panel):
+    bl_space_type = 'CLIP_EDITOR'
+
+
 class CLIP_MT_view(Menu):
     bl_label = "View"
 
@@ -1146,11 +1156,14 @@ class CLIP_MT_view(Menu):
 
             layout.operator("clip.view_selected")
             layout.operator("clip.view_all")
+            layout.operator("clip.view_all", text="View Fit").fit_view = True
 
             layout.separator()
             layout.operator("clip.view_zoom_in")
             layout.operator("clip.view_zoom_out")
 
+            layout.separator()
+            layout.prop(sc, "show_metadata")
             layout.separator()
 
             ratios = ((1, 8), (1, 4), (1, 2), (1, 1), (2, 1), (4, 1), (8, 1))
@@ -1276,8 +1289,8 @@ class CLIP_MT_reconstruction(Menu):
         layout.operator("clip.set_plane", text="Set Floor").plane = 'FLOOR'
         layout.operator("clip.set_plane", text="Set Wall").plane = 'WALL'
 
-        layout.operator("clip.set_axis", text="Set X Axis").axis = "X"
-        layout.operator("clip.set_axis", text="Set Y Axis").axis = "Y"
+        layout.operator("clip.set_axis", text="Set X Axis").axis = 'X'
+        layout.operator("clip.set_axis", text="Set Y Axis").axis = 'Y'
 
         layout.operator("clip.set_scale")
 

@@ -57,32 +57,63 @@ static int mathutils_array_parse_fast(float *array,
                                       const char *error_prefix)
 {
 	PyObject *item;
+	PyObject **value_fast_items = PySequence_Fast_ITEMS(value_fast);
 
 	int i;
 
 	i = size;
 	do {
 		i--;
-		if (((array[i] = PyFloat_AsDouble((item = PySequence_Fast_GET_ITEM(value_fast, i)))) == -1.0f) &&
+		if (((array[i] = PyFloat_AsDouble((item = value_fast_items[i]))) == -1.0f) &&
 		    PyErr_Occurred())
 		{
 			PyErr_Format(PyExc_TypeError,
 			             "%.200s: sequence index %d expected a number, "
 			             "found '%.200s' type, ",
 			             error_prefix, i, Py_TYPE(item)->tp_name);
-			Py_DECREF(value_fast);
-			return -1;
+			size = -1;
+			break;
 		}
 	} while (i);
 
-	Py_XDECREF(value_fast);
 	return size;
 }
 
-/* helper functionm returns length of the 'value', -1 on error */
+/**
+ * helper function that returns a Python ``__hash__``.
+ *
+ * \note consistent with the equivalent tuple of floats (CPython's 'tuplehash')
+ */
+Py_hash_t mathutils_array_hash(const float *array, size_t array_len)
+{
+	int i;
+	Py_uhash_t x;  /* Unsigned for defined overflow behavior. */
+	Py_hash_t y;
+	Py_uhash_t mult;
+	Py_ssize_t len;
+
+	mult = _PyHASH_MULTIPLIER;
+	len = array_len;
+	x = 0x345678UL;
+	i = 0;
+	while (--len >= 0) {
+		y = _Py_HashDouble((double)(array[i++]));
+		if (y == -1)
+			return -1;
+		x = (x ^ y) * mult;
+		/* the cast might truncate len; that doesn't change hash stability */
+		mult += (Py_hash_t)(82520UL + len + len);
+	}
+	x += 97531UL;
+	if (x == (Py_uhash_t)-1)
+		x = -2;
+	return x;
+}
+
+/* helper function returns length of the 'value', -1 on error */
 int mathutils_array_parse(float *array, int array_min, int array_max, PyObject *value, const char *error_prefix)
 {
-	const int flag = array_max;
+	const unsigned int flag = array_max;
 	int size;
 
 	array_max &= ~MU_ARRAY_FLAGS;
@@ -151,6 +182,7 @@ int mathutils_array_parse(float *array, int array_min, int array_max, PyObject *
 		}
 
 		size = mathutils_array_parse_fast(array, size, value_fast, error_prefix);
+		Py_DECREF(value_fast);
 	}
 
 	if (size != -1) {
@@ -208,6 +240,7 @@ int mathutils_array_parse_alloc(float **array, int array_min, PyObject *value, c
 		size = PySequence_Fast_GET_SIZE(value_fast);
 
 		if (size < array_min) {
+			Py_DECREF(value_fast);
 			PyErr_Format(PyExc_ValueError,
 			             "%.200s: sequence size is %d, expected > %d",
 			             error_prefix, size, array_min);
@@ -217,6 +250,7 @@ int mathutils_array_parse_alloc(float **array, int array_min, PyObject *value, c
 		*array = PyMem_Malloc(size * sizeof(float));
 
 		ret = mathutils_array_parse_fast(*array, size, value_fast, error_prefix);
+		Py_DECREF(value_fast);
 
 		if (ret == -1) {
 			PyMem_Free(*array);
@@ -229,7 +263,7 @@ int mathutils_array_parse_alloc(float **array, int array_min, PyObject *value, c
 /* parse an array of vectors */
 int mathutils_array_parse_alloc_v(float **array, int array_dim, PyObject *value, const char *error_prefix)
 {
-	PyObject *value_fast = NULL;
+	PyObject *value_fast;
 	const int array_dim_flag = array_dim;
 	int i, size;
 
@@ -242,6 +276,7 @@ int mathutils_array_parse_alloc_v(float **array, int array_dim, PyObject *value,
 	size = PySequence_Fast_GET_SIZE(value_fast);
 
 	if (size != 0) {
+		PyObject **value_fast_items = PySequence_Fast_ITEMS(value_fast);
 		float *fp;
 
 		array_dim &= ~MU_ARRAY_FLAGS;
@@ -249,7 +284,7 @@ int mathutils_array_parse_alloc_v(float **array, int array_dim, PyObject *value,
 		fp = *array = PyMem_Malloc(size * array_dim * sizeof(float));
 
 		for (i = 0; i < size; i++, fp += array_dim) {
-			PyObject *item = PySequence_Fast_GET_ITEM(value, i);
+			PyObject *item = value_fast_items[i];
 
 			if (mathutils_array_parse(fp, array_dim, array_dim_flag, item, error_prefix) == -1) {
 				PyMem_Free(*array);
@@ -317,6 +352,15 @@ int mathutils_any_to_rotmat(float rmat[3][3], PyObject *value, const char *error
 /* Utility functions */
 
 /* LomontRRDCompare4, Ever Faster Float Comparisons by Randy Dillon */
+/* XXX We may want to use 'safer' BLI's compare_ff_relative ultimately?
+ *     LomontRRDCompare4() is an optimized version of Dawson's AlmostEqual2sComplement() (see [1] and [2]).
+ *     Dawson himself now claims this is not a 'safe' thing to do (pushing ULP method beyond its limits),
+ *     an recommends using work from [3] instead, which is done in BLI func...
+ *
+ *     [1] http://www.randydillon.org/Papers/2007/everfast.htm
+ *     [2] http://www.cygnus-software.com/papers/comparingfloats/comparingfloats.htm
+ *     [3] https://randomascii.wordpress.com/2012/02/25/comparing-floating-point-numbers-2012-edition/ instead
+ */
 #define SIGNMASK(i) (-(int)(((unsigned int)(i)) >> 31))
 
 int EXPP_FloatsAreEqual(float af, float bf, int maxDiff)
@@ -372,7 +416,7 @@ int mathutils_deepcopy_args_check(PyObject *args)
 /* Mathutils Callbacks */
 
 /* for mathutils internal use only, eventually should re-alloc but to start with we only have a few users */
-#define MATHUTILS_TOT_CB 16
+#define MATHUTILS_TOT_CB 17
 static Mathutils_Callback *mathutils_callbacks[MATHUTILS_TOT_CB] = {NULL};
 
 unsigned char Mathutils_RegisterCallback(Mathutils_Callback *cb)
@@ -452,6 +496,20 @@ int _BaseMathObject_WriteIndexCallback(BaseMathObject *self, int index)
 	return -1;
 }
 
+void _BaseMathObject_RaiseFrozenExc(const BaseMathObject *self)
+{
+	PyErr_Format(PyExc_TypeError,
+	             "%s is frozen (immutable)",
+	             Py_TYPE(self)->tp_name);
+}
+
+void _BaseMathObject_RaiseNotFrozenExc(const BaseMathObject *self)
+{
+	PyErr_Format(PyExc_TypeError,
+	             "%s is not frozen (mutable), call freeze first",
+	             Py_TYPE(self)->tp_name);
+}
+
 /* BaseMathObject generic functions for all mathutils types */
 char BaseMathObject_owner_doc[] = "The item this is wrapping or None  (read-only).";
 PyObject *BaseMathObject_owner_get(BaseMathObject *self, void *UNUSED(closure))
@@ -464,6 +522,33 @@ char BaseMathObject_is_wrapped_doc[] = "True when this object wraps external dat
 PyObject *BaseMathObject_is_wrapped_get(BaseMathObject *self, void *UNUSED(closure))
 {
 	return PyBool_FromLong((self->flag & BASE_MATH_FLAG_IS_WRAP) != 0);
+}
+
+char BaseMathObject_is_frozen_doc[] = "True when this object has been frozen (read-only).\n\n:type: boolean";
+PyObject *BaseMathObject_is_frozen_get(BaseMathObject *self, void *UNUSED(closure))
+{
+	return PyBool_FromLong((self->flag & BASE_MATH_FLAG_IS_FROZEN) != 0);
+}
+
+char BaseMathObject_freeze_doc[] =
+".. function:: freeze()\n"
+"\n"
+"   Make this object immutable.\n"
+"\n"
+"   After this the object can be hashed, used in dictionaries & sets.\n"
+"\n"
+"   :return: An instance of this object.\n"
+;
+PyObject *BaseMathObject_freeze(BaseMathObject *self)
+{
+	if (self->flag & BASE_MATH_FLAG_IS_WRAP) {
+		PyErr_SetString(PyExc_TypeError, "Cannot freeze wrapped data");
+		return NULL;
+	}
+
+	self->flag |= BASE_MATH_FLAG_IS_FROZEN;
+
+	return Py_INCREF_RET((PyObject *)self);
 }
 
 int BaseMathObject_traverse(BaseMathObject *self, visitproc visit, void *arg)
@@ -515,6 +600,7 @@ static struct PyModuleDef M_Mathutils_module_def = {
 #include "mathutils_geometry.h"
 #include "mathutils_interpolate.h"
 #ifndef MATH_STANDALONE
+#  include "mathutils_bvhtree.h"
 #  include "mathutils_kdtree.h"
 #  include "mathutils_noise.h"
 #endif
@@ -565,6 +651,11 @@ PyMODINIT_FUNC PyInit_mathutils(void)
 #ifndef MATH_STANDALONE
 	/* Noise submodule */
 	PyModule_AddObject(mod, "noise", (submodule = PyInit_mathutils_noise()));
+	PyDict_SetItemString(sys_modules, PyModule_GetName(submodule), submodule);
+	Py_INCREF(submodule);
+
+	/* BVHTree submodule */
+	PyModule_AddObject(mod, "bvhtree", (submodule = PyInit_mathutils_bvhtree()));
 	PyDict_SetItemString(sys_modules, PyModule_GetName(submodule), submodule);
 	Py_INCREF(submodule);
 

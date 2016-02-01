@@ -78,6 +78,14 @@ base class --- :class:`SCA_IObject`
 
          The object must have a physics controller for the mass to be applied, otherwise the mass value will be returned as 0.0.
 
+   .. attribute:: isSuspendDynamics
+
+      The object's dynamic state (read-only).
+
+      :type: boolean
+
+      .. seealso:: :py:meth:`suspendDynamics` and :py:meth:`restoreDynamics` allow you to change the state.
+
    .. attribute:: linearDamping
 
       The object's linear damping, also known as translational damping. Can be set simultaneously with angular damping using the :py:meth:`setDamping` method.
@@ -129,7 +137,30 @@ base class --- :class:`SCA_IObject`
 
       .. note::
 
-         A value of 0.0 disables this option (rather then setting it stationary).
+         A value of 0.0 disables this option (rather than setting it stationary).
+
+   .. attribute:: angularVelocityMin
+
+      Enforces the object keeps rotating at a minimum velocity. A value of 0.0 disables this.
+
+      :type: non-negative float
+
+      .. note::
+
+         Applies to dynamic and rigid body objects only.
+         While objects are stationary the minimum velocity will not be applied.
+
+
+   .. attribute:: angularVelocityMax
+
+      Clamp the maximum angular velocity to prevent objects rotating beyond a set speed.
+      A value of 0.0 disables clamping; it does not stop rotation.
+
+      :type: non-negative float
+
+      .. note::
+
+         Applies to dynamic and rigid body objects only.
 
    .. attribute:: localInertia
 
@@ -145,15 +176,27 @@ base class --- :class:`SCA_IObject`
 
    .. attribute:: groupMembers
 
-      Returns the list of group members if the object is a group object, otherwise None is returned.
+      Returns the list of group members if the object is a group object (dupli group instance), otherwise None is returned.
 
       :type: :class:`CListValue` of :class:`KX_GameObject` or None
 
    .. attribute:: groupObject
 
-      Returns the group object that the object belongs to or None if the object is not part of a group.
+      Returns the group object (dupli group instance) that the object belongs to or None if the object is not part of a group.
 
       :type: :class:`KX_GameObject` or None
+
+   .. attribute:: collisionGroup
+
+      The object's collision group.
+
+      :type: bitfield
+
+   .. attribute:: collisionMask
+
+      The object's collision mask.
+
+      :type: bitfield
 
    .. attribute:: collisionCallbacks
 
@@ -432,6 +475,12 @@ base class --- :class:`SCA_IObject`
       If true, the object's and children's debug properties will be displayed on screen.
 
       :type: boolean
+      
+   .. attribute:: currentLodLevel
+
+      The index of the level of detail (LOD) currently used by this object (read-only).
+
+      :type: int
 
    .. method:: endObject()
 
@@ -647,13 +696,19 @@ base class --- :class:`SCA_IObject`
       :arg angular_damping: Angular ("rotational") damping factor.
       :type angular_damping: float ∈ [0, 1]
 
-   .. method:: suspendDynamics()
+   .. method:: suspendDynamics([ghost])
 
       Suspends physics for this object.
 
+      :arg ghost: When set to `True`, collisions with the object will be ignored, similar to the "ghost" checkbox in
+          Blender. When `False` (the default), the object becomes static but still collide with other objects.
+      :type ghost: bool
+
+      .. seealso:: :py:attr:`isSuspendDynamics` allows you to inspect whether the object is in a suspended state.
+
    .. method:: restoreDynamics()
 
-      Resumes physics for this object.
+      Resumes physics for this object. Also reinstates collisions; the object will no longer be a ghost.
 
       .. note::
 
@@ -744,7 +799,7 @@ base class --- :class:`SCA_IObject`
       :return: the first object hit or None if no object or object does not match prop
       :rtype: :class:`KX_GameObject`
 
-   .. method:: rayCast(objto, objfrom, dist, prop, face, xray, poly)
+   .. method:: rayCast(objto, objfrom, dist, prop, face, xray, poly, mask)
 
       Look from a point/object to another point/object and find first object hit within dist that matches prop.
       if poly is 0, returns a 3-tuple with object reference, hit point and hit normal or (None, None, None) if no hit.
@@ -796,6 +851,8 @@ base class --- :class:`SCA_IObject`
          * 2: return value is a 5-tuple and the 5th element is a 2-tuple (u, v) with the UV mapping of the hit point or None if no hit, or the object doesn't use a mesh collision shape, or doesn't have a UV mapping.
 
       :type poly: integer
+      :arg mask: collision mask: The collision mask (16 layers mapped to a 16-bit integer) is combined with each object's collision group, to hit only a subset of the objects in the scene. Only those objects for which ``collisionGroup & mask`` is true can be hit.
+      :type mask: bitfield
       :return: (object, hitpoint, hitnormal) or (object, hitpoint, hitnormal, polygon) or (object, hitpoint, hitnormal, polygon, hituv).
 
          * object, hitpoint and hitnormal are None if no hit.
@@ -916,6 +973,16 @@ base class --- :class:`SCA_IObject`
 
       :return: The current frame of the action
       :rtype: float
+
+   .. method:: getActionName(layer=0)
+
+      Gets the name of the current action playing in the supplied layer.
+
+      :arg layer: The layer that you want to get the action name from.
+      :type layer: integer
+
+      :return: The name of the current action
+      :rtype: string
 
    .. method:: setActionFrame(frame, layer=0)
 

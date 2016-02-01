@@ -19,9 +19,12 @@ static TypeDesc bpx_type_desc_to_oiio_type_desc(const BPXTypeDesc type_desc)
 
 		case BPX_TYPE_DESC_FLOAT:
 			return TypeDesc::FLOAT;
+
+		default:
+			assert(!"Invalid BPXTypeDesc");
 	}
 
-	assert(!"Invalid BPXTypeDesc");
+	return TypeDesc();
 }
 
 static bool bpx_type_desc_from_oiio_type_desc(const TypeDesc src,
@@ -176,11 +179,12 @@ static ROI bpx_roi_from_side(const ROI &roi, const BPXRectSide side)
 		case BPX_RECT_SIDE_LEFT:
 			return ROI(roi.xbegin, roi.xbegin + 1, roi.ybegin, roi.yend);
 
+		default:
 		case BPX_RECT_NUM_SIDES:
-			break;
+			assert(!"Invalid side");
 	}
 
-	assert(!"Invalid side");
+	return ROI();
 }
 
 static ROI bpx_filter_border_roi_from_side(const ROI &dst_roi,

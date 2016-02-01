@@ -56,7 +56,7 @@
 #include "BLI_kdtree.h"
 #include "BLI_utildefines.h"
 
-#include "BLF_translation.h"
+#include "BLT_translation.h"
 
 #include "BKE_action.h"
 #include "BKE_animsys.h"
@@ -138,6 +138,8 @@ static int vertex_parent_set_exec(bContext *C, wmOperator *op)
 		EDBM_mesh_load(obedit);
 		EDBM_mesh_make(scene->toolsettings, obedit);
 
+		DAG_id_tag_update(obedit->data, 0);
+
 		em = me->edit_btmesh;
 
 		EDBM_mesh_normals_update(em);
@@ -145,7 +147,7 @@ static int vertex_parent_set_exec(bContext *C, wmOperator *op)
 
 		/* derivedMesh might be needed for solving parenting,
 		 * so re-create it here */
-		makeDerivedMesh(scene, obedit, em, CD_MASK_BAREMESH | CD_MASK_ORIGINDEX, 0);
+		makeDerivedMesh(scene, obedit, em, CD_MASK_BAREMESH | CD_MASK_ORIGINDEX, false);
 
 		BM_ITER_MESH (eve, &iter, em->bm, BM_VERTS_OF_MESH) {
 			if (BM_elem_flag_test(eve, BM_ELEM_SELECT)) {
@@ -169,7 +171,7 @@ static int vertex_parent_set_exec(bContext *C, wmOperator *op)
 				bezt = nu->bezt;
 				a = nu->pntsu;
 				while (a--) {
-					if (BEZSELECTED_HIDDENHANDLES(cu, bezt)) {
+					if (BEZT_ISSEL_ANY_HIDDENHANDLES(cu, bezt)) {
 						if (v1 == 0) v1 = nr;
 						else if (v2 == 0) v2 = nr;
 						else if (v3 == 0) v3 = nr;
@@ -342,12 +344,10 @@ static int make_proxy_exec(bContext *C, wmOperator *op)
 		Base *newbase, *oldbase = BASACT;
 		char name[MAX_ID_NAME + 4];
 
-		/* Add new object for the proxy */
-		newob = BKE_object_add(bmain, scene, OB_EMPTY);
-
 		BLI_snprintf(name, sizeof(name), "%s_proxy", ((ID *)(gob ? gob : ob))->name + 2);
 
-		rename_id(&newob->id, name);
+		/* Add new object for the proxy */
+		newob = BKE_object_add(bmain, scene, OB_EMPTY, name);
 
 		/* set layers OK */
 		newbase = BASACT;    /* BKE_object_add sets active... */
@@ -572,6 +572,9 @@ void ED_object_parent(Object *ob, Object *par, const int type, const char *subst
 		ob->parsubstr[0] = 0;
 		return;
 	}
+
+	/* Other partypes are deprecated, do not use here! */
+	BLI_assert(ELEM(type & PARTYPE, PAROBJECT, PARSKEL, PARVERT1, PARVERT3, PARBONE));
 
 	/* this could use some more checks */
 
@@ -1316,7 +1319,7 @@ static unsigned int move_to_layer_init(bContext *C, wmOperator *op)
 		CTX_DATA_END;
 
 		for (a = 0; a < 20; a++)
-			values[a] = (lay & (1 << a));
+			values[a] = (lay & (1 << a)) != 0;
 
 		RNA_boolean_set_array(op->ptr, "layers", values);
 	}
@@ -1554,7 +1557,7 @@ static int make_links_data_exec(bContext *C, wmOperator *op)
 
 				switch (type) {
 					case MAKE_LINKS_OBDATA: /* obdata */
-						obdata_id->us--;
+						id_us_min(obdata_id);
 
 						obdata_id = ob_src->data;
 						id_us_plus(obdata_id);
@@ -1574,13 +1577,13 @@ static int make_links_data_exec(bContext *C, wmOperator *op)
 						DAG_id_tag_update(&ob_dst->id, 0);
 						break;
 					case MAKE_LINKS_ANIMDATA:
-						BKE_copy_animdata_id((ID *)ob_dst, (ID *)ob_src, false);
+						BKE_animdata_copy_id((ID *)ob_dst, (ID *)ob_src, false);
 						if (ob_dst->data && ob_src->data) {
 							if (obdata_id->lib) {
 								is_lib = true;
 								break;
 							}
-							BKE_copy_animdata_id((ID *)ob_dst->data, (ID *)ob_src->data, false);
+							BKE_animdata_copy_id((ID *)ob_dst->data, (ID *)ob_src->data, false);
 						}
 						DAG_id_tag_update(&ob_dst->id, OB_RECALC_OB | OB_RECALC_DATA | OB_RECALC_TIME);
 						break;
@@ -1623,16 +1626,20 @@ static int make_links_data_exec(bContext *C, wmOperator *op)
 							break;
 						}
 
-						if (cu_dst->vfont) cu_dst->vfont->id.us--;
+						if (cu_dst->vfont)
+							id_us_min(&cu_dst->vfont->id);
 						cu_dst->vfont = cu_src->vfont;
 						id_us_plus((ID *)cu_dst->vfont);
-						if (cu_dst->vfontb) cu_dst->vfontb->id.us--;
+						if (cu_dst->vfontb)
+							id_us_min(&cu_dst->vfontb->id);
 						cu_dst->vfontb = cu_src->vfontb;
 						id_us_plus((ID *)cu_dst->vfontb);
-						if (cu_dst->vfonti) cu_dst->vfonti->id.us--;
+						if (cu_dst->vfonti)
+							id_us_min(&cu_dst->vfonti->id);
 						cu_dst->vfonti = cu_src->vfonti;
 						id_us_plus((ID *)cu_dst->vfonti);
-						if (cu_dst->vfontbi) cu_dst->vfontbi->id.us--;
+						if (cu_dst->vfontbi)
+							id_us_min(&cu_dst->vfontbi->id);
 						cu_dst->vfontbi = cu_src->vfontbi;
 						id_us_plus((ID *)cu_dst->vfontbi);
 
@@ -1757,7 +1764,7 @@ static void single_object_users(Main *bmain, Scene *scene, View3D *v3d, const in
 				}
 				base->flag = obn->flag;
 
-				ob->id.us--;
+				id_us_min(&ob->id);
 			}
 		}
 	}
@@ -1793,7 +1800,7 @@ static void single_object_users(Main *bmain, Scene *scene, View3D *v3d, const in
 
 	/* object and group pointers */
 	for (base = FIRSTBASE; base; base = base->next) {
-		BKE_object_relink(base->object);
+		BKE_libblock_relink(&base->object->id);
 	}
 
 	set_sca_new_poins();
@@ -1825,11 +1832,11 @@ static void new_id_matar(Material **matar, const int totcol)
 			if (id->newid) {
 				matar[a] = (Material *)id->newid;
 				id_us_plus(id->newid);
-				id->us--;
+				id_us_min(id);
 			}
 			else if (id->us > 1) {
 				matar[a] = BKE_material_copy(matar[a]);
-				id->us--;
+				id_us_min(id);
 				id->newid = (ID *)matar[a];
 			}
 		}
@@ -1871,7 +1878,7 @@ static void single_obdata_users(Main *bmain, Scene *scene, const int flag)
 					case OB_MESH:
 						ob->data = me = BKE_mesh_copy(ob->data);
 						if (me->key)
-							BKE_copy_animdata_id_action((ID *)me->key);
+							BKE_animdata_copy_id_action((ID *)me->key);
 						break;
 					case OB_MBALL:
 						ob->data = BKE_mball_copy(ob->data);
@@ -1883,12 +1890,12 @@ static void single_obdata_users(Main *bmain, Scene *scene, const int flag)
 						ID_NEW(cu->bevobj);
 						ID_NEW(cu->taperobj);
 						if (cu->key)
-							BKE_copy_animdata_id_action((ID *)cu->key);
+							BKE_animdata_copy_id_action((ID *)cu->key);
 						break;
 					case OB_LATTICE:
 						ob->data = lat = BKE_lattice_copy(ob->data);
 						if (lat->key)
-							BKE_copy_animdata_id_action((ID *)lat->key);
+							BKE_animdata_copy_id_action((ID *)lat->key);
 						break;
 					case OB_ARMATURE:
 						DAG_id_tag_update(&ob->id, OB_RECALC_DATA);
@@ -1909,9 +1916,9 @@ static void single_obdata_users(Main *bmain, Scene *scene, const int flag)
 				 * AnimData structure, which is not what we want.
 				 *                                             (sergey)
 				 */
-				BKE_copy_animdata_id_action((ID *)ob->data);
+				BKE_animdata_copy_id_action((ID *)ob->data);
 
-				id->us--;
+				id_us_min(id);
 				id->newid = ob->data;
 			}
 		}
@@ -1933,7 +1940,7 @@ static void single_object_action_users(Scene *scene, const int flag)
 		ob = base->object;
 		if (ob->id.lib == NULL && (flag == 0 || (base->flag & SELECT)) ) {
 			DAG_id_tag_update(&ob->id, OB_RECALC_DATA);
-			BKE_copy_animdata_id_action(&ob->id);
+			BKE_animdata_copy_id_action(&ob->id);
 		}
 	}
 }
@@ -1952,11 +1959,11 @@ static void single_mat_users(Scene *scene, const int flag, const bool do_texture
 			for (a = 1; a <= ob->totcol; a++) {
 				ma = give_current_material(ob, a);
 				if (ma) {
-					/* do not test for LIB_NEW: this functions guaranteed delivers single_users! */
+					/* do not test for LIB_TAG_NEW: this functions guaranteed delivers single_users! */
 
 					if (ma->id.us > 1) {
 						man = BKE_material_copy(ma);
-						BKE_copy_animdata_id_action(&man->id);
+						BKE_animdata_copy_id_action(&man->id);
 
 						man->id.us = 0;
 						assign_material(ob, man, a, BKE_MAT_ASSIGN_USERPREF);
@@ -1965,9 +1972,9 @@ static void single_mat_users(Scene *scene, const int flag, const bool do_texture
 							for (b = 0; b < MAX_MTEX; b++) {
 								if (ma->mtex[b] && (tex = ma->mtex[b]->tex)) {
 									if (tex->id.us > 1) {
-										tex->id.us--;
+										id_us_min(&tex->id);
 										tex = BKE_texture_copy(tex);
-										BKE_copy_animdata_id_action(&tex->id);
+										BKE_animdata_copy_id_action(&tex->id);
 										man->mtex[b]->tex = tex;
 									}
 								}
@@ -1990,27 +1997,27 @@ static void do_single_tex_user(Tex **from)
 	if (tex->id.newid) {
 		*from = (Tex *)tex->id.newid;
 		id_us_plus(tex->id.newid);
-		tex->id.us--;
+		id_us_min(&tex->id);
 	}
 	else if (tex->id.us > 1) {
 		texn = BKE_texture_copy(tex);
-		BKE_copy_animdata_id_action(&texn->id);
+		BKE_animdata_copy_id_action(&texn->id);
 		tex->id.newid = (ID *)texn;
-		tex->id.us--;
+		id_us_min(&tex->id);
 		*from = texn;
 	}
 }
 
 static void single_tex_users_expand(Main *bmain)
 {
-	/* only when 'parent' blocks are LIB_NEW */
+	/* only when 'parent' blocks are LIB_TAG_NEW */
 	Material *ma;
 	Lamp *la;
 	World *wo;
 	int b;
 
 	for (ma = bmain->mat.first; ma; ma = ma->id.next) {
-		if (ma->id.flag & LIB_NEW) {
+		if (ma->id.tag & LIB_TAG_NEW) {
 			for (b = 0; b < MAX_MTEX; b++) {
 				if (ma->mtex[b] && ma->mtex[b]->tex) {
 					do_single_tex_user(&(ma->mtex[b]->tex));
@@ -2020,7 +2027,7 @@ static void single_tex_users_expand(Main *bmain)
 	}
 
 	for (la = bmain->lamp.first; la; la = la->id.next) {
-		if (la->id.flag & LIB_NEW) {
+		if (la->id.tag & LIB_TAG_NEW) {
 			for (b = 0; b < MAX_MTEX; b++) {
 				if (la->mtex[b] && la->mtex[b]->tex) {
 					do_single_tex_user(&(la->mtex[b]->tex));
@@ -2030,7 +2037,7 @@ static void single_tex_users_expand(Main *bmain)
 	}
 
 	for (wo = bmain->world.first; wo; wo = wo->id.next) {
-		if (wo->id.flag & LIB_NEW) {
+		if (wo->id.tag & LIB_TAG_NEW) {
 			for (b = 0; b < MAX_MTEX; b++) {
 				if (wo->mtex[b] && wo->mtex[b]->tex) {
 					do_single_tex_user(&(wo->mtex[b]->tex));
@@ -2042,7 +2049,7 @@ static void single_tex_users_expand(Main *bmain)
 
 static void single_mat_users_expand(Main *bmain)
 {
-	/* only when 'parent' blocks are LIB_NEW */
+	/* only when 'parent' blocks are LIB_TAG_NEW */
 	Object *ob;
 	Mesh *me;
 	Curve *cu;
@@ -2051,24 +2058,24 @@ static void single_mat_users_expand(Main *bmain)
 	int a;
 
 	for (ob = bmain->object.first; ob; ob = ob->id.next)
-		if (ob->id.flag & LIB_NEW)
+		if (ob->id.tag & LIB_TAG_NEW)
 			new_id_matar(ob->mat, ob->totcol);
 
 	for (me = bmain->mesh.first; me; me = me->id.next)
-		if (me->id.flag & LIB_NEW)
+		if (me->id.tag & LIB_TAG_NEW)
 			new_id_matar(me->mat, me->totcol);
 
 	for (cu = bmain->curve.first; cu; cu = cu->id.next)
-		if (cu->id.flag & LIB_NEW)
+		if (cu->id.tag & LIB_TAG_NEW)
 			new_id_matar(cu->mat, cu->totcol);
 
 	for (mb = bmain->mball.first; mb; mb = mb->id.next)
-		if (mb->id.flag & LIB_NEW)
+		if (mb->id.tag & LIB_TAG_NEW)
 			new_id_matar(mb->mat, mb->totcol);
 
 	/* material imats  */
 	for (ma = bmain->mat.first; ma; ma = ma->id.next)
-		if (ma->id.flag & LIB_NEW)
+		if (ma->id.tag & LIB_TAG_NEW)
 			for (a = 0; a < MAX_MTEX; a++)
 				if (ma->mtex[a])
 					ID_NEW(ma->mtex[a]->object);
@@ -2119,7 +2126,7 @@ enum {
 static bool tag_localizable_looper(void *UNUSED(user_data), ID **id_pointer, const int UNUSED(cd_flag))
 {
 	if (*id_pointer) {
-		(*id_pointer)->flag &= ~LIB_DOIT;
+		(*id_pointer)->tag &= ~LIB_TAG_DOIT;
 	}
 	return true;
 }
@@ -2127,23 +2134,22 @@ static bool tag_localizable_looper(void *UNUSED(user_data), ID **id_pointer, con
 static void tag_localizable_objects(bContext *C, const int mode)
 {
 	Main *bmain = CTX_data_main(C);
-	Object *object;
 
 	BKE_main_id_tag_all(bmain, false);
 
-	/* Set LIB_DOIT flag for all selected objects, so next we can check whether
+	/* Set LIB_TAG_DOIT flag for all selected objects, so next we can check whether
 	 * object is gonna to become local or not.
 	 */
 	CTX_DATA_BEGIN (C, Object *, object, selected_objects)
 	{
-		object->id.flag |= LIB_DOIT;
+		object->id.tag |= LIB_TAG_DOIT;
 
 		/* If data is also gonna to become local, mark data we're interested in
 		 * as gonna-to-be-local.
 		 */
 		if (mode == MAKE_LOCAL_SELECT_OBDATA && object->data) {
 			ID *data_id = (ID *) object->data;
-			data_id->flag |= LIB_DOIT;
+			data_id->tag |= LIB_TAG_DOIT;
 		}
 	}
 	CTX_DATA_END;
@@ -2151,13 +2157,13 @@ static void tag_localizable_objects(bContext *C, const int mode)
 	/* Also forbid making objects local if other library objects are using
 	 * them for modifiers or constraints.
 	 */
-	for (object = bmain->object.first; object; object = object->id.next) {
-		if ((object->id.flag & LIB_DOIT) == 0) {
+	for (Object *object = bmain->object.first; object; object = object->id.next) {
+		if ((object->id.tag & LIB_TAG_DOIT) == 0) {
 			BKE_library_foreach_ID_link(&object->id, tag_localizable_looper, NULL, IDWALK_READONLY);
 		}
 		if (object->data) {
 			ID *data_id = (ID *) object->data;
-			if ((data_id->flag & LIB_DOIT) == 0) {
+			if ((data_id->tag & LIB_TAG_DOIT) == 0) {
 				BKE_library_foreach_ID_link(data_id, tag_localizable_looper, NULL, IDWALK_READONLY);
 			}
 		}
@@ -2179,10 +2185,7 @@ static bool make_local_all__instance_indirect_unused(Main *bmain, Scene *scene)
 		if (ob->id.lib && (ob->id.us == 0)) {
 			Base *base;
 
-			ob->id.us = 1;
-
-			/* not essential, but for correctness */
-			id_lib_extern(&ob->id);
+			id_us_plus(&ob->id);
 
 			base = BKE_scene_base_add(scene, ob);
 			base->flag |= SELECT;
@@ -2217,7 +2220,7 @@ static int make_local_exec(bContext *C, wmOperator *op)
 			           "Orphan library objects added to the current scene to avoid loss");
 		}
 
-		BKE_library_make_local(bmain, NULL, false); /* NULL is all libs */
+		BKE_library_make_local(bmain, NULL, false, false); /* NULL is all libs */
 		WM_event_add_notifier(C, NC_WINDOW, NULL);
 		return OPERATOR_FINISHED;
 	}
@@ -2227,7 +2230,7 @@ static int make_local_exec(bContext *C, wmOperator *op)
 
 	CTX_DATA_BEGIN (C, Object *, ob, selected_objects)
 	{
-		if ((ob->id.flag & LIB_DOIT) == 0) {
+		if ((ob->id.tag & LIB_TAG_DOIT) == 0) {
 			continue;
 		}
 
@@ -2247,7 +2250,7 @@ static int make_local_exec(bContext *C, wmOperator *op)
 
 	CTX_DATA_BEGIN (C, Object *, ob, selected_objects)
 	{
-		if ((ob->id.flag & LIB_DOIT) == 0) {
+		if ((ob->id.tag & LIB_TAG_DOIT) == 0) {
 			continue;
 		}
 
@@ -2280,7 +2283,7 @@ static int make_local_exec(bContext *C, wmOperator *op)
 	if (mode == MAKE_LOCAL_SELECT_OBDATA_MATERIAL) {
 		CTX_DATA_BEGIN (C, Object *, ob, selected_objects)
 		{
-			if ((ob->id.flag & LIB_DOIT) == 0) {
+			if ((ob->id.tag & LIB_TAG_DOIT) == 0) {
 				continue;
 			}
 

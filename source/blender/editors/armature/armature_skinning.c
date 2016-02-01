@@ -51,12 +51,10 @@
 #include "ED_armature.h"
 #include "ED_mesh.h"
 
+#include "eigen_capi.h"
 
 #include "armature_intern.h"
-
-#ifdef WITH_OPENNL
-#  include "meshlaplacian.h"
-#endif
+#include "meshlaplacian.h"
 
 #if 0
 #include "reeb.h"
@@ -166,9 +164,15 @@ static int dgroup_skinnable_cb(Object *ob, Bone *bone, void *datap)
 			else
 				segments = 1;
 			
-			if (!wpmode || ((arm->layer & bone->layer) && (bone->flag & BONE_SELECTED)))
-				if (!(defgroup = defgroup_find_name(ob, bone->name)))
+			if (!wpmode || ((arm->layer & bone->layer) && (bone->flag & BONE_SELECTED))) {
+				if (!(defgroup = defgroup_find_name(ob, bone->name))) {
 					defgroup = BKE_object_defgroup_add_name(ob, bone->name);
+				}
+				else if (defgroup->flag & DG_LOCK_WEIGHT) {
+					/* In case vgroup already exists and is locked, do not modify it here. See T43814. */
+					defgroup = NULL;
+				}
+			}
 			
 			if (data->list != NULL) {
 				hgroup = (bDeformGroup ***) &data->list;
@@ -210,7 +214,7 @@ static void envelope_bone_weighting(Object *ob, Mesh *mesh, float (*verts)[3], i
 			continue;
 		}
 
-		iflip = (dgroupflip) ? mesh_get_x_mirror_vert(ob, i, use_topology) : -1;
+		iflip = (dgroupflip) ? mesh_get_x_mirror_vert(ob, NULL, i, use_topology) : -1;
 		
 		/* for each skinnable bone */
 		for (j = 0; j < numbones; ++j) {
@@ -395,12 +399,8 @@ static void add_verts_to_dgroups(ReportList *reports, Scene *scene, Object *ob, 
 	if (heat) {
 		const char *error = NULL;
 
-#ifdef WITH_OPENNL
 		heat_bone_weighting(ob, mesh, verts, numbones, dgrouplist, dgroupflip,
 		                    root, tip, selected, &error);
-#else
-		error = "Built without OpenNL";
-#endif
 		if (error) {
 			BKE_report(reports, RPT_WARNING, error);
 		}
@@ -411,7 +411,7 @@ static void add_verts_to_dgroups(ReportList *reports, Scene *scene, Object *ob, 
 	}
 
 	/* only generated in some cases but can call anyway */
-	ED_mesh_mirror_spatial_table(ob, NULL, NULL, 'e');
+	ED_mesh_mirror_spatial_table(ob, NULL, NULL, NULL, 'e');
 
 	/* free the memory allocated */
 	MEM_freeN(bonelist);

@@ -58,16 +58,9 @@ GHOST_ContextCGL::GHOST_ContextCGL(
         int contextFlags,
         int contextResetNotificationStrategy)
     : GHOST_Context(stereoVisual, numOfAASamples),
-      m_window(window),
       m_openGLView(openGLView),
-      m_contextProfileMask(contextProfileMask),
-      m_contextMajorVersion(contextMajorVersion),
-      m_contextMinorVersion(contextMinorVersion),
-      m_contextFlags(contextFlags),
-      m_contextResetNotificationStrategy(contextResetNotificationStrategy),
       m_openGLContext(nil)
 {
-	assert(window != nil);
 	assert(openGLView != nil);
 }
 
@@ -184,10 +177,6 @@ static void makeAttribList(
 	// Pixel Format Attributes for the windowed NSOpenGLContext
 	attribs.push_back(NSOpenGLPFADoubleBuffer);
 
-	// Guarantees the back buffer contents to be valid after a call to NSOpenGLContext object's flushBuffer
-	// needed for 'Draw Overlap' drawing method
-	attribs.push_back(NSOpenGLPFABackingStore);
-
 	// Force software OpenGL, for debugging
 	/* XXX jwilkins: fixed this to work on Intel macs? useful feature for Windows and Linux too?
 	 * Maybe a command line flag is better... */
@@ -203,6 +192,9 @@ static void makeAttribList(
 	//attribs.push_back(NSOpenGLPFAAllowOfflineRenderers);
 
 	attribs.push_back(NSOpenGLPFADepthSize);
+	attribs.push_back((NSOpenGLPixelFormatAttribute) 32);
+
+	attribs.push_back(NSOpenGLPFAAccumSize);
 	attribs.push_back((NSOpenGLPixelFormatAttribute) 32);
 
 	if (stereoVisual)
@@ -292,14 +284,16 @@ GHOST_TSuccess GHOST_ContextCGL::initializeDrawingContext()
 
 	[m_openGLView setPixelFormat:pixelFormat];
 
-	m_openGLContext = [[NSOpenGLContext alloc] initWithFormat:pixelFormat shareContext:s_sharedOpenGLContext];
+	m_openGLContext = [[NSOpenGLContext alloc] initWithFormat:pixelFormat shareContext:s_sharedOpenGLContext]; // +1 refCount to pixelFormat
 
 	if (m_openGLContext == nil)
 		goto error;
 
 	if (s_sharedCount == 0)
 		s_sharedOpenGLContext = m_openGLContext;
-
+	
+	[pixelFormat release]; // -1 refCount to pixelFormat
+	
 	s_sharedCount++;
 
 #ifdef GHOST_MULTITHREADED_OPENGL
@@ -332,6 +326,7 @@ GHOST_TSuccess GHOST_ContextCGL::initializeDrawingContext()
 error:
 
 	[m_openGLView setOpenGLContext:prev_openGLContext];
+	[pixelFormat release];
 
 	[pool drain];
 

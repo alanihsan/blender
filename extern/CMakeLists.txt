@@ -26,10 +26,8 @@
 # Otherwise we get warnings here that we cant fix in external projects
 remove_strict_flags()
 
-add_subdirectory(colamd)
 add_subdirectory(rangetree)
 add_subdirectory(wcwidth)
-add_subdirectory(libmv)
 
 if(WITH_BULLET)
 	if(NOT WITH_SYSTEM_BULLET)
@@ -66,7 +64,7 @@ if(WITH_IMAGE_REDCODE)
 	add_subdirectory(libredcode)
 endif()
 
-if(WITH_LZO)
+if(WITH_LZO AND NOT WITH_SYSTEM_LZO)
 	add_subdirectory(lzo)
 endif()
 
@@ -74,9 +72,11 @@ if(WITH_LZMA)
 	add_subdirectory(lzma)
 endif()
 
-if(WITH_CYCLES OR WITH_COMPOSITOR)
+if(WITH_CYCLES OR WITH_COMPOSITOR OR WITH_OPENSUBDIV)
 	add_subdirectory(clew)
-	add_subdirectory(cuew)
+	if(WITH_CUDA_DYNLOAD)
+		add_subdirectory(cuew)
+	endif()
 endif()
 
 if(WITH_MOD_BOOLEAN)
@@ -85,6 +85,15 @@ endif()
 
 if(WITH_X11 AND WITH_GHOST_XDND)
 	add_subdirectory(xdnd)
+endif()
+
+if(WITH_LIBMV)
+	add_subdirectory(ceres)
+endif()
+
+if(WITH_LIBMV OR WITH_GTESTS OR (WITH_CYCLES AND WITH_CYCLES_LOGGING))
+	add_subdirectory(gflags)
+	add_subdirectory(glog)
 endif()
 
 if(WITH_GTESTS)

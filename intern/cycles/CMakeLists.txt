@@ -11,7 +11,7 @@ endif()
 include(cmake/external_libs.cmake)
 
 # Build Flags
-# todo: refactor this code to match scons
+# todo: this code could be refactored a bit to avoid duplication
 # note: CXX_HAS_SSE is needed in case passing SSE flags fails altogether (gcc-arm)
 
 if(NOT WITH_CPU_SSE)
@@ -64,7 +64,7 @@ elseif(CMAKE_COMPILER_IS_GNUCC)
 		set(CYCLES_AVX_KERNEL_FLAGS "-ffast-math -msse -msse2 -msse3 -mssse3 -msse4.1 -mavx -mfpmath=sse")
 	endif()
 	if(CXX_HAS_AVX2)
-		set(CYCLES_AVX2_KERNEL_FLAGS "-ffast-math -msse -msse2 -msse3 -mssse3 -msse4.1 -mavx -mavx2 -mfma -mlzcnt -mbmi -mbmi2 -mfpmath=sse")
+		set(CYCLES_AVX2_KERNEL_FLAGS "-ffast-math -msse -msse2 -msse3 -mssse3 -msse4.1 -mavx -mavx2 -mfma -mlzcnt -mbmi -mbmi2 -mf16c -mfpmath=sse")
 	endif()
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffast-math")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -80,7 +80,7 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 		set(CYCLES_AVX_KERNEL_FLAGS "-ffast-math -msse -msse2 -msse3 -mssse3 -msse4.1 -mavx")
 	endif()
 	if(CXX_HAS_AVX2)
-		set(CYCLES_AVX2_KERNEL_FLAGS "-ffast-math -msse -msse2 -msse3 -mssse3 -msse4.1 -mavx -mavx2 -mfma -mlzcnt -mbmi -mbmi2")
+		set(CYCLES_AVX2_KERNEL_FLAGS "-ffast-math -msse -msse2 -msse3 -mssse3 -msse4.1 -mavx -mavx2 -mfma -mlzcnt -mbmi -mbmi2 -mf16c")
 	endif()
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffast-math")
 endif()
@@ -121,10 +121,6 @@ add_definitions(
 	-DCCL_NAMESPACE_END=}
 )
 
-if(WITH_CYCLES_NETWORK)
-	add_definitions(-DWITH_NETWORK)
-endif()
-
 if(WITH_CYCLES_STANDALONE_GUI)
 	add_definitions(-DWITH_CYCLES_STANDALONE_GUI)
 endif()
@@ -132,10 +128,6 @@ endif()
 if(WITH_PTEX)
 	add_definitions(-DWITH_PTEX)
 	include_directories("../../intern/ptex")
-endif()
-
-if(WITH_CYCLES_OPENSUBDIV)
-	add_definitions(-DWITH_OPENSUBDIV)
 endif()
 
 if(WITH_CYCLES_OSL)
@@ -147,11 +139,32 @@ if(WITH_CYCLES_OSL)
 	)
 endif()
 
-add_definitions(
-	-DWITH_OPENCL
-	-DWITH_CUDA
-	-DWITH_MULTI
-)
+set(WITH_CYCLES_DEVICE_OPENCL TRUE)
+set(WITH_CYCLES_DEVICE_CUDA TRUE)
+set(WITH_CYCLES_DEVICE_MULTI TRUE)
+
+if(CYCLES_STANDALONE_REPOSITORY)
+	TEST_UNORDERED_MAP_SUPPORT()
+endif()
+if(HAVE_STD_UNORDERED_MAP_HEADER)
+	if(HAVE_UNORDERED_MAP_IN_STD_NAMESPACE)
+		add_definitions(-DCYCLES_STD_UNORDERED_MAP)
+	else()
+		if(HAVE_UNORDERED_MAP_IN_TR1_NAMESPACE)
+			add_definitions(-DCYCLES_STD_UNORDERED_MAP_IN_TR1_NAMESPACE)
+		else()
+			add_definitions(-DCYCLES_NO_UNORDERED_MAP)
+			message(STATUS "Replacing unordered_map/set with map/set (warning: slower!)")
+		endif()
+	endif()
+else()
+	if(HAVE_UNORDERED_MAP_IN_TR1_NAMESPACE)
+		add_definitions(-DCYCLES_TR1_UNORDERED_MAP)
+	else()
+		add_definitions(-DCYCLES_NO_UNORDERED_MAP)
+		message(STATUS "Replacing unordered_map/set with map/set (warning: slower!)")
+	endif()
+endif()
 
 # Logging capabilities using GLog library.
 if(WITH_CYCLES_LOGGING)

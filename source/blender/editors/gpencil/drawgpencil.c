@@ -40,6 +40,9 @@
 #include "BLI_math.h"
 #include "BLI_utildefines.h"
 
+#include "BLF_api.h"
+#include "BLT_translation.h"
+
 #include "DNA_gpencil_types.h"
 #include "DNA_scene_types.h"
 #include "DNA_screen_types.h"
@@ -57,11 +60,11 @@
 #include "BIF_glutil.h"
 
 #include "ED_gpencil.h"
+#include "ED_screen.h"
 #include "ED_view3d.h"
 
+#include "UI_interface_icons.h"
 #include "UI_resources.h"
-
-#include "gpencil_intern.h"
 
 /* ************************************************** */
 /* GREASE PENCIL DRAWING */
@@ -102,9 +105,9 @@ static void gp_draw_stroke_buffer(tGPspoint *points, int totpoints, short thickn
 	if (dflag & (GP_DRAWDATA_ONLY3D | GP_DRAWDATA_ONLYV2D))
 		return;
 	
-	/* if drawing a single point, draw it larger */
 	if (totpoints == 1) {
-		/* draw point */
+		/* if drawing a single point, draw it larger */
+		glPointSize((float)(thickness + 2) * points->pressure);
 		glBegin(GL_POINTS);
 		glVertex2iv(&points->x);
 		glEnd();
@@ -118,7 +121,7 @@ static void gp_draw_stroke_buffer(tGPspoint *points, int totpoints, short thickn
 		/* draw stroke curve */
 		if (G.debug & G_DEBUG) setlinestyle(2);
 		
-		glLineWidth(oldpressure * thickness);
+		glLineWidth(max_ff(oldpressure * thickness, 1.0));
 		glBegin(GL_LINE_STRIP);
 		
 		for (i = 0, pt = points; i < totpoints && pt; i++, pt++) {
@@ -127,7 +130,7 @@ static void gp_draw_stroke_buffer(tGPspoint *points, int totpoints, short thickn
 			 */
 			if (fabsf(pt->pressure - oldpressure) > 0.2f) {
 				glEnd();
-				glLineWidth(pt->pressure * thickness);
+				glLineWidth(max_ff(pt->pressure * thickness, 1.0f));
 				glBegin(GL_LINE_STRIP);
 				
 				/* need to roll-back one point to ensure that there are no gaps in the stroke */
@@ -142,9 +145,6 @@ static void gp_draw_stroke_buffer(tGPspoint *points, int totpoints, short thickn
 				glVertex2iv(&pt->x);
 		}
 		glEnd();
-		
-		/* reset for predictable OpenGL context */
-		glLineWidth(1.0f);
 
 		if (G.debug & G_DEBUG) setlinestyle(0);
 	}
@@ -363,6 +363,9 @@ static void gp_draw_stroke_fill(bGPDspoint *points, int totpoints, short UNUSED(
 static void gp_draw_stroke_point(bGPDspoint *points, short thickness, short dflag, short sflag,
                                  int offsx, int offsy, int winx, int winy)
 {
+	/* set point thickness (since there's only one of these) */
+	glPointSize((float)(thickness + 2) * points->pressure);
+	
 	/* draw point */
 	if (sflag & GP_STROKE_3DSPACE) {
 		glBegin(GL_POINTS);
@@ -392,7 +395,7 @@ static void gp_draw_stroke_point(bGPDspoint *points, short thickness, short dfla
 			gluQuadricDrawStyle(qobj, GLU_FILL);
 			
 			/* need to translate drawing position, but must reset after too! */
-			glTranslatef(co[0], co[1], 0.0);
+			glTranslate2fv(co);
 			gluDisk(qobj, 0.0,  thickness, 32, 1);
 			glTranslatef(-co[0], -co[1], 0.0);
 			
@@ -409,7 +412,7 @@ static void gp_draw_stroke_3d(bGPDspoint *points, int totpoints, short thickness
 	int i;
 	
 	/* draw stroke curve */
-	glLineWidth(curpressure * thickness);
+	glLineWidth(max_ff(curpressure * thickness, 1.0f));
 	glBegin(GL_LINE_STRIP);
 	for (i = 0, pt = points; i < totpoints && pt; i++, pt++) {
 		/* if there was a significant pressure change, stop the curve, change the thickness of the stroke,
@@ -419,7 +422,7 @@ static void gp_draw_stroke_3d(bGPDspoint *points, int totpoints, short thickness
 		if (fabsf(pt->pressure - curpressure) > 0.2f / (float)thickness) {
 			glEnd();
 			curpressure = pt->pressure;
-			glLineWidth(curpressure * thickness);
+			glLineWidth(max_ff(curpressure * thickness, 1.0f));
 			glBegin(GL_LINE_STRIP);
 			
 			/* need to roll-back one point to ensure that there are no gaps in the stroke */
@@ -437,6 +440,8 @@ static void gp_draw_stroke_3d(bGPDspoint *points, int totpoints, short thickness
 	/* draw debug points of curve on top? */
 	/* XXX: for now, we represent "selected" strokes in the same way as debug, which isn't used anymore */
 	if (debug) {
+		glPointSize((float)(thickness + 2));
+		
 		glBegin(GL_POINTS);
 		for (i = 0, pt = points; i < totpoints && pt; i++, pt++)
 			glVertex3fv(&pt->x);
@@ -611,6 +616,8 @@ static void gp_draw_stroke_2d(bGPDspoint *points, int totpoints, short thickness
 		bGPDspoint *pt;
 		int i;
 		
+		glPointSize((float)(thickness_s + 2));
+		
 		glBegin(GL_POINTS);
 		for (i = 0, pt = points; i < totpoints && pt; i++, pt++) {
 			float co[2];
@@ -751,7 +758,7 @@ static void gp_draw_strokes_edit(bGPDframe *gpf, int offsx, int offsy, int winx,
 {
 	bGPDstroke *gps;
 	
-	const int no_xray = (dflag & GP_DRAWDATA_NO_XRAY);
+	const bool no_xray = (dflag & GP_DRAWDATA_NO_XRAY) != 0;
 	int mask_orig = 0;
 	
 	/* set up depth masks... */
@@ -870,7 +877,7 @@ static void gp_draw_strokes_edit(bGPDframe *gpf, int offsx, int offsy, int winx,
 
 /* draw onion-skinning for a layer */
 static void gp_draw_onionskins(bGPDlayer *gpl, bGPDframe *gpf, int offsx, int offsy, int winx, int winy,
-                               int UNUSED(cfra), int dflag, short debug, short lthick)
+                               int UNUSED(cfra), int dflag, bool debug, short lthick)
 {
 	const float alpha = gpl->color[3];
 	float color[4];
@@ -966,9 +973,8 @@ static void gp_draw_data_layers(bGPdata *gpd, int offsx, int offsy, int winx, in
 		if (gpf == NULL)
 			continue;
 		
-		/* set color, stroke thickness, and point size */
+		/* set basic stroke thickness */
 		glLineWidth(lthick);
-		glPointSize((float)(gpl->thickness + 2));
 		
 		/* Add layer drawing settings to the set of "draw flags"
 		 * NOTE: If the setting doesn't apply, it *must* be cleared,
@@ -1042,6 +1048,51 @@ static void gp_draw_data_layers(bGPdata *gpd, int offsx, int offsy, int winx, in
 	}
 }
 
+/* draw a short status message in the top-right corner */
+static void gp_draw_status_text(bGPdata *gpd, ARegion *ar)
+{
+	rcti rect;
+	
+	/* Cannot draw any status text when drawing OpenGL Renders */
+	if (G.f & G_RENDER_OGL)
+		return;
+	
+	/* Get bounds of region - Necessary to avoid problems with region overlap */
+	ED_region_visible_rect(ar, &rect);
+	
+	/* for now, this should only be used to indicate when we are in stroke editmode */
+	if (gpd->flag & GP_DATA_STROKE_EDITMODE) {
+		const char *printable = IFACE_("GPencil Stroke Editing");
+		float       printable_size[2];
+		int xco, yco;
+		
+		BLF_width_and_height_default(printable, BLF_DRAW_STR_DUMMY_MAX, &printable_size[0], &printable_size[1]);
+		
+		xco = (rect.xmax - U.widget_unit) - (int)printable_size[0];
+		yco = (rect.ymax - U.widget_unit);
+		
+		/* text label */
+		UI_ThemeColor(TH_TEXT_HI);
+#ifdef WITH_INTERNATIONAL
+		BLF_draw_default(xco, yco, 0.0f, printable, BLF_DRAW_STR_DUMMY_MAX);
+#else
+		BLF_draw_default_ascii(xco, yco, 0.0f, printable, BLF_DRAW_STR_DUMMY_MAX);
+#endif
+		
+		/* grease pencil icon... */
+		// XXX: is this too intrusive?
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glEnable(GL_BLEND);
+		
+		xco -= U.widget_unit;
+		yco -= (int)printable_size[1] / 2;
+
+		UI_icon_draw(xco, yco, ICON_GREASEPENCIL);
+		
+		glDisable(GL_BLEND);
+	}
+}
+
 /* draw grease-pencil datablock */
 static void gp_draw_data(bGPdata *gpd, int offsx, int offsy, int winx, int winy, int cfra, int dflag)
 {
@@ -1068,8 +1119,6 @@ static void gp_draw_data(bGPdata *gpd, int offsx, int offsy, int winx, int winy,
 	glDisable(GL_LINE_SMOOTH); // smooth lines
 	
 	/* restore initial gl conditions */
-	glLineWidth(1.0);
-	glPointSize(1.0);
 	glColor4f(0, 0, 0, 1);
 }
 
@@ -1112,6 +1161,7 @@ static void gp_draw_data_all(Scene *scene, bGPdata *gpd, int offsx, int offsy, i
 /* draw grease-pencil sketches to specified 2d-view that uses ibuf corrections */
 void ED_gpencil_draw_2dimage(const bContext *C)
 {
+	wmWindowManager *wm = CTX_wm_manager(C);
 	ScrArea *sa = CTX_wm_area(C);
 	ARegion *ar = CTX_wm_region(C);
 	Scene *scene = CTX_data_scene(C);
@@ -1164,6 +1214,13 @@ void ED_gpencil_draw_2dimage(const bContext *C)
 			break;
 	}
 	
+	if (ED_screen_animation_playing(wm)) {
+		/* don't show onionskins during animation playback/scrub (i.e. it obscures the poses)
+		 * OpenGL Renders (i.e. final output), or depth buffer (i.e. not real strokes)
+		 */
+		dflag |= GP_DRAWDATA_NO_ONIONS;
+	}
+	
 	
 	/* draw it! */
 	gp_draw_data_all(scene, gpd, offsx, offsy, sizex, sizey, CFRA, dflag, sa->spacetype);
@@ -1174,6 +1231,7 @@ void ED_gpencil_draw_2dimage(const bContext *C)
  * second time with onlyv2d=0 for screen-aligned strokes */
 void ED_gpencil_draw_view2d(const bContext *C, bool onlyv2d)
 {
+	wmWindowManager *wm = CTX_wm_manager(C);
 	ScrArea *sa = CTX_wm_area(C);
 	ARegion *ar = CTX_wm_region(C);
 	Scene *scene = CTX_data_scene(C);
@@ -1192,13 +1250,20 @@ void ED_gpencil_draw_view2d(const bContext *C, bool onlyv2d)
 	
 	/* draw it! */
 	if (onlyv2d) dflag |= (GP_DRAWDATA_ONLYV2D | GP_DRAWDATA_NOSTATUS);
+	if (ED_screen_animation_playing(wm)) dflag |= GP_DRAWDATA_NO_ONIONS;
+	
 	gp_draw_data_all(scene, gpd, 0, 0, ar->winx, ar->winy, CFRA, dflag, sa->spacetype);
+	
+	/* draw status text (if in screen/pixel-space) */
+	if (onlyv2d == false) {
+		gp_draw_status_text(gpd, ar);
+	}
 }
 
 /* draw grease-pencil sketches to specified 3d-view assuming that matrices are already set correctly
  * Note: this gets called twice - first time with only3d=1 to draw 3d-strokes,
  * second time with only3d=0 for screen-aligned strokes */
-void ED_gpencil_draw_view3d(Scene *scene, View3D *v3d, ARegion *ar, bool only3d)
+void ED_gpencil_draw_view3d(wmWindowManager *wm, Scene *scene, View3D *v3d, ARegion *ar, bool only3d)
 {
 	bGPdata *gpd;
 	int dflag = 0;
@@ -1227,9 +1292,28 @@ void ED_gpencil_draw_view3d(Scene *scene, View3D *v3d, ARegion *ar, bool only3d)
 		winy  = ar->winy;
 	}
 	
-	/* draw it! */
-	if (only3d) dflag |= (GP_DRAWDATA_ONLY3D | GP_DRAWDATA_NOSTATUS);
+	/* set flags */
+	if (only3d) {
+		/* 3D strokes/3D space:
+		 * - only 3D space points
+		 * - don't status text either (as it's the wrong space)
+		 */
+		dflag |= (GP_DRAWDATA_ONLY3D | GP_DRAWDATA_NOSTATUS);
+	}
 	
+	if (v3d->flag2 & V3D_RENDER_OVERRIDE) {
+		/* don't draw status text when "only render" flag is set */
+		dflag |= GP_DRAWDATA_NOSTATUS;
+	}
+	
+	if ((wm == NULL) || ED_screen_animation_playing(wm)) {
+		/* don't show onionskins during animation playback/scrub (i.e. it obscures the poses)
+		 * OpenGL Renders (i.e. final output), or depth buffer (i.e. not real strokes)
+		 */
+		dflag |= GP_DRAWDATA_NO_ONIONS;
+	}
+	
+	/* draw it! */
 	gp_draw_data_all(scene, gpd, offsx, offsy, winx, winy, CFRA, dflag, v3d->spacetype);
 }
 

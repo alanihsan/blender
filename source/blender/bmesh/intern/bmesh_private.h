@@ -54,6 +54,7 @@ int bmesh_elem_check(void *element, const char htype);
 #endif
 
 int bmesh_radial_length(const BMLoop *l);
+int bmesh_disk_count_ex(const BMVert *v, const int count_max);
 int bmesh_disk_count(const BMVert *v);
 
 /**
@@ -66,6 +67,8 @@ enum {
 	_FLAG_MV       = (1 << 1),  /* make face, vertex */
 	_FLAG_OVERLAP  = (1 << 2),  /* general overlap flag  */
 	_FLAG_WALK     = (1 << 3),  /* general walk flag (keep clean) */
+
+	_FLAG_ELEM_CHECK = (1 << 7),  /* reserved for bmesh_elem_check */
 };
 
 #define BM_ELEM_API_FLAG_ENABLE(element, f)  { ((element)->head.api_flag |=  (f)); } (void)0

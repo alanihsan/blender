@@ -22,29 +22,16 @@
 
 # <pep8 compliant>
 
-"""
+r"""
+Example Linux usage:
+ python ~/blender-git/blender/build_files/cmake/cmake_qtcreator_project.py --build-dir ~/blender-git/cmake
+
 Example Win32 usage:
- c:\Python32\python.exe c:\blender_dev\blender\build_files\cmake\cmake_qtcreator_project.py c:\blender_dev\cmake_build
-
-example linux usage
- python ~/blender-git/blender/build_files/cmake/cmake_qtcreator_project.py ~/blender-git/cmake
+ c:\Python32\python.exe c:\blender_dev\blender\build_files\cmake\cmake_qtcreator_project.py --build-dir c:\blender_dev\cmake_build
 """
 
-from project_info import (SIMPLE_PROJECTFILE,
-                          SOURCE_DIR,
-                          # CMAKE_DIR,
-                          PROJECT_DIR,
-                          source_list,
-                          is_project_file,
-                          is_c_header,
-                          is_py,
-                          cmake_advanced_info,
-                          cmake_compiler_defines,
-                          project_name_get,
-                          )
 
 import os
-import sys
 
 
 def quote_define(define):
@@ -54,7 +41,20 @@ def quote_define(define):
         return define
 
 
-def create_qtc_project_main():
+def create_qtc_project_main(name):
+    from project_info import (
+            SIMPLE_PROJECTFILE,
+            SOURCE_DIR,
+            # CMAKE_DIR,
+            PROJECT_DIR,
+            source_list,
+            is_project_file,
+            is_c_header,
+            cmake_advanced_info,
+            cmake_compiler_defines,
+            project_name_get,
+            )
+
     files = list(source_list(SOURCE_DIR, filename_check=is_project_file))
     files_rel = [os.path.relpath(f, start=PROJECT_DIR) for f in files]
     files_rel.sort()
@@ -62,19 +62,20 @@ def create_qtc_project_main():
     # --- qtcreator specific, simple format
     if SIMPLE_PROJECTFILE:
         # --- qtcreator specific, simple format
-        PROJECT_NAME = "Blender"
-        with open(os.path.join(PROJECT_DIR, "%s.files" % PROJECT_NAME), 'w') as f:
+        PROJECT_NAME = name or "Blender"
+        FILE_NAME = PROJECT_NAME.lower()
+        with open(os.path.join(PROJECT_DIR, "%s.files" % FILE_NAME), 'w') as f:
             f.write("\n".join(files_rel))
 
-        with open(os.path.join(PROJECT_DIR, "%s.includes" % PROJECT_NAME), 'w') as f:
+        with open(os.path.join(PROJECT_DIR, "%s.includes" % FILE_NAME), 'w') as f:
             f.write("\n".join(sorted(list(set(os.path.dirname(f)
                               for f in files_rel if is_c_header(f))))))
 
-        qtc_prj = os.path.join(PROJECT_DIR, "%s.creator" % PROJECT_NAME)
+        qtc_prj = os.path.join(PROJECT_DIR, "%s.creator" % FILE_NAME)
         with open(qtc_prj, 'w') as f:
             f.write("[General]\n")
 
-        qtc_cfg = os.path.join(PROJECT_DIR, "%s.config" % PROJECT_NAME)
+        qtc_cfg = os.path.join(PROJECT_DIR, "%s.config" % FILE_NAME)
         if not os.path.exists(qtc_cfg):
             with open(qtc_cfg, 'w') as f:
                 f.write("// ADD PREDEFINED MACROS HERE!\n")
@@ -89,11 +90,8 @@ def create_qtc_project_main():
                         for f in files_rel if is_c_header(f)))
         includes.sort()
 
-        if 0:
-            PROJECT_NAME = "Blender"
-        else:
-            # be tricky, get the project name from CMake if we can!
-            PROJECT_NAME = project_name_get()
+        # be tricky, get the project name from CMake if we can!
+        PROJECT_NAME = name or project_name_get()
 
         FILE_NAME = PROJECT_NAME.lower()
         with open(os.path.join(PROJECT_DIR, "%s.files" % FILE_NAME), 'w') as f:
@@ -117,7 +115,7 @@ def create_qtc_project_main():
                     f.write("\n")
 
             defines_final = [("#define %s %s" % (item[0], quote_define(item[1]))) for item in defines]
-            if sys.platform != "win32":
+            if os.name != "nt":
                 defines_final += cmake_compiler_defines()
             f.write("\n".join(defines_final))
 
@@ -125,17 +123,23 @@ def create_qtc_project_main():
     # --- end
 
 
-def create_qtc_project_python():
+def create_qtc_project_python(name):
+    from project_info import (
+            SOURCE_DIR,
+            # CMAKE_DIR,
+            PROJECT_DIR,
+            source_list,
+            is_py,
+            project_name_get,
+            )
+
     files = list(source_list(SOURCE_DIR, filename_check=is_py))
     files_rel = [os.path.relpath(f, start=PROJECT_DIR) for f in files]
     files_rel.sort()
 
     # --- qtcreator specific, simple format
-    if 0:
-        PROJECT_NAME = "Blender_Python"
-    else:
-        # be tricky, get the project name from git if we can!
-        PROJECT_NAME = project_name_get() + "_Python"
+    # be tricky, get the project name from git if we can!
+    PROJECT_NAME = (name or project_name_get()) + "_Python"
 
     FILE_NAME = PROJECT_NAME.lower()
     with open(os.path.join(PROJECT_DIR, "%s.files" % FILE_NAME), 'w') as f:
@@ -153,9 +157,43 @@ def create_qtc_project_python():
     print("Python project file written to:  %r" % qtc_prj)
 
 
+def argparse_create():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+            description="This script generates Qt Creator project files for Blender",
+            )
+
+    parser.add_argument(
+            "-n", "--name",
+            dest="name",
+            metavar='NAME', type=str,
+            help="Override default project name (\"Blender\")",
+            required=False,
+            )
+
+    parser.add_argument(
+            "-b", "--build-dir",
+            dest="build_dir",
+            metavar='BUILD_DIR', type=str,
+            help="Specify the build path (or fallback to the $PWD)",
+            required=False,
+            )
+
+    return parser
+
+
 def main():
-    create_qtc_project_main()
-    create_qtc_project_python()
+    parser = argparse_create()
+    args = parser.parse_args()
+    name = args.name
+
+    import project_info
+    if not project_info.init(args.build_dir):
+        return
+
+    create_qtc_project_main(name)
+    create_qtc_project_python(name)
 
 
 if __name__ == "__main__":

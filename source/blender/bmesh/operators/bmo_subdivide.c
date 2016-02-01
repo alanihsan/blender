@@ -80,8 +80,9 @@ static void bmo_subd_init_shape_info(BMesh *bm, SubDParams *params)
 
 }
 
-typedef void (*subd_pattern_fill_fp)(BMesh *bm, BMFace *face, BMVert **verts,
-                                     const SubDParams *params);
+typedef void (*subd_pattern_fill_fp)(
+        BMesh *bm, BMFace *face, BMVert **verts,
+        const SubDParams *params);
 
 /*
  * note: this is a pattern-based edge subdivider.
@@ -162,11 +163,91 @@ static BMEdge *connect_smallest_face(BMesh *bm, BMVert *v_a, BMVert *v_b, BMFace
 
 	return NULL;
 }
-/* calculates offset for co, based on fractal, sphere or smooth settings  */
-static void alter_co(BMVert *v, BMEdge *UNUSED(origed), const SubDParams *params, float perc,
-                     BMVert *vsta, BMVert *vend)
+
+/**
+ * Specialized slerp that uses a sphere defined by each points normal.
+ */
+static void interp_slerp_co_no_v3(
+        const float co_a[3], const float no_a[3],
+        const float co_b[3], const float no_b[3],
+        const float no_dir[3],  /* caller already knows, avoid normalize */
+        float fac,
+        float r_co[3])
 {
-	float tvec[3], fac;
+	/* center of the sphere defined by both normals */
+	float center[3];
+
+	BLI_assert(len_squared_v3v3(no_a, no_b) != 0);
+
+	/* calculate sphere 'center' */
+	{
+		/* use point on plane to */
+		float plane_a[4], plane_b[4], plane_c[4];
+		float no_mid[3], no_ortho[3];
+		/* pass this as an arg instead */
+#if 0
+		float no_dir[3];
+#endif
+
+		float v_a_no_ortho[3], v_b_no_ortho[3];
+
+		add_v3_v3v3(no_mid, no_a, no_b);
+		normalize_v3(no_mid);
+
+#if 0
+		sub_v3_v3v3(no_dir, co_a, co_b);
+		normalize_v3(no_dir);
+#endif
+
+		/* axis of slerp */
+		cross_v3_v3v3(no_ortho, no_mid, no_dir);
+		normalize_v3(no_ortho);
+
+		/* create planes */
+		cross_v3_v3v3(v_a_no_ortho, no_ortho, no_a);
+		cross_v3_v3v3(v_b_no_ortho, no_ortho, no_b);
+		project_v3_plane(v_a_no_ortho, no_ortho, v_a_no_ortho);
+		project_v3_plane(v_b_no_ortho, no_ortho, v_b_no_ortho);
+
+		plane_from_point_normal_v3(plane_a, co_a, v_a_no_ortho);
+		plane_from_point_normal_v3(plane_b, co_b, v_b_no_ortho);
+		plane_from_point_normal_v3(plane_c, co_b, no_ortho);
+
+		/* find the sphere center from 3 planes */
+		if (isect_plane_plane_plane_v3(plane_a, plane_b, plane_c, center)) {
+			/* pass */
+		}
+		else {
+			mid_v3_v3v3(center, co_a, co_b);
+		}
+	}
+
+	/* calculate the final output 'r_co' */
+	{
+		float ofs_a[3], ofs_b[3], ofs_slerp[3];
+		float dist_a, dist_b;
+
+		sub_v3_v3v3(ofs_a, co_a, center);
+		sub_v3_v3v3(ofs_b, co_b, center);
+
+		dist_a = normalize_v3(ofs_a);
+		dist_b = normalize_v3(ofs_b);
+
+		if (interp_v3_v3v3_slerp(ofs_slerp, ofs_a, ofs_b, fac)) {
+			madd_v3_v3v3fl(r_co, center, ofs_slerp, interpf(dist_b, dist_a, fac));
+		}
+		else {
+			interp_v3_v3v3(r_co, co_a, co_b, fac);
+		}
+	}
+}
+
+/* calculates offset for co, based on fractal, sphere or smooth settings  */
+static void alter_co(
+        BMVert *v, BMEdge *UNUSED(e_orig),
+        const SubDParams *params, const float perc,
+        const BMVert *v_a, const BMVert *v_b)
+{
 	float *co = BM_ELEM_CD_GET_VOID_P(v, params->shape_info.cd_vert_shape_offset_tmp);
 	int i;
 
@@ -177,43 +258,82 @@ static void alter_co(BMVert *v, BMEdge *UNUSED(origed), const SubDParams *params
 		mul_v3_fl(co, params->smooth);
 	}
 	else if (params->use_smooth) {
-		/* we calculate an offset vector vec1[], to be added to *co */
-		float len, nor[3], nor1[3], nor2[3], val;
+		/* calculating twice and blending gives smoother results,
+		 * removing visible seams. */
+#define USE_SPHERE_DUAL_BLEND
 
-		sub_v3_v3v3(nor, vsta->co, vend->co);
-		len = 0.5f * normalize_v3(nor);
+		const float eps_unit_vec = 1e-5f;
+		float smooth;
+		float no_dir[3];
 
-		copy_v3_v3(nor1, vsta->no);
-		copy_v3_v3(nor2, vend->no);
+#ifdef USE_SPHERE_DUAL_BLEND
+		float no_reflect[3], co_a[3], co_b[3];
+#endif
 
-		/* cosine angle */
-		fac = dot_v3v3(nor, nor1);
-		mul_v3_v3fl(tvec, nor1, fac);
+		sub_v3_v3v3(no_dir, v_a->co, v_b->co);
+		normalize_v3(no_dir);
 
-		/* cosine angle */
-		fac = -dot_v3v3(nor, nor2);
-		madd_v3_v3fl(tvec, nor2, fac);
-
-		/* falloff for multi subdivide */
-		val = fabsf(1.0f - 2.0f * fabsf(0.5f - perc));
-		val = bmesh_subd_falloff_calc(params->smooth_falloff, val);
-
-		if (params->use_smooth_even) {
-			val *= BM_vert_calc_shell_factor(v);
+#ifndef USE_SPHERE_DUAL_BLEND
+		if (len_squared_v3v3(v_a->no, v_b->no) < eps_unit_vec) {
+			interp_v3_v3v3(co, v_a->co, v_b->co, perc);
+		}
+		else {
+			interp_slerp_co_no_v3(v_a->co, v_a->no, v_b->co, v_b->no, no_dir, perc, co);
+		}
+#else
+		/* sphere-a */
+		reflect_v3_v3v3(no_reflect, v_a->no, no_dir);
+		if (len_squared_v3v3(v_a->no, no_reflect) < eps_unit_vec) {
+			interp_v3_v3v3(co_a, v_a->co, v_b->co, perc);
+		}
+		else {
+			interp_slerp_co_no_v3(v_a->co, v_a->no, v_b->co, no_reflect, no_dir, perc, co_a);
 		}
 
-		mul_v3_fl(tvec, params->smooth * val * len);
+		/* sphere-b */
+		reflect_v3_v3v3(no_reflect, v_b->no, no_dir);
+		if (len_squared_v3v3(v_b->no, no_reflect) < eps_unit_vec) {
+			interp_v3_v3v3(co_b, v_a->co, v_b->co, perc);
+		}
+		else {
+			interp_slerp_co_no_v3(v_a->co, no_reflect, v_b->co, v_b->no, no_dir, perc, co_b);
+		}
 
-		add_v3_v3(co, tvec);
+		/* blend both spheres */
+		interp_v3_v3v3(co, co_a, co_b, perc);
+#endif  /* USE_SPHERE_DUAL_BLEND */
+
+		/* apply falloff */
+		if (params->smooth_falloff == SUBD_FALLOFF_LIN) {
+			smooth = 1.0f;
+		}
+		else {
+			smooth = fabsf(1.0f - 2.0f * fabsf(0.5f - perc));
+			smooth = 1.0f + bmesh_subd_falloff_calc(params->smooth_falloff, smooth);
+		}
+
+		if (params->use_smooth_even) {
+			smooth *= shell_v3v3_mid_normalized_to_dist(v_a->no, v_b->no);
+		}
+
+		smooth *= params->smooth;
+		if (smooth != 1.0f) {
+			float co_flat[3];
+			interp_v3_v3v3(co_flat, v_a->co, v_b->co, perc);
+			interp_v3_v3v3(co, co_flat, co, smooth);
+		}
+
+#undef USE_SPHERE_DUAL_BLEND
 	}
 
 	if (params->use_fractal) {
-		const float len = len_v3v3(vsta->co, vend->co);
-		float normal[3], co2[3], base1[3], base2[3];
+		float normal[3], co2[3], base1[3], base2[3], tvec[3];
+		const float len = len_v3v3(v_a->co, v_b->co);
+		float fac;
 
 		fac = params->fractal * len;
 
-		mid_v3_v3v3(normal, vsta->no, vend->no);
+		mid_v3_v3v3(normal, v_a->no, v_b->no);
 		ortho_basis_v3v3_v3(base1, base2, normal);
 
 		add_v3_v3v3(co2, v->co, params->fractal_ofs);
@@ -234,9 +354,12 @@ static void alter_co(BMVert *v, BMEdge *UNUSED(origed), const SubDParams *params
 	 * this by getting the normals and coords for each shape key and
 	 * re-calculate the smooth value for each but this is quite involved.
 	 * for now its ok to simply apply the difference IMHO - campbell */
-	sub_v3_v3v3(tvec, v->co, co);
 
 	if (params->shape_info.totlayer > 1) {
+		float tvec[3];
+
+		sub_v3_v3v3(tvec, v->co, co);
+
 		/* skip the last layer since its the temp */
 		i = params->shape_info.totlayer - 1;
 		co = BM_ELEM_CD_GET_VOID_P(v, params->shape_info.cd_vert_shape_offset);
@@ -250,19 +373,21 @@ static void alter_co(BMVert *v, BMEdge *UNUSED(origed), const SubDParams *params
 /* assumes in the edge is the correct interpolated vertices already */
 /* percent defines the interpolation, rad and flag are for special options */
 /* results in new vertex with correct coordinate, vertex normal and weight group info */
-static BMVert *bm_subdivide_edge_addvert(BMesh *bm, BMEdge *edge, BMEdge *oedge,
-                                         const SubDParams *params, float percent,
-                                         float percent2,
-                                         BMEdge **out, BMVert *vsta, BMVert *vend)
+static BMVert *bm_subdivide_edge_addvert(
+        BMesh *bm, BMEdge *edge, BMEdge *e_orig,
+        const SubDParams *params,
+        const float factor_edge_split, const float factor_subd,
+        BMVert *v_a, BMVert *v_b,
+        BMEdge **r_edge)
 {
-	BMVert *ev;
+	BMVert *v_new;
 	
-	ev = BM_edge_split(bm, edge, edge->v1, out, percent);
+	v_new = BM_edge_split(bm, edge, edge->v1, r_edge, factor_edge_split);
 
-	BMO_elem_flag_enable(bm, ev, ELE_INNER);
+	BMO_elem_flag_enable(bm, v_new, ELE_INNER);
 
 	/* offset for smooth or sphere or fractal */
-	alter_co(ev, oedge, params, percent2, vsta, vend);
+	alter_co(v_new, e_orig, params, factor_subd, v_a, v_b);
 
 #if 0 //BMESH_TODO
 	/* clip if needed by mirror modifier */
@@ -279,35 +404,40 @@ static BMVert *bm_subdivide_edge_addvert(BMesh *bm, BMEdge *edge, BMEdge *oedge,
 	}
 #endif
 	
-	interp_v3_v3v3(ev->no, vsta->no, vend->no, percent2);
-	normalize_v3(ev->no);
+	interp_v3_v3v3(v_new->no, v_a->no, v_b->no, factor_subd);
+	normalize_v3(v_new->no);
 
-	return ev;
+	return v_new;
 }
 
-static BMVert *subdivideedgenum(BMesh *bm, BMEdge *edge, BMEdge *oedge,
-                                int curpoint, int totpoint, const SubDParams *params,
-                                BMEdge **newe, BMVert *vsta, BMVert *vend)
+static BMVert *subdivide_edge_num(
+        BMesh *bm, BMEdge *edge, BMEdge *e_orig,
+        int curpoint, int totpoint, const SubDParams *params,
+        BMVert *v_a, BMVert *v_b,
+        BMEdge **r_edge)
 {
-	BMVert *ev;
-	float percent, percent2 = 0.0f;
+	BMVert *v_new;
+	float factor_edge_split, factor_subd;
 
 	if (BMO_elem_flag_test(bm, edge, EDGE_PERCENT) && totpoint == 1) {
-		percent = BMO_slot_map_float_get(params->slot_edge_percents, edge);
+		factor_edge_split = BMO_slot_map_float_get(params->slot_edge_percents, edge);
+		factor_subd = 0.0f;
 	}
 	else {
-		percent = 1.0f / (float)(totpoint + 1 - curpoint);
-		percent2 = (float)(curpoint + 1) / (float)(totpoint + 1);
-
+		factor_edge_split = 1.0f / (float)(totpoint + 1 - curpoint);
+		factor_subd = (float)(curpoint + 1) / (float)(totpoint + 1);
 	}
 	
-	ev = bm_subdivide_edge_addvert(bm, edge, oedge, params, percent,
-	                               percent2, newe, vsta, vend);
-	return ev;
+	v_new = bm_subdivide_edge_addvert(
+	        bm, edge, e_orig, params,
+	        factor_edge_split, factor_subd,
+	        v_a, v_b, r_edge);
+	return v_new;
 }
 
-static void bm_subdivide_multicut(BMesh *bm, BMEdge *edge, const SubDParams *params,
-                                  BMVert *vsta, BMVert *vend)
+static void bm_subdivide_multicut(
+        BMesh *bm, BMEdge *edge, const SubDParams *params,
+        BMVert *v_a, BMVert *v_b)
 {
 	BMEdge *eed = edge, *e_new, e_tmp = *edge;
 	BMVert *v, v1_tmp = *edge->v1, v2_tmp = *edge->v2, *v1 = edge->v1, *v2 = edge->v2;
@@ -317,15 +447,11 @@ static void bm_subdivide_multicut(BMesh *bm, BMEdge *edge, const SubDParams *par
 	e_tmp.v2 = &v2_tmp;
 	
 	for (i = 0; i < numcuts; i++) {
-		v = subdivideedgenum(bm, eed, &e_tmp, i, params->numcuts, params, &e_new, vsta, vend);
+		v = subdivide_edge_num(bm, eed, &e_tmp, i, params->numcuts, params, v_a, v_b, &e_new);
 
-		BMO_elem_flag_enable(bm, v, SUBD_SPLIT);
-		BMO_elem_flag_enable(bm, eed, SUBD_SPLIT);
-		BMO_elem_flag_enable(bm, e_new, SUBD_SPLIT);
-
-		BMO_elem_flag_enable(bm, v, ELE_SPLIT);
-		BMO_elem_flag_enable(bm, eed, ELE_SPLIT);
-		BMO_elem_flag_enable(bm, e_new, SUBD_SPLIT);
+		BMO_elem_flag_enable(bm, v, SUBD_SPLIT | ELE_SPLIT);
+		BMO_elem_flag_enable(bm, eed, SUBD_SPLIT | ELE_SPLIT);
+		BMO_elem_flag_enable(bm, e_new, SUBD_SPLIT | ELE_SPLIT);
 
 		BM_CHECK_ELEMENT(v);
 		if (v->e) BM_CHECK_ELEMENT(v->e);
@@ -438,7 +564,7 @@ static void quad_2edge_split_innervert(BMesh *bm, BMFace *UNUSED(face), BMVert *
 		e = connect_smallest_face(bm, verts[i], verts[numcuts + (numcuts - i)], &f_new);
 
 		e_tmp = *e;
-		v = bm_subdivide_edge_addvert(bm, e, &e_tmp, params, 0.5f, 0.5f, &e_new, e->v1, e->v2);
+		v = bm_subdivide_edge_addvert(bm, e, &e_tmp, params, 0.5f, 0.5f, e->v1, e->v2, &e_new);
 
 		if (i != numcuts - 1) {
 			connect_smallest_face(bm, v_last, v, &f_new);
@@ -581,8 +707,7 @@ static void quad_4edge_subdivide(BMesh *bm, BMFace *UNUSED(face), BMVert **verts
 		
 		e_tmp = *e;
 		for (a = 0; a < numcuts; a++) {
-			v = subdivideedgenum(bm, e, &e_tmp, a, numcuts, params, &e_new,
-			                     v1, v2);
+			v = subdivide_edge_num(bm, e, &e_tmp, a, numcuts, params, v1, v2, &e_new);
 
 			BMESH_ASSERT(v != NULL);
 
@@ -689,8 +814,7 @@ static void tri_3edge_subdivide(BMesh *bm, BMFace *UNUSED(face), BMVert **verts,
 		e_tmp.v1 = &v1_tmp;
 		e_tmp.v2 = &v2_tmp;
 		for (j = 0; j < i; j++) {
-			v = subdivideedgenum(bm, e, &e_tmp, j, i, params, &e_new,
-			                     verts[a], verts[b]);
+			v = subdivide_edge_num(bm, e, &e_tmp, j, i, params, verts[a], verts[b], &e_new);
 			lines[i + 1][j + 1] = v;
 
 			BMO_elem_flag_enable(bm, e_new, ELE_INNER);
@@ -1172,14 +1296,15 @@ void bmo_subdivide_edges_exec(BMesh *bm, BMOperator *op)
 }
 
 /* editmesh-emulating function */
-void BM_mesh_esubdivide(BMesh *bm, const char edge_hflag,
-                        const float smooth, const short smooth_falloff, const bool use_smooth_even,
-                        const float fractal, const float along_normal,
-                        const int numcuts,
-                        const int seltype, const int cornertype,
-                        const short use_single_edge, const short use_grid_fill,
-                        const short use_only_quads,
-                        const int seed)
+void BM_mesh_esubdivide(
+        BMesh *bm, const char edge_hflag,
+        const float smooth, const short smooth_falloff, const bool use_smooth_even,
+        const float fractal, const float along_normal,
+        const int numcuts,
+        const int seltype, const int cornertype,
+        const short use_single_edge, const short use_grid_fill,
+        const short use_only_quads,
+        const int seed)
 {
 	BMOperator op;
 	

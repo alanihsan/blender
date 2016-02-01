@@ -38,6 +38,7 @@
 #include "DNA_mesh_types.h"
 #include "DNA_object_types.h"
 #include "DNA_screen_types.h"
+#include "DNA_space_types.h"
 #include "DNA_scene_types.h"
 #include "DNA_packedFile_types.h"
 
@@ -48,7 +49,7 @@
 #include "BIF_gl.h"
 #include "BIF_glutil.h"
 
-#include "BLF_translation.h"
+#include "BLT_translation.h"
 
 #include "BKE_context.h"
 #include "BKE_global.h"
@@ -58,9 +59,12 @@
 #include "BKE_paint.h"
 
 #include "ED_armature.h"
+#include "ED_buttons.h"
 #include "ED_image.h"
 #include "ED_mesh.h"
+#include "ED_node.h"
 #include "ED_object.h"
+#include "ED_outliner.h"
 #include "ED_paint.h"
 #include "ED_space_api.h"
 #include "ED_util.h"
@@ -107,7 +111,7 @@ void ED_editors_init(bContext *C)
 
 	/* image editor paint mode */
 	if (sce) {
-		ED_space_image_paint_update(wm, sce->toolsettings);
+		ED_space_image_paint_update(wm, sce);
 	}
 
 	SWAP(int, reports->flag, reports_flag_prev);
@@ -147,8 +151,8 @@ void ED_editors_exit(bContext *C)
 	}
 
 	/* global in meshtools... */
-	ED_mesh_mirror_spatial_table(NULL, NULL, NULL, 'e');
-	ED_mesh_mirror_topo_table(NULL, 'e');
+	ED_mesh_mirror_spatial_table(NULL, NULL, NULL, NULL, 'e');
+	ED_mesh_mirror_topo_table(NULL, NULL, 'e');
 }
 
 /* flush any temp data from object editing to DNA before writing files,
@@ -312,9 +316,51 @@ void ED_region_draw_mouse_line_cb(const bContext *C, ARegion *ar, void *arg_info
 
 	UI_ThemeColor(TH_VIEW_OVERLAY);
 	setlinestyle(3);
-	glBegin(GL_LINE_STRIP);
+	glBegin(GL_LINES);
 	glVertex2iv(mval_dst);
 	glVertex2fv(mval_src);
 	glEnd();
 	setlinestyle(0);
+}
+
+/**
+ * Use to free ID references within runtime data (stored outside of DNA)
+ *
+ * \note Typically notifiers take care of this,
+ * but there are times we have to free references immediately, see: T44376
+ */
+void ED_spacedata_id_unref(struct SpaceLink *sl, const ID *id)
+{
+
+	switch (sl->spacetype) {
+		case SPACE_OUTLINER:
+			ED_outliner_id_unref((SpaceOops *)sl, id);
+			break;
+		case SPACE_BUTS:
+			ED_buttons_id_unref((SpaceButs *)sl, id);
+			break;
+		case SPACE_NODE:
+			ED_node_id_unref((SpaceNode *)sl, id);
+			break;
+	}
+}
+
+static int ed_flush_edits_exec(bContext *C, wmOperator *UNUSED(op))
+{
+	ED_editors_flush_edits(C, false);
+	return OPERATOR_FINISHED;
+}
+
+void ED_OT_flush_edits(wmOperatorType *ot)
+{
+	/* identifiers */
+	ot->name = "Flush Edits";
+	ot->description = "Flush edit data from active editing modes";
+	ot->idname = "ED_OT_flush_edits";
+
+	/* api callbacks */
+	ot->exec = ed_flush_edits_exec;
+
+	/* flags */
+	ot->flag = OPTYPE_INTERNAL;
 }

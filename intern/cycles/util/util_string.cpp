@@ -105,5 +105,30 @@ string string_strip(const string& s)
 
 }
 
+void string_replace(string& haystack, const string& needle, const string& other)
+{
+	size_t i;
+
+	while((i = haystack.find(needle)) != string::npos)
+		haystack.replace(i, needle.length(), other);
+}
+
+string string_remove_trademark(const string &s)
+{
+	string result = s;
+	string_replace(result, "(TM)", "");
+	string_replace(result, "(R)", "");
+
+	return string_strip(result);
+}
+
+string string_from_bool(bool var)
+{
+	if(var)
+		return "True";
+	else
+		return "False";
+}
+
 CCL_NAMESPACE_END
 
