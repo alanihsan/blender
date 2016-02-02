@@ -117,6 +117,10 @@ typedef struct OGLRender {
 
 	wmTimer *timer; /* use to check if running modal or not (invoke'd or exec'd)*/
 	void **movie_ctx_arr;
+
+	short *stop, *do_update;
+	float *progress;
+	bool anim;
 } OGLRender;
 
 /* added because v3d is not always valid */
@@ -526,6 +530,7 @@ static bool screen_opengl_render_init(bContext *C, wmOperator *op)
 	oglrender->bmain = CTX_data_main(C);
 	oglrender->scene = scene;
 	oglrender->cfrao = scene->r.cfra;
+	oglrender->anim = is_animation;
 
 	oglrender->write_still = is_write_still && !is_animation;
 
@@ -610,12 +615,12 @@ static void screen_opengl_render_end(void *data)
 		scene->r.cfra = oglrender->cfrao;
 		BKE_scene_update_for_newframe(bmain->eval_ctx, bmain, scene, screen_opengl_layers(oglrender));
 
-		WM_event_remove_timer(oglrender->wm, oglrender->win, oglrender->timer);
+//		WM_event_remove_timer(oglrender->wm, oglrender->win, oglrender->timer);
 	}
 
-	WM_cursor_modal_restore(oglrender->win);
+//	WM_cursor_modal_restore(oglrender->win);
 
-	WM_event_add_notifier(C, NC_SCENE | ND_RENDER_RESULT, oglrender->scene);
+	WM_main_add_notifier(NC_SCENE | ND_RENDER_RESULT, oglrender->scene);
 
 	if (oglrender->fx)
 		GPU_fx_compositor_destroy(oglrender->fx);
@@ -624,8 +629,8 @@ static void screen_opengl_render_end(void *data)
 
 	oglrender->scene->customdata_mask_modal = 0;
 
-	CTX_wm_area_set(C, oglrender->prevsa);
-	CTX_wm_region_set(C, oglrender->prevar);
+//	CTX_wm_area_set(C, oglrender->prevsa);
+//	CTX_wm_region_set(C, oglrender->prevar);
 }
 
 static void screen_opengl_render_cancel(bContext *C, wmOperator *op)
@@ -659,7 +664,7 @@ static bool screen_opengl_render_anim_initialize(bContext *C, wmOperator *op)
 
 		if (oglrender->mh == NULL) {
 			BKE_report(oglrender->reports, RPT_ERROR, "Movie format unsupported");
-			screen_opengl_render_end(C, oglrender);
+			screen_opengl_render_end(oglrender);
 			return false;
 		}
 
@@ -672,7 +677,7 @@ static bool screen_opengl_render_anim_initialize(bContext *C, wmOperator *op)
 			if (!oglrender->mh->start_movie(oglrender->movie_ctx_arr[i], scene, &scene->r, oglrender->sizex,
 			                                oglrender->sizey, oglrender->reports, PRVRANGEON != 0, suffix))
 			{
-				screen_opengl_render_end(C, oglrender);
+				screen_opengl_render_end(oglrender);
 				return false;
 			}
 		}
@@ -685,9 +690,8 @@ static bool screen_opengl_render_anim_initialize(bContext *C, wmOperator *op)
 	return true;
 }
 
-static bool screen_opengl_render_anim_step(wmOperator *op)
+static bool screen_opengl_render_anim_step(OGLRender *oglrender)
 {
-	OGLRender *oglrender = op->customdata;
 	Main *bmain = oglrender->bmain;
 	Scene *scene = oglrender->scene;
 	char name[FILE_MAX];
@@ -717,13 +721,13 @@ static bool screen_opengl_render_anim_step(wmOperator *op)
 		        &scene->r.im_format, (scene->r.scemode & R_EXTENSION) != 0, true, NULL);
 
 		if ((scene->r.mode & R_NO_OVERWRITE) && BLI_exists(name)) {
-			BKE_reportf(op->reports, RPT_INFO, "Skipping existing frame \"%s\"", name);
+//			BKE_reportf(oglrender->reports, RPT_INFO, "Skipping existing frame \"%s\"", name);
 			ok = true;
 			goto finally;
 		}
 	}
 
-	WM_cursor_time(oglrender->win, scene->r.cfra);
+//	WM_cursor_time(oglrender->win, scene->r.cfra);
 
 	BKE_scene_update_for_newframe(bmain->eval_ctx, bmain, scene, screen_opengl_layers(oglrender));
 
@@ -751,19 +755,19 @@ static bool screen_opengl_render_anim_step(wmOperator *op)
 		                              oglrender->movie_ctx_arr, oglrender->totvideos, PRVRANGEON != 0);
 		if (ok) {
 			printf("Append frame %d", scene->r.cfra);
-			BKE_reportf(op->reports, RPT_INFO, "Appended frame: %d", scene->r.cfra);
+//			BKE_reportf(oglrender->reports, RPT_INFO, "Appended frame: %d", scene->r.cfra);
 		}
 	}
 	else {
 		BKE_render_result_stamp_info(scene, scene->camera, rr, false);
-		ok = RE_WriteRenderViewsImage(op->reports, rr, scene, true, name);
+		ok = RE_WriteRenderViewsImage(oglrender->reports, rr, scene, true, name);
 		if (ok) {
 			printf("Saved: %s", name);
-			BKE_reportf(op->reports, RPT_INFO, "Saved file: %s", name);
+//			BKE_reportf(oglrender->reports, RPT_INFO, "Saved file: %s", name);
 		}
 		else {
 			printf("Write error: cannot save %s\n", name);
-			BKE_reportf(op->reports, RPT_ERROR, "Write error: cannot save %s", name);
+//			BKE_reportf(oglrender->reports, RPT_ERROR, "Write error: cannot save %s", name);
 		}
 	}
 
@@ -785,6 +789,48 @@ finally:  /* Step the frame and bail early if needed */
 	}
 
 	return 1;
+}
+
+static void render_progress_update(void *rjv, float progress)
+{
+	OGLRender *rj = rjv;
+
+	if (rj->progress /*&& *rj->progress != progress*/) {
+		*rj->progress = progress;
+
+		/* make jobs timer to send notifier */
+		*(rj->do_update) = true;
+	}
+}
+
+static void screen_opengl_startjob(void *rjv, short *stop, short *do_update, float *progress)
+{
+	OGLRender *rj = rjv;
+
+	rj->stop = stop;
+	rj->do_update = do_update;
+	rj->progress = progress;
+
+	G.is_rendering = true;
+//	RE_SetReports(rj->re, rj->reports);
+
+	if (rj->anim) {
+		bool ret = true;
+
+		while (ret && !G.is_break) {
+			ret = screen_opengl_render_anim_step(rj);
+
+			// TODO
+			float prog = (rj->scene->r.cfra - rj->scene->r.sfra) / (float)(rj->scene->r.efra - rj->scene->r.sfra);
+			render_progress_update(rj, prog);
+		}
+	}
+	else {
+		screen_opengl_render_apply(rj);
+		render_progress_update(rj, 1.0f);
+	}
+
+//	RE_SetReports(rj->re, NULL);
 }
 
 
@@ -856,16 +902,39 @@ static int screen_opengl_render_invoke(bContext *C, wmOperator *op, const wmEven
 		if (!screen_opengl_render_anim_initialize(C, op))
 			return OPERATOR_CANCELLED;
 	}
-	
+
 	oglrender = op->customdata;
 	render_view_open(C, event->x, event->y, op->reports);
-	
+
 	/* view may be changed above (R_OUTPUT_WINDOW) */
 	oglrender->win = CTX_wm_window(C);
 
+	wmJob *wm_job = WM_jobs_get(CTX_wm_manager(C), CTX_wm_window(C), oglrender->scene,
+	                            "OpenGL Render",
+	                            WM_JOB_PRIORITY | WM_JOB_PROGRESS,
+	                            WM_JOB_TYPE_RENDER);
+
+	WM_jobs_customdata_set(wm_job, oglrender, screen_opengl_free);
+	WM_jobs_timer(wm_job, 0.2, NC_SCENE | ND_RENDER_RESULT, 0);
+	WM_jobs_callbacks(wm_job, screen_opengl_startjob, NULL, NULL, screen_opengl_render_end);
+
+//	RE_progress_cb(render->re, render, render_progress_update);
+
+	G.is_break = false;
+
+	WM_jobs_start(oglrender->wm, wm_job);
+
+	WM_cursor_wait(0);
+	WM_event_add_notifier(C, NC_SCENE | ND_RENDER_RESULT, oglrender->scene);
+
+	/* we set G.is_rendering here already instead of only in the job, this ensure
+	 * main loop or other scene updates are disabled in time, since they may
+	 * have started before the job thread */
+	G.is_rendering = true;
+
+	/* add modal handler for ESC */
 	WM_event_add_modal_handler(C, op);
-	oglrender->timer = WM_event_add_timer(oglrender->wm, oglrender->win, TIMER, 0.01f);
-	
+
 	return OPERATOR_RUNNING_MODAL;
 }
 
@@ -891,7 +960,7 @@ static int screen_opengl_render_exec(bContext *C, wmOperator *op)
 			return OPERATOR_CANCELLED;
 
 		while (ret) {
-			ret = screen_opengl_render_anim_step(op);
+			ret = screen_opengl_render_anim_step(op->customdata);
 		}
 
 		screen_opengl_render_end(op->customdata);

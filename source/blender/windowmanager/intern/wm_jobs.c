@@ -418,8 +418,9 @@ void WM_jobs_start(wmWindowManager *wm, wmJob *wm_job)
 
 				// printf("job started: %s\n", wm_job->name);
 				
-				BLI_init_threads(&wm_job->threads, do_job_thread, 1);
-				BLI_insert_thread(&wm_job->threads, wm_job);
+//				BLI_init_threads(&wm_job->threads, do_job_thread, 1);
+//				BLI_insert_thread(&wm_job->threads, wm_job);
+				do_job_thread(wm_job);
 			}
 			
 			/* restarted job has timer already */
