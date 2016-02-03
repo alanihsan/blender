@@ -417,10 +417,11 @@ void WM_jobs_start(wmWindowManager *wm, wmJob *wm_job)
 				wm_job->progress = 0.0;
 
 				// printf("job started: %s\n", wm_job->name);
-				
-//				BLI_init_threads(&wm_job->threads, do_job_thread, 1);
-//				BLI_insert_thread(&wm_job->threads, wm_job);
-				do_job_thread(wm_job);
+
+				if ((wm_job->flag & WM_JOB_OPENGL) == 0) {
+					BLI_init_threads(&wm_job->threads, do_job_thread, 1);
+					BLI_insert_thread(&wm_job->threads, wm_job);
+				}
 			}
 			
 			/* restarted job has timer already */
@@ -450,9 +451,11 @@ static void wm_jobs_kill_job(wmWindowManager *wm, wmJob *wm_job)
 		/* signal job to end */
 		wm_job->stop = true;
 
-		WM_job_main_thread_lock_release(wm_job);
-		BLI_end_threads(&wm_job->threads);
-		WM_job_main_thread_lock_acquire(wm_job);
+		if ((wm_job->flag & WM_JOB_OPENGL) == 0) {
+			WM_job_main_thread_lock_release(wm_job);
+			BLI_end_threads(&wm_job->threads);
+			WM_job_main_thread_lock_acquire(wm_job);
+		}
 
 		if (wm_job->endjob)
 			wm_job->endjob(wm_job->run_customdata);
@@ -565,10 +568,12 @@ void wm_jobs_timer(const bContext *C, wmWindowManager *wm, wmTimer *wt)
 		if (wm_job->wt == wt) {
 			
 			/* running threads */
-			if (wm_job->threads.first) {
+			if (wm_job->threads.first || (wm_job->flag & WM_JOB_OPENGL)) {
 
 				/* let threads get temporary lock over main thread if needed */
-				wm_job_main_thread_yield(wm_job);
+				if ((wm_job->flag & WM_JOB_OPENGL) == 0) {
+					wm_job_main_thread_yield(wm_job);
+				}
 				
 				/* always call note and update when ready */
 				if (wm_job->do_update || wm_job->ready) {
@@ -580,6 +585,12 @@ void wm_jobs_timer(const bContext *C, wmWindowManager *wm, wmTimer *wt)
 					if (wm_job->flag & WM_JOB_PROGRESS)
 						WM_event_add_notifier(C, NC_WM | ND_JOB, NULL);
 					wm_job->do_update = false;
+				}
+
+				/* In of a job running the main thread, start it here so we the
+				 * progress bar is displayed before it launches. */
+				if ((wm_job->flag & WM_JOB_OPENGL) != 0) {
+					do_job_thread(wm_job);
 				}
 				
 				if (wm_job->ready) {
@@ -601,9 +612,11 @@ void wm_jobs_timer(const bContext *C, wmWindowManager *wm, wmTimer *wt)
 
 					wm_job->running = false;
 
-					WM_job_main_thread_lock_release(wm_job);
-					BLI_end_threads(&wm_job->threads);
-					WM_job_main_thread_lock_acquire(wm_job);
+					if ((wm_job->flag & WM_JOB_OPENGL) == 0) {
+						WM_job_main_thread_lock_release(wm_job);
+						BLI_end_threads(&wm_job->threads);
+						WM_job_main_thread_lock_acquire(wm_job);
+					}
 					
 					if (wm_job->endnote)
 						WM_event_add_notifier(C, wm_job->endnote, NULL);
@@ -633,7 +646,7 @@ void wm_jobs_timer(const bContext *C, wmWindowManager *wm, wmTimer *wt)
 				WM_jobs_start(wm, wm_job);
 			}
 		}
-		else if (wm_job->threads.first && !wm_job->ready) {
+		else if ((wm_job->threads.first && !wm_job->ready) || (wm_job->flag & WM_JOB_OPENGL)) {
 			if (wm_job->flag & WM_JOB_PROGRESS) {
 				/* accumulate global progress for running jobs */
 				jobs_progress++;

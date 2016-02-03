@@ -800,6 +800,11 @@ static void render_progress_update(void *rjv, float progress)
 
 		/* make jobs timer to send notifier */
 		*(rj->do_update) = true;
+
+		WM_main_add_notifier(NC_SCENE | ND_RENDER_RESULT, rj->scene);
+//		WM_main_add_notifier(NC_WM | ND_JOB, NULL);
+
+		WM_progress_set(rj->win, progress);
 	}
 }
 
@@ -811,8 +816,11 @@ static void screen_opengl_startjob(void *rjv, short *stop, short *do_update, flo
 	rj->do_update = do_update;
 	rj->progress = progress;
 
+	*(rj->do_update) = true;
 	G.is_rendering = true;
 //	RE_SetReports(rj->re, rj->reports);
+
+	//WM_main_add_notifier(NC_WM | ND_JOB, NULL);
 
 	if (rj->anim) {
 		bool ret = true;
@@ -911,7 +919,7 @@ static int screen_opengl_render_invoke(bContext *C, wmOperator *op, const wmEven
 
 	wmJob *wm_job = WM_jobs_get(CTX_wm_manager(C), CTX_wm_window(C), oglrender->scene,
 	                            "OpenGL Render",
-	                            WM_JOB_PRIORITY | WM_JOB_PROGRESS,
+	                            WM_JOB_PRIORITY | WM_JOB_PROGRESS | WM_JOB_OPENGL,
 	                            WM_JOB_TYPE_RENDER);
 
 	WM_jobs_customdata_set(wm_job, oglrender, screen_opengl_free);
@@ -922,18 +930,19 @@ static int screen_opengl_render_invoke(bContext *C, wmOperator *op, const wmEven
 
 	G.is_break = false;
 
+	WM_event_add_notifier(C, NC_WM | ND_JOB, NULL);
 	WM_jobs_start(oglrender->wm, wm_job);
 
-	WM_cursor_wait(0);
-	WM_event_add_notifier(C, NC_SCENE | ND_RENDER_RESULT, oglrender->scene);
+//	WM_cursor_wait(0);
+//	WM_event_add_notifier(C, NC_SCENE | ND_RENDER_RESULT, oglrender->scene);
 
-	/* we set G.is_rendering here already instead of only in the job, this ensure
-	 * main loop or other scene updates are disabled in time, since they may
-	 * have started before the job thread */
-	G.is_rendering = true;
+//	/* we set G.is_rendering here already instead of only in the job, this ensure
+//	 * main loop or other scene updates are disabled in time, since they may
+//	 * have started before the job thread */
+//	G.is_rendering = true;
 
 	/* add modal handler for ESC */
-	WM_event_add_modal_handler(C, op);
+//	WM_event_add_modal_handler(C, op);
 
 	return OPERATOR_RUNNING_MODAL;
 }
