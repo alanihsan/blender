@@ -222,7 +222,6 @@ class CyclesRender_PT_volume_sampling(CyclesButtonsPanel, Panel):
         row = layout.row()
         row.label("Heterogeneous:")
         row = layout.row()
-        row.prop(cscene, "volume_step_size")
         row.prop(cscene, "volume_max_steps")
 
 
@@ -1110,6 +1109,7 @@ class CyclesWorld_PT_settings(CyclesButtonsPanel, Panel):
         sub.prop(cworld, "volume_sampling", text="")
         sub.prop(cworld, "volume_interpolation", text="")
         col.prop(cworld, "homogeneous_volume", text="Homogeneous")
+        col.prop(cworld, "volume_step_size")
 
 
 class CyclesMaterial_PT_preview(CyclesButtonsPanel, Panel):
@@ -1204,6 +1204,7 @@ class CyclesMaterial_PT_settings(CyclesButtonsPanel, Panel):
         sub.prop(cmat, "volume_sampling", text="")
         sub.prop(cmat, "volume_interpolation", text="")
         col.prop(cmat, "homogeneous_volume", text="Homogeneous")
+        col.prop(cmat, "volume_step_size")
 
         layout.separator()
         split = layout.split()

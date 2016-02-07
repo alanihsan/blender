@@ -40,7 +40,6 @@ public:
 	bool transparent_shadows;
 
 	int volume_max_steps;
-	float volume_step_size;
 
 	bool caustics_reflective;
 	bool caustics_refractive;

@@ -102,6 +102,7 @@ public:
 	device_vector<uint4> svm_nodes;
 	device_vector<uint> shader_flag;
 	device_vector<uint> object_flag;
+	device_vector<float> shader_volume_step;
 
 	/* lookup tables */
 	device_vector<float> lookup_table;

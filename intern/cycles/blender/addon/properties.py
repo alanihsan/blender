@@ -348,14 +348,6 @@ class CyclesRenderSettings(bpy.types.PropertyGroup):
                 default=True,
                 )
 
-        cls.volume_step_size = FloatProperty(
-                name="Step Size",
-                description="Distance between volume shader samples when rendering the volume "
-                            "(lower values give more accurate and detailed results, but also increased render time)",
-                default=0.1,
-                min=0.0000001, max=100000.0, soft_min=0.01, soft_max=1.0
-                )
-
         cls.volume_max_steps = IntProperty(
                 name="Max Steps",
                 description="Maximum number of steps through the volume before giving up, "
@@ -747,6 +739,13 @@ class CyclesMaterialSettings(bpy.types.PropertyGroup):
                 items=enum_volume_interpolation,
                 default='LINEAR',
                 )
+        cls.volume_step_size = FloatProperty(
+                name="Step Size",
+                description="Distance between volume shader samples when rendering the volume "
+                            "(lower values give more accurate and detailed results, but also increased render time)",
+                default=0.1,
+                min=0.0000001, max=100000.0, soft_min=0.01, soft_max=1.0
+                )
 
     @classmethod
     def unregister(cls):
@@ -847,6 +846,13 @@ class CyclesWorldSettings(bpy.types.PropertyGroup):
                 description="Interpolation method to use for volumes",
                 items=enum_volume_interpolation,
                 default='LINEAR',
+                )
+        cls.volume_step_size = FloatProperty(
+                name="Step Size",
+                description="Distance between volume shader samples when rendering the volume "
+                            "(lower values give more accurate and detailed results, but also increased render time)",
+                default=0.1,
+                min=0.0000001, max=100000.0, soft_min=0.01, soft_max=1.0
                 )
 
     @classmethod

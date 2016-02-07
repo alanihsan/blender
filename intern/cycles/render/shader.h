@@ -86,6 +86,7 @@ public:
 	bool heterogeneous_volume;
 	VolumeSampling volume_sampling_method;
 	int volume_interpolation_method;
+	float volume_step_size;
 
 	/* synchronization */
 	bool need_update;

@@ -144,6 +144,7 @@ Shader::Shader()
 	heterogeneous_volume = true;
 	volume_sampling_method = VOLUME_SAMPLING_DISTANCE;
 	volume_interpolation_method = VOLUME_INTERPOLATION_LINEAR;
+	volume_step_size = 0.1f;
 
 	has_surface = false;
 	has_surface_transparent = false;
@@ -333,16 +334,20 @@ void ShaderManager::device_update_common(Device *device,
 {
 	device->tex_free(dscene->shader_flag);
 	dscene->shader_flag.clear();
+	device->tex_free(dscene->shader_volume_step);
+	dscene->shader_volume_step.clear();
 
 	if(scene->shaders.size() == 0)
 		return;
 
 	uint shader_flag_size = scene->shaders.size()*4;
 	uint *shader_flag = dscene->shader_flag.resize(shader_flag_size);
+	float *shader_volume_step = dscene->shader_volume_step.resize(scene->shaders.size());
 	uint i = 0;
 	bool has_volumes = false;
 	bool has_transparent_shadow = false;
 
+	std::cout << "Update shaders.\n";
 	foreach(Shader *shader, scene->shaders) {
 		uint flag = 0;
 
@@ -376,6 +381,8 @@ void ShaderManager::device_update_common(Device *device,
 		if(shader->graph_bump)
 			flag |= SD_HAS_BUMP;
 
+		shader_volume_step[i / 4] = shader->volume_step_size;
+
 		/* regular shader */
 		shader_flag[i++] = flag;
 		shader_flag[i++] = shader->pass_id;
@@ -391,6 +398,7 @@ void ShaderManager::device_update_common(Device *device,
 	}
 
 	device->tex_alloc("__shader_flag", dscene->shader_flag);
+	device->tex_alloc("__shader_volume_step", dscene->shader_volume_step);
 
 	/* lookup tables */
 	KernelTables *ktables = &dscene->data.tables;
@@ -425,6 +433,8 @@ void ShaderManager::device_free_common(Device *device, DeviceScene *dscene, Scen
 
 	device->tex_free(dscene->shader_flag);
 	dscene->shader_flag.clear();
+	device->tex_free(dscene->shader_volume_step);
+	dscene->shader_volume_step.clear();
 }
 
 void ShaderManager::add_default(Scene *scene)

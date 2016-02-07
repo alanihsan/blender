@@ -1206,6 +1206,7 @@ void BlenderSync::sync_materials(bool update_all)
 			shader->heterogeneous_volume = !get_boolean(cmat, "homogeneous_volume");
 			shader->volume_sampling_method = (VolumeSampling)get_enum(cmat, "volume_sampling");
 			shader->volume_interpolation_method = (VolumeInterpolation)get_enum(cmat, "volume_interpolation");
+			shader->volume_step_size = get_float(cmat, "volume_step_size");
 
 			shader->set_graph(graph);
 			shader->tag_update(scene);
@@ -1237,6 +1238,7 @@ void BlenderSync::sync_world(bool update_all)
 			shader->heterogeneous_volume = !get_boolean(cworld, "homogeneous_volume");
 			shader->volume_sampling_method = (VolumeSampling)get_enum(cworld, "volume_sampling");
 			shader->volume_interpolation_method = (VolumeInterpolation)get_enum(cworld, "volume_interpolation");
+			shader->volume_step_size = get_float(cworld, "volume_step_size");
 		}
 		else if(b_world) {
 			ShaderNode *closure, *out;

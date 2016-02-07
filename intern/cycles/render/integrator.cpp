@@ -41,7 +41,6 @@ Integrator::Integrator()
 	transparent_shadows = false;
 
 	volume_max_steps = 1024;
-	volume_step_size = 0.1f;
 
 	caustics_reflective = true;
 	caustics_refractive = true;
@@ -115,7 +114,6 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
 	}
 
 	kintegrator->volume_max_steps = volume_max_steps;
-	kintegrator->volume_step_size = volume_step_size;
 
 	kintegrator->caustics_reflective = caustics_reflective;
 	kintegrator->caustics_refractive = caustics_refractive;
@@ -195,7 +193,6 @@ bool Integrator::modified(const Integrator& integrator)
 		transparent_max_bounce == integrator.transparent_max_bounce &&
 		transparent_shadows == integrator.transparent_shadows &&
 		volume_max_steps == integrator.volume_max_steps &&
-		volume_step_size == integrator.volume_step_size &&
 		caustics_reflective == integrator.caustics_reflective &&
 		caustics_refractive == integrator.caustics_refractive &&
 		filter_glossy == integrator.filter_glossy &&

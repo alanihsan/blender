@@ -65,6 +65,7 @@ KERNEL_TEX(float4, texture_float4, __particles)
 KERNEL_TEX(uint4, texture_uint4, __svm_nodes)
 KERNEL_TEX(uint, texture_uint, __shader_flag)
 KERNEL_TEX(uint, texture_uint, __object_flag)
+KERNEL_TEX(float, texture_float, __shader_volume_step)
 
 /* lookup tables */
 KERNEL_TEX(float, texture_float, __lookup_table)

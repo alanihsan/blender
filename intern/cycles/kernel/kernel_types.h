@@ -776,6 +776,11 @@ typedef ccl_addr_space struct ShaderData {
 	/* length of the ray being shaded */
 	float ray_length;
 
+#ifdef __VOLUME__
+	/* step size used for ray marching volumes */
+	float volume_step_size;
+#endif
+
 #ifdef __RAY_DIFFERENTIALS__
 	/* differential of P. these are orthogonal to Ng, not N */
 	differential3 dP;
@@ -1092,10 +1097,9 @@ typedef struct KernelIntegrator {
 	/* volume render */
 	int use_volumes;
 	int volume_max_steps;
-	float volume_step_size;
 	int volume_samples;
 
-	int pad;
+	int pad[2];
 } KernelIntegrator;
 
 typedef struct KernelBVH {
