@@ -74,6 +74,7 @@ GPUTexture *GPU_texture_create_depth_multisample(int w, int h, int samples, char
 GPUTexture *GPU_texture_from_blender(
         struct Image *ima, struct ImageUser *iuser, int textarget, bool is_data, double time, int mipmap);
 GPUTexture *GPU_texture_from_preview(struct PreviewImage *prv, int mipmap);
+GPUTexture *GPU_ptex_texture_from_blender(struct Image *ima, struct ImageUser *iuser);
 void GPU_invalid_tex_init(void);
 void GPU_invalid_tex_bind(int mode);
 void GPU_invalid_tex_free(void);

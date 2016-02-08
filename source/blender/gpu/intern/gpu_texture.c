@@ -36,6 +36,10 @@
 
 #include "BKE_global.h"
 
+// TODO
+#include "BKE_image.h"
+#include "IMB_imbuf_types.h"
+
 #include "GPU_debug.h"
 #include "GPU_draw.h"
 #include "GPU_extensions.h"
@@ -238,6 +242,54 @@ static GPUTexture *GPU_texture_create_nD(
 	}
 	else
 		glTexParameteri(tex->target_base, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+
+	return tex;
+}
+
+// Very TODO, the code in this file could use a bit of a scrub
+GPUTexture *GPU_ptex_texture_from_blender(Image *ima, ImageUser *UNUSED(iuser))
+{
+
+	ImBuf *ibuf;
+	GPUTexture *tex;
+	int size;
+	BPXRect *data;
+	void *lock;
+
+	if (ima->ptex_gputexture) {
+		return ima->ptex_gputexture;
+	}
+
+	ibuf = BKE_image_acquire_ibuf(ima, NULL, &lock);
+	if (!ibuf) return NULL;
+
+	size = ibuf->num_ptex_rects;
+	data = ibuf->ptex_rects;
+
+	tex = GPU_texture_create_nD(size, 1, 2, NULL, 0, GPU_HDR_NONE, 4, 0, NULL);
+	ima->ptex_gputexture = tex;
+
+	if (tex) {
+		/* Now we tweak some of the settings */
+		/* glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); */
+		/* glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE); */
+		// TODO
+		float (*tmp)[4] = MEM_mallocN(sizeof(*tmp) * size, "tmp");
+		int i;
+		for (i = 0; i < size; i++) {
+			const BPXRect *rect = &data[i];
+			tmp[i][0] = rect->xbegin;
+			tmp[i][1] = rect->ybegin;
+			tmp[i][2] = rect->xend - rect->xbegin;
+			tmp[i][3] = rect->yend - rect->ybegin;
+		}
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, size, 1, 0, GL_RGBA, GL_FLOAT, tmp);
+		MEM_freeN(tmp);
+
+		GPU_texture_unbind(tex);
+	}
+
+	BKE_image_release_ibuf(ima, ibuf, lock);
 
 	return tex;
 }

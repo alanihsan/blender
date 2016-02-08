@@ -600,7 +600,7 @@ static void attr_create_ptex_layer_data(Scene *scene, Mesh *mesh, BL::Mesh b_mes
 			// Other alternative is: get data, pack new image here
 			(*slot) = scene->image_manager->add_image
 				("TODO", image.ptr.data, false, 1,
-				 is_float, is_linear, INTERPOLATION_LINEAR, true);
+				 is_float, is_linear, INTERPOLATION_LINEAR, EXTENSION_CLIP, true);
 		}
 	}
 }

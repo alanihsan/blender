@@ -3600,10 +3600,10 @@ void DM_vertex_attributes_from_gpu(DerivedMesh *dm, GPUVertexAttribs *gattribs, 
 			attribs->orco.gl_texco = gattribs->layer[b].gltexco;
 		}
 		else if (gattribs->layer[b].type == CD_TESSFACE_PTEX) {
-			layer = CustomData_get_layer_index(fdata, CD_TESSFACE_PTEX);
+			layer = CustomData_get_layer_index(&dm->loopData, CD_TESSFACE_PTEX);
 			attribs->totptex = 1;
 			if (layer != -1) {
-				attribs->ptex.array = fdata->layers[layer].data;
+				attribs->ptex.array = dm->loopData.layers[layer].data;
 				attribs->ptex.em_offset = vdata->layers[layer].offset;
 			}
 			else {

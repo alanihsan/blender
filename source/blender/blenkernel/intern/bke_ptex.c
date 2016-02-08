@@ -694,9 +694,9 @@ static bool ptex_pack_loops(Image **image_r, Mesh *me, MLoopPtex *loop_ptex,
 		BKE_image_assign_ibuf(image, ibuf);
 	}
 	else {
-		image = BKE_image_add_from_imbuf(ibuf);
+		image = BKE_image_add_from_imbuf(ibuf, "ptex");
 
-		rename_id(&image->id, layer_name);
+//		rename_id(&image->id, layer_name);
 		id_us_min(&image->id);
 
 		(*image_r) = image;

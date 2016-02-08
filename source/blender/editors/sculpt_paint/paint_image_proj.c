@@ -248,7 +248,7 @@ typedef struct ProjPaintState {
 	/* end similarities with ImagePaintState */
 
 	/* TODO */
-	MTFace *dm_mtface_ptex;
+	MLoopUV *dm_mtface_ptex;
 
 	Image *stencil_ima;
 	Image *canvas_ima;
@@ -3755,7 +3755,7 @@ static void project_paint_prepare_all_faces(
 				// TODO
 				if (loop_ptex) {
 					slot->ima = loop_ptex->image;
-					tf_base = ps->dm_mtface_ptex;
+					mloopuv_base = ps->dm_mtface_ptex;
 				}
 
 				/* don't allow using the same inage for painting and stencilling */
@@ -3769,6 +3769,8 @@ static void project_paint_prepare_all_faces(
 			tpage = ps->stencil_ima;
 		}
 
+		ps->dm_mloopuv[lt->poly] = mloopuv_base;
+
 		// TODO
 		if (ps->dm_mtface_ptex) {
 			ImBuf *ibuf = BKE_image_acquire_ibuf(slot->ima, NULL, NULL);
@@ -3776,10 +3778,10 @@ static void project_paint_prepare_all_faces(
 				// I'm sleepy				
 				int abc;
 				for (abc = 0; abc < 4; abc++) {
-					float *dst = (*tf)->uv[abc];
-					const float *uv = tess_ptex[face_index].uv[abc];
+					float *dst = ps->dm_mloopuv[lt->poly][abc].uv;
+					const float *uv = tess_ptex[lt->poly].uv[abc];
 					const BPXRect *rect =
-						&ibuf->ptex_rects[tess_ptex[face_index].id];
+						&ibuf->ptex_rects[tess_ptex[lt->poly].id];
 					const int width = rect->xend - rect->xbegin;
 					const int height = rect->yend - rect->ybegin;
 
@@ -3789,8 +3791,6 @@ static void project_paint_prepare_all_faces(
 			}
 			BKE_image_release_ibuf(slot->ima, ibuf, NULL);
 		}
-
-		ps->dm_mloopuv[lt->poly] = mloopuv_base;
 
 		if (project_paint_clone_face_skip(ps, layer_clone, slot, tri_index)) {
 			continue;

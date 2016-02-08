@@ -3923,21 +3923,6 @@ static void ccgDM_release(DerivedMesh *dm)
 		}
 		MEM_freeN(ccgdm);
 	}
-
-	// TODO
-	{
-		MTessFacePtex *dst = CustomData_get(fdata, findex, CD_TESSFACE_PTEX);
-		MLoopInterp *loop_interp = CustomData_get(ldata, loopstart,
-												  CD_LOOP_INTERP);
-		if (loop_interp) {
-			enum {
-				num_loop_indices = 4
-			};
-			const unsigned int loop_indices[num_loop_indices] = {0, 1, 2, 3};
-
-			BKE_ptex_tess_face_interp(dst, loop_interp, loop_indices, num_loop_indices);
-		}
-	}
 }
 
 static void *ccgDM_get_vert_data_layer(DerivedMesh *dm, int type)
@@ -4744,26 +4729,6 @@ static void set_ccgdm_all_geometry(CCGDerivedMesh *ccgdm,
 							loopindex2++;
 						}
 					}
-
-					w2 = w + s * numVerts * g2_wid * g2_wid + (y * g2_wid + x) * numVerts;
-					CustomData_interp(&dm->loopData, &ccgdm->dm.loopData,
-					                  loopidx, w2, NULL, numVerts, loopindex2);
-					loopindex2++;
-
-					w2 = w + s * numVerts * g2_wid * g2_wid + ((y + 1) * g2_wid + (x)) * numVerts;
-					CustomData_interp(&dm->loopData, &ccgdm->dm.loopData,
-					                  loopidx, w2, NULL, numVerts, loopindex2);
-					loopindex2++;
-
-					w2 = w + s * numVerts * g2_wid * g2_wid + ((y + 1) * g2_wid + (x + 1)) * numVerts;
-					CustomData_interp(&dm->loopData, &ccgdm->dm.loopData,
-					                  loopidx, w2, NULL, numVerts, loopindex2);
-					loopindex2++;
-
-					w2 = w + s * numVerts * g2_wid * g2_wid + ((y) * g2_wid + (x + 1)) * numVerts;
-					CustomData_interp(&dm->loopData, &ccgdm->dm.loopData,
-					                  loopidx, w2, NULL, numVerts, loopindex2);
-					loopindex2++;
 
 					/*copy over poly data, e.g. mtexpoly*/
 					CustomData_copy_data(&dm->polyData, &ccgdm->dm.polyData, origIndex, faceNum, 1);

@@ -36,6 +36,10 @@
 extern "C" {
 #endif
 
+struct GPUTexture;
+struct Image;
+struct ImageUser;
+
 /* GPU extensions support */
 
 void GPU_extensions_disable(void);

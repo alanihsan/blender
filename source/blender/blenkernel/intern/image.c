@@ -403,6 +403,11 @@ static void image_assign_ibuf(Image *ima, ImBuf *ibuf, int index, int frame)
 	}
 }
 
+void BKE_image_assign_ibuf(Image *ima, ImBuf *ibuf)
+{
+	image_assign_ibuf(ima, ibuf, IMA_NO_INDEX, 0);
+}
+
 static void copy_image_packedfiles(ListBase *lb_dst, const ListBase *lb_src)
 {
 	const ImagePackedFile *imapf_src;

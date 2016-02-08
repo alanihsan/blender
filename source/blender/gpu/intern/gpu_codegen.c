@@ -1475,6 +1475,8 @@ GPUNodeLink *GPU_node_link_ptex(const GPUPtexInputType ptex,
 	link->ptex = ptex;
 	link->attribname = layer_name;
 	link->ptr1 = image;
+
+	return link;
 }
 
 GPUNodeLink *GPU_cube_map(Image *ima, ImageUser *iuser, bool is_data)
@@ -1485,7 +1487,6 @@ GPUNodeLink *GPU_cube_map(Image *ima, ImageUser *iuser, bool is_data)
 	link->ptr1 = ima;
 	link->ptr2 = iuser;
 	link->image_isdata = is_data;
->>>>>>> master
 
 	return link;
 }
