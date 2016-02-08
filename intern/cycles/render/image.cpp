@@ -358,7 +358,8 @@ void ImageManager::remove_image(const string& filename,
 			                                      filename,
 			                                      builtin_data,
 			                                      interpolation,
-			                                      extension)) {
+			                                      extension))
+			{
 				remove_image(slot);
 				break;
 			}
@@ -382,7 +383,8 @@ void ImageManager::tag_reload_image(const string& filename,
 		                                filename,
 		                                builtin_data,
 		                                interpolation,
-		                                extension)) {
+		                                extension))
+		{
 			images[slot]->need_load = true;
 			break;
 		}
@@ -395,7 +397,8 @@ void ImageManager::tag_reload_image(const string& filename,
 			                                      filename,
 			                                      builtin_data,
 			                                      interpolation,
-			                                      extension)) {
+			                                      extension))
+			{
 				float_images[slot]->need_load = true;
 				break;
 			}
