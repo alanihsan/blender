@@ -122,7 +122,7 @@ void free_blender(void)
 	DAG_exit();
 
 	BKE_brush_system_exit();
-	RE_exit_texture_rng();	
+	RE_texture_rng_exit();	
 
 	BLI_callback_global_finalize();
 
@@ -1072,7 +1072,7 @@ int BKE_copybuffer_paste(bContext *C, const char *libname, const short flag, Rep
 	/* here appending/linking starts */
 	mainl = BLO_library_link_begin(bmain, &bh, libname);
 	
-	BLO_library_link_all(mainl, bh, flag, scene, v3d);
+	BLO_library_link_copypaste(mainl, bh);
 
 	BLO_library_link_end(mainl, &bh, flag, scene, v3d);
 	

@@ -299,7 +299,7 @@ static bool cast_ray_highpoly(
 
 		hits[i].index = -1;
 		/* TODO: we should use FLT_MAX here, but sweepsphere code isn't prepared for that */
-		hits[i].dist = 10000.0f;
+		hits[i].dist = BVH_RAYCAST_DIST_MAX;
 
 		/* transform the ray from the world space to the highpoly space */
 		mul_v3_m4v3(co_high, highpoly[i].imat, co);
@@ -622,10 +622,6 @@ void RE_bake_pixels_populate(
 #ifdef USE_MFACE_WORKAROUND
 	unsigned int mpoly_prev_testindex = UINT_MAX;
 #endif
-
-	/* we can't bake in edit mode */
-	if (me->edit_btmesh)
-		return;
 
 	if ((uv_layer == NULL) || (uv_layer[0] == '\0')) {
 		mloopuv = CustomData_get_layer(&me->ldata, CD_MLOOPUV);

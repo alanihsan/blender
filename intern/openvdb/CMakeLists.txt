@@ -14,33 +14,57 @@
 # along with this program; if not, write to the Free Software Foundation,
 # Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 #
-# The Original Code is Copyright (C) 2006, Blender Foundation
+# The Original Code is Copyright (C) 2015, Blender Foundation
 # All rights reserved.
 #
 # The Original Code is: all of this file.
 #
-# Contributor(s): Jacques Beaurain.
+# Contributor(s): Kevin Dietrich.
 #
 # ***** END GPL LICENSE BLOCK *****
 
 set(INC
 	.
+	intern
 )
 
 set(INC_SYS
-	../libopenjpeg
 )
 
 set(SRC
-	codec.c
-	debayer.c
-	format.c
-
-	codec.h
-	debayer.h
-	format.h
+	openvdb_capi.h
 )
 
-add_definitions(${OPENJPEG_DEFINES})
+if(WITH_OPENVDB)
+	add_definitions(
+		-DWITH_OPENVDB
+	)
 
-blender_add_lib(extern_redcode "${SRC}" "${INC}" "${INC_SYS}")
+	list(APPEND INC_SYS
+		${BOOST_INCLUDE_DIR}
+		${TBB_INCLUDE_DIRS}
+		${OPENEXR_INCLUDE_DIRS}
+		${OPENVDB_INCLUDE_DIRS}
+	)
+
+	list(APPEND SRC
+		intern/openvdb_dense_convert.cc
+		intern/openvdb_reader.cc
+		intern/openvdb_writer.cc
+		openvdb_capi.cc
+		openvdb_util.cc
+
+		intern/openvdb_dense_convert.h
+		intern/openvdb_reader.h
+		intern/openvdb_writer.h
+		openvdb_util.h
+	)
+
+	if(WITH_OPENVDB_BLOSC)
+		add_definitions(
+			-DWITH_OPENVDB_BLOSC
+		)
+	endif()
+endif()
+
+blender_add_lib(bf_intern_openvdb "${SRC}" "${INC}" "${INC_SYS}")
