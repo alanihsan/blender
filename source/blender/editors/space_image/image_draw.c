@@ -480,9 +480,9 @@ static void sima_draw_zbuffloat_pixels(Scene *scene, float x1, float y1, int rec
 static int draw_image_channel_offset(SpaceImage *sima)
 {
 #ifdef __BIG_ENDIAN__
-	if      (sima->flag & SI_SHOW_R) return 2;
+	if      (sima->flag & SI_SHOW_R) return 0;
 	else if (sima->flag & SI_SHOW_G) return 1;
-	else                             return 0;
+	else                             return 2;
 #else
 	if      (sima->flag & SI_SHOW_R) return 1;
 	else if (sima->flag & SI_SHOW_G) return 2;
@@ -526,7 +526,12 @@ static void draw_image_buffer(const bContext *C, SpaceImage *sima, ARegion *ar, 
 		}
 
 		if ((sima->flag & (SI_SHOW_R | SI_SHOW_G | SI_SHOW_B)) == 0) {
-			glaDrawImBuf_glsl_ctx(C, ibuf, x, y, GL_NEAREST);
+			int clip_max_x, clip_max_y;
+			UI_view2d_view_to_region(&ar->v2d,
+			                         ar->v2d.cur.xmax, ar->v2d.cur.ymax,
+			                         &clip_max_x, &clip_max_y);
+			glaDrawImBuf_glsl_ctx_clipping(C, ibuf, x, y, GL_NEAREST,
+			                               0, 0, clip_max_x, clip_max_y);
 		}
 		else {
 			unsigned char *display_buffer;
@@ -540,7 +545,7 @@ static void draw_image_buffer(const bContext *C, SpaceImage *sima, ARegion *ar, 
 			if (display_buffer != NULL) {
 				int channel_offset = draw_image_channel_offset(sima);
 				glaDrawPixelsSafe(x, y, ibuf->x, ibuf->y, ibuf->x, GL_LUMINANCE, GL_UNSIGNED_INT,
-				                  display_buffer + channel_offset);
+				                  display_buffer - (4 - channel_offset));
 			}
 			if (cache_handle != NULL) {
 				IMB_display_buffer_release(cache_handle);
@@ -621,7 +626,7 @@ static void draw_image_buffer_tiled(SpaceImage *sima, ARegion *ar, Scene *scene,
 			}
 			else {
 				glaDrawPixelsSafe(x, y, dx, dy, dx, GL_LUMINANCE, GL_UNSIGNED_INT,
-				                  (unsigned char *)rect + channel_offset);
+				                  (unsigned char *)rect - (4 - channel_offset));
 			}
 		}
 	}

@@ -376,8 +376,8 @@ void bmo_create_uvsphere_exec(BMesh *bm, BMOperator *op)
 	phid /= 2;
 	for (a = 0; a <= tot; a++) {
 		/* Going in this direction, then edge extruding, makes normals face outward */
-		vec[0] = -dia * sinf(phi);
-		vec[1] = 0.0;
+		vec[0] = 0.0;
+		vec[1] = dia * sinf(phi);
 		vec[2] = dia * cosf(phi);
 		eve = BM_vert_create(bm, vec, NULL, BM_CREATE_NOP);
 		BMO_elem_flag_enable(bm, eve, VERT_MARK);
@@ -635,7 +635,6 @@ void BM_mesh_calc_uvs_sphere(BMesh *bm, const short oflag)
 
 void bmo_create_monkey_exec(BMesh *bm, BMOperator *op)
 {
-	BMVert *eve;
 	BMVert **tv = MEM_mallocN(sizeof(*tv) * monkeynv * 2, "tv");
 	float mat[4][4];
 	int i;
@@ -653,9 +652,14 @@ void bmo_create_monkey_exec(BMesh *bm, BMOperator *op)
 		tv[i] = BM_vert_create(bm, v, NULL, BM_CREATE_NOP);
 		BMO_elem_flag_enable(bm, tv[i], VERT_MARK);
 
-		tv[monkeynv + i] = (fabsf(v[0] = -v[0]) < 0.001f) ?
-		                   tv[i] :
-		                   (eve = BM_vert_create(bm, v, NULL, BM_CREATE_NOP), mul_m4_v3(mat, eve->co), eve);
+		if (fabsf(v[0] = -v[0]) < 0.001f) {
+			tv[monkeynv + i] = tv[i];
+		}
+		else {
+			BMVert *eve = BM_vert_create(bm, v, NULL, BM_CREATE_NOP);
+			mul_m4_v3(mat, eve->co);
+			tv[monkeynv + i] = eve;
+		}
 
 		BMO_elem_flag_enable(bm, tv[monkeynv + i], VERT_MARK);
 

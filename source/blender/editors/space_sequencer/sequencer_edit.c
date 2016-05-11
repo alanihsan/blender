@@ -61,6 +61,7 @@
 
 /* for menu/popup icons etc etc*/
 
+#include "ED_anim_api.h"
 #include "ED_numinput.h"
 #include "ED_screen.h"
 #include "ED_transform.h"
@@ -685,6 +686,14 @@ static Sequence *cut_seq_hard(Scene *scene, Sequence *seq, int cutframe)
 	/* First Strip! */
 	/* strips with extended stillfames before */
 	
+	/* Precaution, needed because the length saved on-disk may not match the length saved in the blend file,
+	 * or our code may have minor differences reading file length between versions.
+	 * This causes hard-cut to fail, see: T47862 */
+	if (seq->type != SEQ_TYPE_META) {
+		BKE_sequence_reload_new_file(scene, seq, true);
+		BKE_sequence_calc(scene, seq);
+	}
+
 	if ((seq->startstill) && (cutframe < seq->start)) {
 		/* don't do funny things with METAs ... */
 		if (seq->type == SEQ_TYPE_META) {
@@ -2687,6 +2696,29 @@ void SEQUENCER_OT_view_all(wmOperatorType *ot)
 	
 	/* flags */
 	ot->flag = OPTYPE_REGISTER;
+}
+
+static int sequencer_view_frame_exec(bContext *C, wmOperator *op)
+{
+	const int smooth_viewtx = WM_operator_smooth_viewtx_get(op);
+	ANIM_center_frame(C, smooth_viewtx);
+	
+	return OPERATOR_FINISHED;
+}
+
+void SEQUENCER_OT_view_frame(wmOperatorType *ot)
+{
+	/* identifiers */
+	ot->name = "View Frame";
+	ot->idname = "SEQUENCER_OT_view_frame";
+	ot->description = "Reset viewable area to show range around current frame";
+	
+	/* api callbacks */
+	ot->exec = sequencer_view_frame_exec;
+	ot->poll = ED_operator_sequencer_active;
+	
+	/* flags */
+	ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
 }
 
 /* view_all operator */

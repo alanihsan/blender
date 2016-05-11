@@ -962,7 +962,7 @@ RAS_MeshObject* BL_ConvertMesh(Mesh* mesh, Object* blenderobj, KX_Scene* scene, 
 		if (CustomData_get_layer_index(&dm->faceData, CD_TANGENT) == -1) {
 			bool generate_data = false;
 			if (CustomData_get_layer_index(&dm->loopData, CD_TANGENT) == -1) {
-				DM_calc_loop_tangents(dm);
+				DM_calc_loop_tangents(dm, true, NULL, 0);
 				generate_data = true;
 			}
 			DM_generate_tangent_tessface_data(dm, generate_data);
@@ -1417,6 +1417,9 @@ static KX_LightObject *gamelight_from_blamp(Object *ob, Lamp *la, unsigned int l
 	
 	lightobj->m_att1 = la->att1;
 	lightobj->m_att2 = (la->mode & LA_QUAD) ? la->att2 : 0.0f;
+	lightobj->m_coeff_const = la->coeff_const;
+	lightobj->m_coeff_lin = la->coeff_lin;
+	lightobj->m_coeff_quad = la->coeff_quad;
 	lightobj->m_color[0] = la->r;
 	lightobj->m_color[1] = la->g;
 	lightobj->m_color[2] = la->b;

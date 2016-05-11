@@ -359,6 +359,10 @@ static void xml_read_camera(const XMLReadState& state, pugi::xml_node node)
 	xml_read_float(&cam->fisheye_fov, node, "fisheye_fov");
 	xml_read_float(&cam->fisheye_lens, node, "fisheye_lens");
 
+	xml_read_bool(&cam->use_spherical_stereo, node, "use_spherical_stereo");
+	xml_read_float(&cam->interocular_distance, node, "interocular_distance");
+	xml_read_float(&cam->convergence_distance, node, "convergence_distance");
+
 	xml_read_float(&cam->sensorwidth, node, "sensorwidth");
 	xml_read_float(&cam->sensorheight, node, "sensorheight");
 
@@ -433,7 +437,7 @@ static void xml_read_shader_graph(const XMLReadState& state, Shader *shader, pug
 			/* Generate inputs/outputs from node sockets
 			 *
 			 * Note: ShaderInput/ShaderOutput store shallow string copies only!
-			 * Socket names must be stored in the extra lists instead. */
+			 * So we register them as ustring to ensure the pointer stays valid. */
 			/* read input values */
 			for(pugi::xml_node param = node.first_child(); param; param = param.next_sibling()) {
 				if(string_iequals(param.name(), "input")) {
@@ -445,8 +449,7 @@ static void xml_read_shader_graph(const XMLReadState& state, Shader *shader, pug
 					if(type == SHADER_SOCKET_UNDEFINED)
 						continue;
 					
-					osl->input_names.push_back(ustring(name));
-					osl->add_input(osl->input_names.back().c_str(), type);
+					osl->add_input(ustring(name).c_str(), type);
 				}
 				else if(string_iequals(param.name(), "output")) {
 					string name;
@@ -457,8 +460,7 @@ static void xml_read_shader_graph(const XMLReadState& state, Shader *shader, pug
 					if(type == SHADER_SOCKET_UNDEFINED)
 						continue;
 					
-					osl->output_names.push_back(ustring(name));
-					osl->add_output(osl->output_names.back().c_str(), type);
+					osl->add_output(ustring(name).c_str(), type);
 				}
 			}
 			
@@ -1011,6 +1013,8 @@ static void xml_read_mesh(const XMLReadState& state, pugi::xml_node node)
 					fdata[2] = make_float3(UV[v2*2], UV[v2*2+1], 0.0);
 					fdata += 3;
 				}
+
+				index_offset += nverts[i];
 			}
 		}
 	}

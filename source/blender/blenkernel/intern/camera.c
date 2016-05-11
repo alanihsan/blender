@@ -845,6 +845,29 @@ void BKE_camera_multiview_model_matrix(RenderData *rd, Object *camera, const cha
 	normalize_m4(r_modelmat);
 }
 
+bool BKE_camera_multiview_spherical_stereo(RenderData *rd, Object *camera)
+{
+	Camera *cam;
+	const bool is_multiview = (rd && rd->scemode & R_MULTIVIEW) != 0;
+
+	if (!is_multiview)
+		return false;
+
+	if (camera->type != OB_CAMERA)
+		return false;
+	else
+		cam = camera->data;
+
+	if ((rd->views_format == SCE_VIEWS_FORMAT_STEREO_3D) &&
+	    ELEM(cam->type, CAM_PANO, CAM_PERSP) &&
+	    ((cam->stereo.flag & CAM_S3D_SPHERICAL) != 0))
+	{
+		return true;
+	}
+
+	return false;
+}
+
 static Object *camera_multiview_advanced(Scene *scene, Object *camera, const char *suffix)
 {
 	SceneRenderView *srv;
@@ -881,7 +904,7 @@ static Object *camera_multiview_advanced(Scene *scene, Object *camera, const cha
 /* returns the camera to be used for render */
 Object *BKE_camera_multiview_render(Scene *scene, Object *camera, const char *viewname)
 {
-	const bool is_multiview = (scene->r.scemode & R_MULTIVIEW) != 0;
+	const bool is_multiview = (camera != NULL) &&  (scene->r.scemode & R_MULTIVIEW) != 0;
 
 	if (!is_multiview) {
 		return camera;

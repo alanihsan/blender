@@ -59,6 +59,13 @@ public:
 		ROLLING_SHUTTER_NUM_TYPES,
 	};
 
+	/* Stereo Type */
+	enum StereoEye {
+		STEREO_NONE,
+		STEREO_LEFT,
+		STEREO_RIGHT,
+	};
+
 	/* motion blur */
 	float shuttertime;
 	MotionPosition motion_position;
@@ -92,6 +99,12 @@ public:
 	float longitude_min;
 	float longitude_max;
 
+	/* panorama stereo */
+	StereoEye stereo_eye;
+	bool use_spherical_stereo;
+	float interocular_distance;
+	float convergence_distance;
+
 	/* anamorphic lens bokeh */
 	float aperture_ratio;
 
@@ -107,6 +120,8 @@ public:
 	int width, height;
 	int resolution;
 	BoundBox2D viewplane;
+	/* width and height change during preview, so we need these for calculating dice rates. */
+	int full_width, full_height;
 
 	/* border */
 	BoundBox2D border;
@@ -138,6 +153,9 @@ public:
 	float3 dx;
 	float3 dy;
 
+	float3 full_dx;
+	float3 full_dy;
+
 	/* update */
 	bool need_update;
 	bool need_device_update;
@@ -162,6 +180,9 @@ public:
 
 	/* Public utility functions. */
 	BoundBox viewplane_bounds_get();
+
+	/* Calculates the width of a pixel at point in world space. */
+	float world_to_raster_size(float3 P);
 
 private:
 	/* Private utility functions. */
