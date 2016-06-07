@@ -315,12 +315,12 @@ static void drawgrid(UnitSettings *unit, ARegion *ar, View3D *v3d, const char **
 	if (unit->system) {
 		/* Use GRID_MIN_PX * 2 for units because very very small grid
 		 * items are less useful when dealing with units */
-		void *usys;
+		const void *usys;
 		int len, i;
 		double dx_scalar;
 		float blend_fac;
 
-		bUnit_GetSystem(&usys, &len, unit->system, B_UNIT_LENGTH);
+		bUnit_GetSystem(unit->system, B_UNIT_LENGTH, &usys, &len);
 
 		if (usys) {
 			i = len;
@@ -455,10 +455,10 @@ float ED_scene_grid_scale(Scene *scene, const char **grid_unit)
 {
 	/* apply units */
 	if (scene->unit.system) {
-		void *usys;
+		const void *usys;
 		int len;
 
-		bUnit_GetSystem(&usys, &len, scene->unit.system, B_UNIT_LENGTH);
+		bUnit_GetSystem(scene->unit.system, B_UNIT_LENGTH, &usys, &len);
 
 		if (usys) {
 			int i = bUnit_GetBaseUnit(usys);
@@ -1110,6 +1110,8 @@ static void drawviewborder(Scene *scene, ARegion *ar, View3D *v3d)
 	x2 = viewborder.xmax;
 	y2 = viewborder.ymax;
 	
+	glLineWidth(1.0f);
+
 	/* apply offsets so the real 3D camera shows through */
 
 	/* note: quite un-scientific but without this bit extra
@@ -1135,6 +1137,7 @@ static void drawviewborder(Scene *scene, ARegion *ar, View3D *v3d)
 			glEnable(GL_BLEND);
 			glColor4f(0, 0, 0, ca->passepartalpha);
 		}
+
 		if (x1i > 0.0f)
 			glRectf(0.0, winy, x1i, 0.0);
 		if (x2i < winx)
@@ -1176,10 +1179,10 @@ static void drawviewborder(Scene *scene, ARegion *ar, View3D *v3d)
 	if (scene->r.mode & R_BORDER) {
 		float x3, y3, x4, y4;
 
-		x3 = x1i + 1 + roundf(scene->r.border.xmin * (x2 - x1));
-		y3 = y1i + 1 + roundf(scene->r.border.ymin * (y2 - y1));
-		x4 = x1i + 1 + roundf(scene->r.border.xmax * (x2 - x1));
-		y4 = y1i + 1 + roundf(scene->r.border.ymax * (y2 - y1));
+		x3 = floorf(x1 + (scene->r.border.xmin * (x2 - x1))) - 1;
+		y3 = floorf(y1 + (scene->r.border.ymin * (y2 - y1))) - 1;
+		x4 = floorf(x1 + (scene->r.border.xmax * (x2 - x1))) + (U.pixelsize - 1);
+		y4 = floorf(y1 + (scene->r.border.ymax * (y2 - y1))) + (U.pixelsize - 1);
 
 		cpack(0x4040FF);
 		sdrawbox(x3,  y3,  x4,  y4);
@@ -2061,7 +2064,6 @@ static void draw_dupli_objects_color(
 	short transflag;
 	bool use_displist = false;  /* -1 is initialize */
 	char dt;
-	bool testbb = false;
 	short dtx;
 	DupliApplyData *apply_data;
 
@@ -2085,10 +2087,11 @@ static void draw_dupli_objects_color(
 	if (dob) dob_next = dupli_step(dob->next);
 
 	for (; dob; dob_prev = dob, dob = dob_next, dob_next = dob_next ? dupli_step(dob_next->next) : NULL) {
+		bool testbb = false;
+
 		tbase.object = dob->ob;
 
 		/* Make sure lod is updated from dupli's position */
-
 		savedlod = dob->ob->currentlod;
 
 #ifdef WITH_GAMEENGINE
@@ -2506,7 +2509,11 @@ static void gpu_render_lamp_update(Scene *scene, View3D *v3d,
 		if (srl)
 			layers &= srl->lay;
 
-		if (layers && GPU_lamp_override_visible(lamp, srl, NULL) && GPU_lamp_has_shadow_buffer(lamp)) {
+		if (layers &&
+		    GPU_lamp_has_shadow_buffer(lamp) &&
+		    /* keep last, may do string lookup */
+		    GPU_lamp_override_visible(lamp, srl, NULL))
+		{
 			shadow = MEM_callocN(sizeof(View3DShadow), "View3DShadow");
 			shadow->lamp = lamp;
 			BLI_addtail(shadows, shadow);
@@ -2601,19 +2608,20 @@ static void gpu_update_lamps_shadows_world(Scene *scene, View3D *v3d)
 CustomDataMask ED_view3d_datamask(const Scene *scene, const View3D *v3d)
 {
 	CustomDataMask mask = 0;
+	const int drawtype = view3d_effective_drawtype(v3d);
 
-	if (ELEM(v3d->drawtype, OB_TEXTURE, OB_MATERIAL) ||
-	    ((v3d->drawtype == OB_SOLID) && (v3d->flag2 & V3D_SOLID_TEX)))
+	if (ELEM(drawtype, OB_TEXTURE, OB_MATERIAL) ||
+	    ((drawtype == OB_SOLID) && (v3d->flag2 & V3D_SOLID_TEX)))
 	{
 		mask |= CD_MASK_MTEXPOLY | CD_MASK_MLOOPUV | CD_MASK_MLOOPCOL;
 
 		if (BKE_scene_use_new_shading_nodes(scene)) {
-			if (v3d->drawtype == OB_MATERIAL)
+			if (drawtype == OB_MATERIAL)
 				mask |= CD_MASK_ORCO;
 		}
 		else {
-			if ((scene->gm.matmode == GAME_MAT_GLSL && v3d->drawtype == OB_TEXTURE) || 
-			    (v3d->drawtype == OB_MATERIAL))
+			if ((scene->gm.matmode == GAME_MAT_GLSL && drawtype == OB_TEXTURE) || 
+			    (drawtype == OB_MATERIAL))
 			{
 				mask |= CD_MASK_ORCO;
 			}
@@ -3302,13 +3310,19 @@ ImBuf *ED_view3d_draw_offscreen_imbuf(
 {
 	RegionView3D *rv3d = ar->regiondata;
 	ImBuf *ibuf;
-	const bool draw_sky = (alpha_mode == R_ADDSKY) && v3d && (v3d->flag3 & V3D_SHOW_WORLD);
-	const bool own_ofs = (ofs == NULL);
+	const bool draw_sky = (alpha_mode == R_ADDSKY);
 
 	/* view state */
 	GPUFXSettings fx_settings = v3d->fx_settings;
 	bool is_ortho = false;
 	float winmat[4][4];
+
+	if (ofs && ((GPU_offscreen_width(ofs) != sizex) || (GPU_offscreen_height(ofs) != sizey))) {
+		/* sizes differ, can't reuse */
+		ofs = NULL;
+	}
+
+	const bool own_ofs = (ofs == NULL);
 
 	if (own_ofs) {
 		/* bind */
@@ -3382,7 +3396,7 @@ ImBuf *ED_view3d_draw_offscreen_imbuf(
 		unsigned int i;
 		int j;
 
-		BLI_jitter_init(jit_ofs, scene->r.osa);
+		BLI_jitter_init(jit_ofs, samples);
 
 		/* first sample buffer, also initializes 'rv3d->persmat' */
 		ED_view3d_draw_offscreen(
@@ -3963,6 +3977,7 @@ static void view3d_main_region_draw_info(const bContext *C, Scene *scene,
 		drawviewborder(scene, ar, v3d);
 	}
 	else if (v3d->flag2 & V3D_RENDER_BORDER) {
+		glLineWidth(1.0f);
 		setlinestyle(3);
 		cpack(0x4040FF);
 

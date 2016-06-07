@@ -570,7 +570,7 @@ float BKE_brush_sample_tex_3D(const Scene *scene, Brush *br,
 		/* Get strength by feeding the vertex
 		 * location directly into a texture */
 		hasrgb = externtex(mtex, point, &intensity,
-		                   rgba, rgba + 1, rgba + 2, rgba + 3, thread, pool, false);
+		                   rgba, rgba + 1, rgba + 2, rgba + 3, thread, pool, false, false);
 	}
 	else if (mtex->brush_map_mode == MTEX_MAP_MODE_STENCIL) {
 		float rotation = -mtex->rot;
@@ -601,7 +601,7 @@ float BKE_brush_sample_tex_3D(const Scene *scene, Brush *br,
 		co[2] = 0.0f;
 
 		hasrgb = externtex(mtex, co, &intensity,
-		                   rgba, rgba + 1, rgba + 2, rgba + 3, thread, pool, false);
+		                   rgba, rgba + 1, rgba + 2, rgba + 3, thread, pool, false, false);
 	}
 	else {
 		float rotation = -mtex->rot;
@@ -658,7 +658,7 @@ float BKE_brush_sample_tex_3D(const Scene *scene, Brush *br,
 		co[2] = 0.0f;
 
 		hasrgb = externtex(mtex, co, &intensity,
-		                   rgba, rgba + 1, rgba + 2, rgba + 3, thread, pool, false);
+		                   rgba, rgba + 1, rgba + 2, rgba + 3, thread, pool, false, false);
 	}
 
 	intensity += br->texture_sample_bias;
@@ -718,7 +718,7 @@ float BKE_brush_sample_masktex(const Scene *scene, Brush *br,
 		co[2] = 0.0f;
 
 		externtex(mtex, co, &intensity,
-		          rgba, rgba + 1, rgba + 2, rgba + 3, thread, pool, false);
+		          rgba, rgba + 1, rgba + 2, rgba + 3, thread, pool, false, false);
 	}
 	else {
 		float rotation = -mtex->rot;
@@ -775,7 +775,7 @@ float BKE_brush_sample_masktex(const Scene *scene, Brush *br,
 		co[2] = 0.0f;
 
 		externtex(mtex, co, &intensity,
-		          rgba, rgba + 1, rgba + 2, rgba + 3, thread, pool, false);
+		          rgba, rgba + 1, rgba + 2, rgba + 3, thread, pool, false, false);
 	}
 
 	CLAMP(intensity, 0.0f, 1.0f);
@@ -852,7 +852,7 @@ int BKE_brush_size_get(const Scene *scene, const Brush *brush)
 	UnifiedPaintSettings *ups = &scene->toolsettings->unified_paint_settings;
 	int size = (ups->flag & UNIFIED_PAINT_SIZE) ? ups->size : brush->size;
 	
-	return (int)((float)size * U.pixelsize);
+	return size;
 }
 
 int BKE_brush_use_locked_size(const Scene *scene, const Brush *brush)
@@ -1048,7 +1048,7 @@ unsigned int *BKE_brush_gen_texture_cache(Brush *br, int half_side, bool use_sec
 				/* This is copied from displace modifier code */
 				/* TODO(sergey): brush are always cacheing with CM enabled for now. */
 				externtex(mtex, co, &intensity,
-				          rgba, rgba + 1, rgba + 2, rgba + 3, 0, NULL, false);
+				          rgba, rgba + 1, rgba + 2, rgba + 3, 0, NULL, false, false);
 
 				((char *)texcache)[(iy * side + ix) * 4] =
 				((char *)texcache)[(iy * side + ix) * 4 + 1] =

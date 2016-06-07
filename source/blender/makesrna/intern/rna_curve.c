@@ -1009,13 +1009,15 @@ static void rna_def_font(BlenderRNA *UNUSED(brna), StructRNA *srna)
 	
 	prop = RNA_def_property(srna, "offset_x", PROP_FLOAT, PROP_NONE);
 	RNA_def_property_float_sdna(prop, NULL, "xof");
-	RNA_def_property_range(prop, -50.0f, 50.0f);
+	RNA_def_property_range(prop, -FLT_MAX, FLT_MAX);
+	RNA_def_property_ui_range(prop, -50.0f, 50.0f, 10, 3);
 	RNA_def_property_ui_text(prop, "X Offset", "Horizontal offset from the object origin");
 	RNA_def_property_update(prop, 0, "rna_Curve_update_data");
 	
 	prop = RNA_def_property(srna, "offset_y", PROP_FLOAT, PROP_NONE);
 	RNA_def_property_float_sdna(prop, NULL, "yof");
-	RNA_def_property_range(prop, -50.0f, 50.0f);
+	RNA_def_property_range(prop, -FLT_MAX, FLT_MAX);
+	RNA_def_property_ui_range(prop, -50.0f, 50.0f, 10, 3);
 	RNA_def_property_ui_text(prop, "Y Offset", "Vertical offset from the object origin");
 	RNA_def_property_update(prop, 0, "rna_Curve_update_data");
 	
@@ -1046,8 +1048,8 @@ static void rna_def_font(BlenderRNA *UNUSED(brna), StructRNA *srna)
 	RNA_def_property_string_maxlength(prop, MAX_ID_NAME - 2);
 	RNA_def_property_ui_text(prop, "Object Font",
 	                         "Use Objects as font characters (give font objects a common name "
-	                         "followed by the character they represent, eg. 'family_a', 'family_b', etc, "
-	                         "set this setting to 'family_', and turn on Vertex Duplication)");
+	                         "followed by the character they represent, eg. 'family-a', 'family-b', etc, "
+	                         "set this setting to 'family-', and turn on Vertex Duplication)");
 	RNA_def_property_update(prop, 0, "rna_Curve_update_data");
 	
 	prop = RNA_def_property(srna, "body", PROP_STRING, PROP_NONE);
@@ -1117,25 +1119,29 @@ static void rna_def_textbox(BlenderRNA *brna)
 	/* number values */
 	prop = RNA_def_property(srna, "x", PROP_FLOAT, PROP_NONE);
 	RNA_def_property_float_sdna(prop, NULL, "x");
-	RNA_def_property_range(prop, -50.0f, 50.0f);
+	RNA_def_property_range(prop, -FLT_MAX, FLT_MAX);
+	RNA_def_property_ui_range(prop, -50.0f, 50.0f, 10, 3);
 	RNA_def_property_ui_text(prop, "Textbox X Offset", "");
 	RNA_def_property_update(prop, 0, "rna_Curve_update_data");
 	
 	prop = RNA_def_property(srna, "y", PROP_FLOAT, PROP_NONE);
 	RNA_def_property_float_sdna(prop, NULL, "y");
-	RNA_def_property_range(prop, -50.0f, 50.0f);
+	RNA_def_property_range(prop, -FLT_MAX, FLT_MAX);
+	RNA_def_property_ui_range(prop, -50.0f, 50.0f, 10, 3);
 	RNA_def_property_ui_text(prop, "Textbox Y Offset", "");
 	RNA_def_property_update(prop, 0, "rna_Curve_update_data");
 
 	prop = RNA_def_property(srna, "width", PROP_FLOAT, PROP_NONE);
 	RNA_def_property_float_sdna(prop, NULL, "w");
-	RNA_def_property_range(prop, 0.0f, 50.0f);
+	RNA_def_property_range(prop, 0.0f, FLT_MAX);
+	RNA_def_property_ui_range(prop, 0.0f, 50.0f, 10, 3);
 	RNA_def_property_ui_text(prop, "Textbox Width", "");
 	RNA_def_property_update(prop, 0, "rna_Curve_update_data");
 
 	prop = RNA_def_property(srna, "height", PROP_FLOAT, PROP_NONE);
 	RNA_def_property_float_sdna(prop, NULL, "h");
-	RNA_def_property_range(prop, 0.0f, 50.0f);
+	RNA_def_property_range(prop, 0.0f, FLT_MAX);
+	RNA_def_property_ui_range(prop, 0.0f, 50.0f, 10, 3);
 	RNA_def_property_ui_text(prop, "Textbox Height", "");
 	RNA_def_property_update(prop, 0, "rna_Curve_update_data");
 	

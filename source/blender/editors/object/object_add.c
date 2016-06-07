@@ -1151,7 +1151,6 @@ static int object_delete_exec(bContext *C, wmOperator *op)
 			}
 		}
 		/* end global */
-
 	}
 	CTX_DATA_END;
 
@@ -1159,7 +1158,7 @@ static int object_delete_exec(bContext *C, wmOperator *op)
 		return OPERATOR_CANCELLED;
 
 	/* delete has to handle all open scenes */
-	BKE_main_id_flag_listbase(&bmain->scene, LIB_TAG_DOIT, 1);
+	BKE_main_id_tag_listbase(&bmain->scene, LIB_TAG_DOIT, true);
 	for (win = wm->windows.first; win; win = win->next) {
 		scene = win->screen->scene;
 		
@@ -1602,7 +1601,7 @@ static int convert_exec(bContext *C, wmOperator *op)
 
 			if (newob->type == OB_CURVE) {
 				BKE_object_free_modifiers(newob);   /* after derivedmesh calls! */
-				ED_rigidbody_object_remove(scene, newob);
+				ED_rigidbody_object_remove(bmain, scene, newob);
 			}
 		}
 		else if (ob->type == OB_MESH && ob->modifiers.first) { /* converting a mesh with no modifiers causes a segfault */
