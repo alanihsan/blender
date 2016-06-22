@@ -466,7 +466,7 @@ static const char *rna_parameter_type_name(PropertyRNA *parm)
 		}
 		case PROP_COLLECTION:
 		{
-			return "ListBase";
+			return "CollectionListBase";
 		}
 		default:
 			return "<error, no type specified>";
@@ -3692,6 +3692,7 @@ static const char *cpp_classes = ""
 "return *this; }\n"
 "\n"
 "	operator T*() { return data; }\n"
+"	operator const T*() const { return data; }\n"
 "};\n"
 "\n"
 "template<typename T>\n"

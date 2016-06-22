@@ -33,6 +33,7 @@
 #include <stdio.h>
 
 #include "DNA_anim_types.h"
+#include "DNA_group_types.h"
 #include "DNA_scene_types.h"
 
 #include "MEM_guardedalloc.h"
@@ -267,49 +268,38 @@ static void graph_main_region_draw(const bContext *C, ARegion *ar)
 	
 	/* horizontal component of value-cursor (value line before the current frame line) */
 	if ((sipo->flag & SIPO_NODRAWCURSOR) == 0) {
-		float vec[2];
+
+		float y = sipo->cursorVal;
 		
 		/* Draw a green line to indicate the cursor value */
-		vec[1] = sipo->cursorVal;
-		
 		UI_ThemeColorShadeAlpha(TH_CFRAME, -10, -50);
-		glLineWidth(2.0);
-		
 		glEnable(GL_BLEND);
-		glBegin(GL_LINE_STRIP);
-		vec[0] = v2d->cur.xmin;
-		glVertex2fv(vec);
-			
-		vec[0] = v2d->cur.xmax;
-		glVertex2fv(vec);
-		glEnd(); // GL_LINE_STRIP
-		glDisable(GL_BLEND);
+		glLineWidth(2.0);
 
-		glLineWidth(1.0);
+		glBegin(GL_LINES);
+		glVertex2f(v2d->cur.xmin, y);
+		glVertex2f(v2d->cur.xmax, y);
+		glEnd();
+
+		glDisable(GL_BLEND);
 	}
 	
 	/* current frame or vertical component of vertical component of the cursor */
 	if (sipo->mode == SIPO_MODE_DRIVERS) {
 		/* cursor x-value */
-		float vec[2];
-		
-		vec[0] = sipo->cursorTime;
+		float x = sipo->cursorTime;
 		
 		/* to help differentiate this from the current frame, draw slightly darker like the horizontal one */
 		UI_ThemeColorShadeAlpha(TH_CFRAME, -40, -50);
+		glEnable(GL_BLEND);
 		glLineWidth(2.0);
 		
-		glEnable(GL_BLEND);
-		glBegin(GL_LINE_STRIP);
-		vec[1] = v2d->cur.ymin;
-		glVertex2fv(vec);
-			
-		vec[1] = v2d->cur.ymax;
-		glVertex2fv(vec);
-		glEnd(); // GL_LINE_STRIP
-		glDisable(GL_BLEND);
+		glBegin(GL_LINES);
+		glVertex2f(x, v2d->cur.ymin);
+		glVertex2f(x, v2d->cur.ymax);
+		glEnd();
 
-		glLineWidth(1.0);
+		glDisable(GL_BLEND);
 	}
 	else {
 		/* current frame */
@@ -638,6 +628,19 @@ static void graph_refresh(const bContext *C, ScrArea *sa)
 	}
 }
 
+static void graph_id_remap(ScrArea *UNUSED(sa), SpaceLink *slink, ID *old_id, ID *new_id)
+{
+	SpaceIpo *sgraph = (SpaceIpo *)slink;
+
+	if (!ELEM(GS(old_id->name), ID_GR)) {
+		return;
+	}
+
+	if ((ID *)sgraph->ads->filter_grp == old_id) {
+		sgraph->ads->filter_grp = (Group *)new_id;
+	}
+}
+
 /* only called once, from space/spacetypes.c */
 void ED_spacetype_ipo(void)
 {
@@ -655,7 +658,8 @@ void ED_spacetype_ipo(void)
 	st->keymap = graphedit_keymap;
 	st->listener = graph_listener;
 	st->refresh = graph_refresh;
-	
+	st->id_remap = graph_id_remap;
+
 	/* regions: main window */
 	art = MEM_callocN(sizeof(ARegionType), "spacetype graphedit region");
 	art->regionid = RGN_TYPE_WINDOW;

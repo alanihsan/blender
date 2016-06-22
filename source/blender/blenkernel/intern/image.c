@@ -109,8 +109,8 @@ static void image_add_view(Image *ima, const char *viewname, const char *filepat
 #define IMA_NO_INDEX    0x7FEFEFEF
 
 /* quick lookup: supports 1 million frames, thousand passes */
-#define IMA_MAKE_INDEX(frame, index)    ((frame) << 10) + index
-#define IMA_INDEX_FRAME(index)          (index >> 10)
+#define IMA_MAKE_INDEX(frame, index)    (((frame) << 10) + (index))
+#define IMA_INDEX_FRAME(index)           ((index) >> 10)
 /*
 #define IMA_INDEX_PASS(index)           (index & ~1023)
 */
@@ -324,19 +324,15 @@ void BKE_image_free_buffers(Image *ima)
 	ima->ok = IMA_OK;
 }
 
-/* called by library too, do not free ima itself */
+/** Free (or release) any data used by this image (does not free the image itself). */
 void BKE_image_free(Image *ima)
 {
 	int a;
 
+	/* Also frees animdata. */
 	BKE_image_free_buffers(ima);
 
 	image_free_packedfiles(ima);
-
-	BKE_icon_id_delete(&ima->id);
-	ima->id.icon_id = 0;
-
-	BKE_previewimg_free(&ima->preview);
 
 	for (a = 0; a < IMA_MAX_RENDER_SLOT; a++) {
 		if (ima->renders[a]) {
@@ -346,31 +342,48 @@ void BKE_image_free(Image *ima)
 	}
 
 	BKE_image_free_views(ima);
-	MEM_freeN(ima->stereo3d_format);
+	MEM_SAFE_FREE(ima->stereo3d_format);
+
+	BKE_icon_id_delete(&ima->id);
+	BKE_previewimg_free(&ima->preview);
 }
 
 /* only image block itself */
+static void image_init(Image *ima, short source, short type)
+{
+	BLI_assert(MEMCMP_STRUCT_OFS_IS_ZERO(ima, id));
+
+	ima->ok = IMA_OK;
+
+	ima->xrep = ima->yrep = 1;
+	ima->aspx = ima->aspy = 1.0;
+	ima->gen_x = 1024; ima->gen_y = 1024;
+	ima->gen_type = IMA_GENTYPE_GRID;
+
+	ima->source = source;
+	ima->type = type;
+
+	if (source == IMA_SRC_VIEWER)
+		ima->flag |= IMA_VIEW_AS_RENDER;
+
+	BKE_color_managed_colorspace_settings_init(&ima->colorspace_settings);
+	ima->stereo3d_format = MEM_callocN(sizeof(Stereo3dFormat), "Image Stereo Format");
+}
+
+void BKE_image_init(struct Image *image)
+{
+	if (image) {
+		image_init(image, IMA_SRC_GENERATED, IMA_TYPE_UV_TEST);
+	}
+}
+
 static Image *image_alloc(Main *bmain, const char *name, short source, short type)
 {
 	Image *ima;
 
 	ima = BKE_libblock_alloc(bmain, ID_IM, name);
 	if (ima) {
-		ima->ok = IMA_OK;
-
-		ima->xrep = ima->yrep = 1;
-		ima->aspx = ima->aspy = 1.0;
-		ima->gen_x = 1024; ima->gen_y = 1024;
-		ima->gen_type = 1;   /* no defines yet? */
-
-		ima->source = source;
-		ima->type = type;
-
-		if (source == IMA_SRC_VIEWER)
-			ima->flag |= IMA_VIEW_AS_RENDER;
-
-		BKE_color_managed_colorspace_settings_init(&ima->colorspace_settings);
-		ima->stereo3d_format = MEM_callocN(sizeof(Stereo3dFormat), "Image Stereo Format");
+		image_init(ima, source, type);
 	}
 
 	return ima;
@@ -657,6 +670,18 @@ bool BKE_image_scale(Image *image, int width, int height)
 	return (ibuf != NULL);
 }
 
+bool BKE_image_has_bindcode(Image *ima)
+{
+	bool has_bindcode = false;
+	for (int i = 0; i < TEXTARGET_COUNT; i++) {
+		if (ima->bindcode[i]) {
+			has_bindcode = true;
+			break;
+		}
+	}
+	return has_bindcode;
+}
+
 static void image_init_color_management(Image *ima)
 {
 	ImBuf *ibuf;
@@ -816,18 +841,13 @@ static ImBuf *add_ibuf_size(unsigned int width, unsigned int height, const char 
 			break;
 	}
 
-	if (rect_float) {
-		/* both byte and float buffers are filling in sRGB space, need to linearize float buffer after BKE_image_buf_fill* functions */
-
-		IMB_buffer_float_from_float(rect_float, rect_float, ibuf->channels, IB_PROFILE_LINEAR_RGB, IB_PROFILE_SRGB,
-		                            true, ibuf->x, ibuf->y, ibuf->x, ibuf->x);
-	}
-
 	return ibuf;
 }
 
 /* adds new image block, creates ImBuf and initializes color */
-Image *BKE_image_add_generated(Main *bmain, unsigned int width, unsigned int height, const char *name, int depth, int floatbuf, short gen_type, const float color[4], const bool stereo3d)
+Image *BKE_image_add_generated(
+        Main *bmain, unsigned int width, unsigned int height, const char *name,
+        int depth, int floatbuf, short gen_type, const float color[4], const bool stereo3d)
 {
 	/* on save, type is changed to FILE in editsima.c */
 	Image *ima = image_alloc(bmain, name, IMA_SRC_GENERATED, IMA_TYPE_UV_TEST);
@@ -1410,7 +1430,7 @@ char BKE_imtype_valid_depths(const char imtype)
 
 
 /* string is from command line --render-format arg, keep in sync with
- * creator.c help info */
+ * creator_args.c help info */
 char BKE_imtype_from_arg(const char *imtype_arg)
 {
 	if      (STREQ(imtype_arg, "TGA")) return R_IMF_IMTYPE_TARGA;
@@ -1621,6 +1641,14 @@ void BKE_imbuf_to_image_format(struct ImageFormatData *im_format, const ImBuf *i
 		im_format->imtype = R_IMF_IMTYPE_TIFF;
 		if (custom_flags & TIF_16BIT)
 			im_format->depth = R_IMF_CHAN_DEPTH_16;
+		if (custom_flags & TIF_COMPRESS_NONE)
+			im_format->tiff_codec = R_IMF_TIFF_CODEC_NONE;
+		if (custom_flags & TIF_COMPRESS_DEFLATE)
+			im_format->tiff_codec = R_IMF_TIFF_CODEC_DEFLATE;
+		if (custom_flags & TIF_COMPRESS_LZW)
+			im_format->tiff_codec = R_IMF_TIFF_CODEC_LZW;
+		if (custom_flags & TIF_COMPRESS_PACKBITS)
+			im_format->tiff_codec = R_IMF_TIFF_CODEC_PACKBITS;
 	}
 #endif
 
@@ -1719,6 +1747,7 @@ typedef struct StampData {
 	char scene[STAMP_NAME_SIZE];
 	char strip[STAMP_NAME_SIZE];
 	char rendertime[STAMP_NAME_SIZE];
+	char memory[STAMP_NAME_SIZE];
 } StampData;
 #undef STAMP_NAME_SIZE
 
@@ -1840,11 +1869,97 @@ static void stampdata(Scene *scene, Object *camera, StampData *stamp_data, int d
 		else {
 			stamp_data->rendertime[0] = '\0';
 		}
+
+		if (stats && (scene->r.stamp & R_STAMP_MEMORY)) {
+			BLI_snprintf(stamp_data->memory, sizeof(stamp_data->memory), do_prefix ? "Peak Memory %.2fM" : "%.2fM", stats->mem_peak);
+		}
+		else {
+			stamp_data->memory[0] = '\0';
+		}
+	}
+}
+
+/* Will always add prefix. */
+static void stampdata_from_template(StampData *stamp_data,
+                                    const Scene *scene,
+                                    const StampData *stamp_data_template)
+{
+	if (scene->r.stamp & R_STAMP_FILENAME) {
+		BLI_snprintf(stamp_data->file, sizeof(stamp_data->file), "File %s", stamp_data_template->file);
+	}
+	else {
+		stamp_data->file[0] = '\0';
+	}
+	if (scene->r.stamp & R_STAMP_NOTE) {
+		BLI_snprintf(stamp_data->note, sizeof(stamp_data->note), "%s", stamp_data_template->note);
+	}
+	else {
+		stamp_data->note[0] = '\0';
+	}
+	if (scene->r.stamp & R_STAMP_DATE) {
+		BLI_snprintf(stamp_data->date, sizeof(stamp_data->date), "Date %s", stamp_data_template->date);
+	}
+	else {
+		stamp_data->date[0] = '\0';
+	}
+	if (scene->r.stamp & R_STAMP_MARKER) {
+		BLI_snprintf(stamp_data->marker, sizeof(stamp_data->marker), "Marker %s", stamp_data_template->marker);
+	}
+	else {
+		stamp_data->marker[0] = '\0';
+	}
+	if (scene->r.stamp & R_STAMP_TIME) {
+		BLI_snprintf(stamp_data->time, sizeof(stamp_data->time), "Timecode %s", stamp_data_template->time);
+	}
+	else {
+		stamp_data->time[0] = '\0';
+	}
+	if (scene->r.stamp & R_STAMP_FRAME) {
+		BLI_snprintf(stamp_data->frame, sizeof(stamp_data->frame), "Frame %s", stamp_data_template->frame);
+	}
+	else {
+		stamp_data->frame[0] = '\0';
+	}
+	if (scene->r.stamp & R_STAMP_CAMERA) {
+		BLI_snprintf(stamp_data->camera, sizeof(stamp_data->camera), "Camera %s", stamp_data_template->camera);
+	}
+	else {
+		stamp_data->camera[0] = '\0';
+	}
+	if (scene->r.stamp & R_STAMP_CAMERALENS) {
+		BLI_snprintf(stamp_data->cameralens, sizeof(stamp_data->cameralens), "Lens %s", stamp_data_template->cameralens);
+	}
+	else {
+		stamp_data->cameralens[0] = '\0';
+	}
+	if (scene->r.stamp & R_STAMP_SCENE) {
+		BLI_snprintf(stamp_data->scene, sizeof(stamp_data->scene), "Scene %s", stamp_data_template->scene);
+	}
+	else {
+		stamp_data->scene[0] = '\0';
+	}
+	if (scene->r.stamp & R_STAMP_SEQSTRIP) {
+		BLI_snprintf(stamp_data->strip, sizeof(stamp_data->strip), "Strip %s", stamp_data_template->strip);
+	}
+	else {
+		stamp_data->strip[0] = '\0';
+	}
+	if (scene->r.stamp & R_STAMP_RENDERTIME) {
+		BLI_snprintf(stamp_data->rendertime, sizeof(stamp_data->rendertime), "RenderTime %s", stamp_data_template->rendertime);
+	}
+	else {
+		stamp_data->rendertime[0] = '\0';
+	}
+	if (scene->r.stamp & R_STAMP_MEMORY) {
+		BLI_snprintf(stamp_data->memory, sizeof(stamp_data->memory), "Peak Memory %s", stamp_data_template->memory);
+	}
+	else {
+		stamp_data->memory[0] = '\0';
 	}
 }
 
 void BKE_image_stamp_buf(
-        Scene *scene, Object *camera,
+        Scene *scene, Object *camera, const StampData *stamp_data_template,
         unsigned char *rect, float *rectf, int width, int height, int channels)
 {
 	struct StampData stamp_data;
@@ -1881,7 +1996,12 @@ void BKE_image_stamp_buf(
 	display_device = scene->display_settings.display_device;
 	display = IMB_colormanagement_display_get_named(display_device);
 
-	stampdata(scene, camera, &stamp_data, 1);
+	if (stamp_data_template == NULL) {
+		stampdata(scene, camera, &stamp_data, 1);
+	}
+	else {
+		stampdata_from_template(&stamp_data, scene, stamp_data_template);
+	}
 
 	/* TODO, do_versions */
 	if (scene->r.stamp_font_id < 8)
@@ -1892,7 +2012,7 @@ void BKE_image_stamp_buf(
 	BLF_wordwrap(mono, width - (BUFF_MARGIN_X * 2));
 
 	BLF_buffer(mono, rectf, rect, width, height, channels, display);
-	BLF_buffer_col(mono, scene->r.fg_stamp[0], scene->r.fg_stamp[1], scene->r.fg_stamp[2], 1.0);
+	BLF_buffer_col(mono, scene->r.fg_stamp);
 	pad = BLF_width_max(mono);
 
 	/* use 'h_fixed' rather than 'h', aligns better */
@@ -1949,6 +2069,21 @@ void BKE_image_stamp_buf(
 	}
 
 	/* Top left corner, below File, Date, Rendertime */
+	if (TEXT_SIZE_CHECK(stamp_data.memory, w, h)) {
+		y -= h;
+
+		/* and space for background. */
+		buf_rectfill_area(rect, rectf, width, height, scene->r.bg_stamp, display,
+		                  0, y - BUFF_MARGIN_Y, w + BUFF_MARGIN_X, y + h + BUFF_MARGIN_Y);
+
+		BLF_position(mono, x, y + y_ofs, 0.0);
+		BLF_draw_buffer(mono, stamp_data.memory, BLF_DRAW_STR_DUMMY_MAX);
+
+		/* the extra pixel for background. */
+		y -= BUFF_MARGIN_Y * 2;
+	}
+
+	/* Top left corner, below File, Date, Memory, Rendertime */
 	BLF_enable(mono, BLF_WORD_WRAP);
 	if (TEXT_SIZE_CHECK_WORD_WRAP(stamp_data.note, w, h)) {
 		y -= h;
@@ -2112,6 +2247,7 @@ void BKE_stamp_info_callback(void *data, struct StampData *stamp_data, StampCall
 	CALL(scene, "Scene");
 	CALL(strip, "Strip");
 	CALL(rendertime, "RenderTime");
+	CALL(memory, "Memory");
 
 #undef CALL
 }
@@ -2166,11 +2302,14 @@ bool BKE_imbuf_alpha_test(ImBuf *ibuf)
 
 /* note: imf->planes is ignored here, its assumed the image channels
  * are already set */
-void BKE_imbuf_write_prepare(ImBuf *ibuf, ImageFormatData *imf)
+void BKE_imbuf_write_prepare(ImBuf *ibuf, const ImageFormatData *imf)
 {
 	char imtype = imf->imtype;
 	char compress = imf->compress;
 	char quality = imf->quality;
+
+	/* initialize all from image format */
+	ibuf->foptions.flag = 0;
 
 	if (imtype == R_IMF_IMTYPE_IRIS) {
 		ibuf->ftype = IMB_FTYPE_IMAGIC;
@@ -2203,8 +2342,21 @@ void BKE_imbuf_write_prepare(ImBuf *ibuf, ImageFormatData *imf)
 	else if (imtype == R_IMF_IMTYPE_TIFF) {
 		ibuf->ftype = IMB_FTYPE_TIF;
 
-		if (imf->depth == R_IMF_CHAN_DEPTH_16)
+		if (imf->depth == R_IMF_CHAN_DEPTH_16) {
 			ibuf->foptions.flag |= TIF_16BIT;
+		}
+		if (imf->tiff_codec == R_IMF_TIFF_CODEC_NONE) {
+			ibuf->foptions.flag |= TIF_COMPRESS_NONE;
+		}
+		else if (imf->tiff_codec == R_IMF_TIFF_CODEC_DEFLATE) {
+			ibuf->foptions.flag |= TIF_COMPRESS_DEFLATE;
+		}
+		else if (imf->tiff_codec == R_IMF_TIFF_CODEC_LZW) {
+			ibuf->foptions.flag |= TIF_COMPRESS_LZW;
+		}
+		else if (imf->tiff_codec == R_IMF_TIFF_CODEC_PACKBITS) {
+			ibuf->foptions.flag |= TIF_COMPRESS_PACKBITS;
+		}
 	}
 #endif
 #ifdef WITH_OPENEXR
@@ -2212,7 +2364,6 @@ void BKE_imbuf_write_prepare(ImBuf *ibuf, ImageFormatData *imf)
 		ibuf->ftype = IMB_FTYPE_OPENEXR;
 		if (imf->depth == R_IMF_CHAN_DEPTH_16)
 			ibuf->foptions.flag |= OPENEXR_HALF;
-		ibuf->foptions.flag &= ~OPENEXR_COMPRESS;
 		ibuf->foptions.flag |= (imf->exr_codec & OPENEXR_COMPRESS);
 
 		if (!(imf->flag & R_IMF_FLAG_ZBUF))
@@ -2298,7 +2449,7 @@ void BKE_imbuf_write_prepare(ImBuf *ibuf, ImageFormatData *imf)
 	}
 }
 
-int BKE_imbuf_write(ImBuf *ibuf, const char *name, ImageFormatData *imf)
+int BKE_imbuf_write(ImBuf *ibuf, const char *name, const ImageFormatData *imf)
 {
 	int ok;
 
@@ -2332,12 +2483,15 @@ int BKE_imbuf_write_as(ImBuf *ibuf, const char *name, ImageFormatData *imf,
 		/* note that we are not restoring _all_ settings */
 		ibuf->planes = ibuf_back.planes;
 		ibuf->ftype =  ibuf_back.ftype;
+		ibuf->foptions =  ibuf_back.foptions;
 	}
 
 	return ok;
 }
 
-int BKE_imbuf_write_stamp(Scene *scene, struct RenderResult *rr, ImBuf *ibuf, const char *name, struct ImageFormatData *imf)
+int BKE_imbuf_write_stamp(
+        Scene *scene, struct RenderResult *rr, ImBuf *ibuf, const char *name,
+        const struct ImageFormatData *imf)
 {
 	if (scene && scene->r.stamp & R_STAMP_ALL)
 		BKE_imbuf_stamp_info(rr, ibuf);
@@ -4376,18 +4530,33 @@ void BKE_image_get_size(Image *image, ImageUser *iuser, int *width, int *height)
 	ImBuf *ibuf = NULL;
 	void *lock;
 
-	ibuf = BKE_image_acquire_ibuf(image, iuser, &lock);
+	if (image != NULL) {
+		ibuf = BKE_image_acquire_ibuf(image, iuser, &lock);
+	}
 
 	if (ibuf && ibuf->x > 0 && ibuf->y > 0) {
 		*width = ibuf->x;
 		*height = ibuf->y;
+	}
+	else if (image != NULL && image->type == IMA_TYPE_R_RESULT &&
+	         iuser != NULL && iuser->scene != NULL)
+	{
+		Scene *scene = iuser->scene;
+		*width = (scene->r.xsch * scene->r.size) / 100;
+		*height = (scene->r.ysch * scene->r.size) / 100;
+		if ((scene->r.mode & R_BORDER) && (scene->r.mode & R_CROP)) {
+			*width *= BLI_rctf_size_x(&scene->r.border);
+			*height *= BLI_rctf_size_y(&scene->r.border);
+		}
 	}
 	else {
 		*width  = IMG_SIZE_FALLBACK;
 		*height = IMG_SIZE_FALLBACK;
 	}
 
-	BKE_image_release_ibuf(image, ibuf, lock);
+	if (image != NULL) {
+		BKE_image_release_ibuf(image, ibuf, lock);
+	}
 }
 
 void BKE_image_get_size_fl(Image *image, ImageUser *iuser, float size[2])

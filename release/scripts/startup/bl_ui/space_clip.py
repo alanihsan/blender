@@ -1135,6 +1135,7 @@ class CLIP_PT_tools_grease_pencil_draw(GreasePencilDrawingToolsPanel, Panel):
 class CLIP_PT_tools_grease_pencil_edit(GreasePencilStrokeEditPanel, Panel):
     bl_space_type = 'CLIP_EDITOR'
 
+
 # Grease Pencil stroke sculpting tools
 class CLIP_PT_tools_grease_pencil_sculpt(GreasePencilStrokeSculptPanel, Panel):
     bl_space_type = 'CLIP_EDITOR'
@@ -1185,8 +1186,8 @@ class CLIP_MT_view(Menu):
 
         layout.separator()
         layout.operator("screen.area_dupli")
-        layout.operator("screen.screen_full_area", text="Toggle Maximize Area")
-        layout.operator("screen.screen_full_area").use_hide_panels = True
+        layout.operator("screen.screen_full_area")
+        layout.operator("screen.screen_full_area", text="Toggle Fullscreen Area").use_hide_panels = True
 
 
 class CLIP_MT_clip(Menu):
