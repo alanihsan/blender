@@ -202,22 +202,18 @@ Brush *BKE_brush_copy(Brush *brush)
 	return brushn;
 }
 
-/* not brush itself */
+/** Free (or release) any data used by this brush (does not free the brush itself). */
 void BKE_brush_free(Brush *brush)
 {
-	id_us_min((ID *)brush->mtex.tex);
-	id_us_min((ID *)brush->mask_mtex.tex);
-	id_us_min((ID *)brush->paint_curve);
-
-	if (brush->icon_imbuf)
+	if (brush->icon_imbuf) {
 		IMB_freeImBuf(brush->icon_imbuf);
-
-	BKE_previewimg_free(&(brush->preview));
+	}
 
 	curvemapping_free(brush->curve);
 
-	if (brush->gradient)
-		MEM_freeN(brush->gradient);
+	MEM_SAFE_FREE(brush->gradient);
+
+	BKE_previewimg_free(&(brush->preview));
 }
 
 /**
@@ -852,7 +848,7 @@ int BKE_brush_size_get(const Scene *scene, const Brush *brush)
 	UnifiedPaintSettings *ups = &scene->toolsettings->unified_paint_settings;
 	int size = (ups->flag & UNIFIED_PAINT_SIZE) ? ups->size : brush->size;
 	
-	return (int)((float)size * U.pixelsize);
+	return size;
 }
 
 int BKE_brush_use_locked_size(const Scene *scene, const Brush *brush)

@@ -141,6 +141,11 @@ int count_particles_mod(ParticleSystem *psys, int totgr, int cur)
 
 #define PATH_CACHE_BUF_SIZE 1024
 
+static ParticleCacheKey *pcache_key_segment_endpoint_safe(ParticleCacheKey *key)
+{
+	return (key->segments > 0) ? (key + (key->segments - 1)) : key;
+}
+
 static ParticleCacheKey **psys_alloc_path_cache_buffers(ListBase *bufs, int tot, int totkeys)
 {
 	LinkData *buf;
@@ -371,12 +376,17 @@ static void fluid_free_settings(SPHFluidSettings *fluid)
 		MEM_freeN(fluid); 
 }
 
+/** Free (or release) any data used by this particle settings (does not free the partsett itself). */
 void BKE_particlesettings_free(ParticleSettings *part)
 {
-	MTex *mtex;
 	int a;
-	BKE_animdata_free(&part->id);
+
+	BKE_animdata_free((ID *)part, false);
 	
+	for (a = 0; a < MAX_MTEX; a++) {
+		MEM_SAFE_FREE(part->mtex[a]);
+	}
+
 	if (part->clumpcurve)
 		curvemapping_free(part->clumpcurve);
 	if (part->roughcurve)
@@ -385,21 +395,12 @@ void BKE_particlesettings_free(ParticleSettings *part)
 	free_partdeflect(part->pd);
 	free_partdeflect(part->pd2);
 
-	if (part->effector_weights)
-		MEM_freeN(part->effector_weights);
+	MEM_SAFE_FREE(part->effector_weights);
 
 	BLI_freelistN(&part->dupliweights);
 
 	boid_free_settings(part->boids);
 	fluid_free_settings(part->fluid);
-
-	for (a = 0; a < MAX_MTEX; a++) {
-		mtex = part->mtex[a];
-		if (mtex && mtex->tex)
-			id_us_min(&mtex->tex->id);
-		if (mtex)
-			MEM_freeN(mtex);
-	}
 }
 
 void free_hair(Object *UNUSED(ob), ParticleSystem *psys, int dynamics)
@@ -568,10 +569,7 @@ void psys_free(Object *ob, ParticleSystem *psys)
 		if (!nr)
 			ob->transflag &= ~OB_DUPLIPARTS;
 
-		if (psys->part) {
-			id_us_min(&psys->part->id);
-			psys->part = NULL;
-		}
+		psys->part = NULL;
 
 		BKE_ptcache_free_list(&psys->ptcaches);
 		psys->pointcache = NULL;
@@ -2205,20 +2203,22 @@ static void psys_thread_create_path(ParticleTask *task, struct ChildParticle *cp
 
 		/* modify weights to create parting */
 		if (p_fac > 0.f) {
+			const ParticleCacheKey *key_0_last = pcache_key_segment_endpoint_safe(key[0]);
 			for (w = 0; w < 4; w++) {
-				if (w && weight[w] > 0.f) {
+				if (w && (weight[w] > 0.f)) {
+					const ParticleCacheKey *key_w_last = pcache_key_segment_endpoint_safe(key[w]);
 					float d;
 					if (part->flag & PART_CHILD_LONG_HAIR) {
 						/* For long hair use tip distance/root distance as parting factor instead of root to tip angle. */
 						float d1 = len_v3v3(key[0]->co, key[w]->co);
-						float d2 = len_v3v3((key[0] + key[0]->segments - 1)->co, (key[w] + key[w]->segments - 1)->co);
+						float d2 = len_v3v3(key_0_last->co, key_w_last->co);
 
 						d = d1 > 0.f ? d2 / d1 - 1.f : 10000.f;
 					}
 					else {
 						float v1[3], v2[3];
-						sub_v3_v3v3(v1, (key[0] + key[0]->segments - 1)->co, key[0]->co);
-						sub_v3_v3v3(v2, (key[w] + key[w]->segments - 1)->co, key[w]->co);
+						sub_v3_v3v3(v1, key_0_last->co, key[0]->co);
+						sub_v3_v3v3(v2, key_w_last->co, key[w]->co);
 						normalize_v3(v1);
 						normalize_v3(v2);
 
@@ -4225,8 +4225,8 @@ void psys_make_billboard(ParticleBillboardData *bb, float xvec[3], float yvec[3]
 	/* can happen with bad pointcache or physics calculation
 	 * since this becomes geometry, nan's and inf's crash raytrace code.
 	 * better not allow this. */
-	if ((!finite(bb->vec[0])) || (!finite(bb->vec[1])) || (!finite(bb->vec[2])) ||
-	    (!finite(bb->vel[0])) || (!finite(bb->vel[1])) || (!finite(bb->vel[2])) )
+	if ((!isfinite(bb->vec[0])) || (!isfinite(bb->vec[1])) || (!isfinite(bb->vec[2])) ||
+	    (!isfinite(bb->vel[0])) || (!isfinite(bb->vel[1])) || (!isfinite(bb->vel[2])) )
 	{
 		zero_v3(bb->vec);
 		zero_v3(bb->vel);
