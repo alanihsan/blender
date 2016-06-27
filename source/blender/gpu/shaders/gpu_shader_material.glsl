@@ -3594,6 +3594,18 @@ void node_output_world(vec4 surface, vec4 volume, out vec4 result)
 	result = surface;
 }
 
+/* volume */
+
+void volume_absorption(vec4 color, float density, out vec4 result)
+{
+	result = color * density;
+}
+
+void volume_scatter(vec4 color, float density, float anisotropy, out vec4 result)
+{
+	result = color * density;
+}
+
 /* ********************** matcap style render ******************** */
 
 void material_preview_matcap(vec4 color, sampler2D ima, vec4 N, vec4 mask, out vec4 result)
