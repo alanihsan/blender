@@ -40,6 +40,12 @@ static int node_shader_gpu_output_material(GPUMaterial *mat, bNode *UNUSED(node)
 {
 	GPUNodeLink *outlink;
 
+	/* TODO: find a nice way to select the socket in the glsl shader, for now it
+	 * is just using the surface. */
+	if (in[1].link && !in[0].link) {
+		in[0].link = in[1].link;
+	}
+
 	GPU_stack_link(mat, "node_output_material", in, out, &outlink);
 	GPU_material_output_link(mat, outlink);
 
