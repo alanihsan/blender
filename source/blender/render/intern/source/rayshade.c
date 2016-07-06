@@ -2408,6 +2408,61 @@ static void ray_shadow_jitter(ShadeInput *shi, LampRen *lar, const float lampco[
 			shadfac[3] = 1.0f - fac / div;
 	}
 }
+
+#ifndef M_2PI_F
+#  define M_2PI_F ((float)6.283185307179586476925286766559005768) /* 2*pi */
+#endif
+
+static void to_unit_disk(float *x, float *y)
+{
+	const float phi = M_2PI_F * (*x);
+	const float r = sqrt(*y);
+
+	*x = r * cos(phi);
+	*y = r * sin(phi);
+}
+
+static void make_orthonormals(const float N[3], float a[3], float b[3])
+{
+	if (N[0] != N[1] || N[0] != N[2]) {
+		a[0] = N[2] - N[1];
+		a[1] = N[0] - N[2];
+		a[2] = N[1] - N[0];
+	}
+	else {
+		a[0] =  N[2] - N[1];
+		a[1] =  N[0] + N[2];
+		a[2] = -N[1] - N[0];
+	}
+
+	normalize_v3(a);
+	cross_v3_v3v3(b, N, a);
+}
+
+static void disk_light_sample(float r[3], float v[3], float randu, float randv)
+{
+	float ru[3], rv[3];
+
+	make_orthonormals(v, ru, rv);
+	to_unit_disk(&randu, &randv);
+
+	mul_v3_fl(ru, randu);
+	mul_v3_fl(rv, randv);
+
+	add_v3_v3v3(r, ru, rv);
+}
+
+static void distant_light_sample(float r_dir[3], float D[3], float radius, float randu, float randv)
+{
+	copy_v3_v3(r_dir, D);
+
+	float tmp[3];
+	disk_light_sample(tmp, r_dir, randu, randv);
+	madd_v3_v3fl(r_dir, tmp, radius);
+
+	normalize_v3(r_dir);
+}
+
 /* extern call from shade_lamp_loop */
 void ray_shadow(ShadeInput *shi, LampRen *lar, float shadfac[4])
 {
@@ -2433,7 +2488,20 @@ void ray_shadow(ShadeInput *shi, LampRen *lar, float shadfac[4])
 		isec.last_hit = NULL;
 	}
 	
-	if (lar->type==LA_SUN || lar->type==LA_HEMI) {
+	if (lar->type==LA_SUN) {
+		const float angle = lar->sun_angle / 2.0f;
+		const float radius = tanf(angle);
+		const float randu = 0.5f;
+		const float randv = 0.5f;
+
+		if (radius > 0.0f) {
+			distant_light_sample(lampco, lar->vec, radius, randu, randv);
+		}
+		else {
+			copy_v3_v3(lampco, lar->vec);
+		}
+	}
+	else if (lar->type==LA_HEMI) {
 		/* jitter and QMC sampling add a displace vector to the lamp position
 		 * that's incorrect because a SUN lamp does not has an exact position
 		 * and the displace should be done at the ray vector instead of the
