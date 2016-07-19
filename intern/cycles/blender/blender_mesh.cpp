@@ -18,6 +18,7 @@
 #include "mesh.h"
 #include "object.h"
 #include "scene.h"
+#include "camera.h"
 
 #include "blender_sync.h"
 #include "blender_session.h"
@@ -307,7 +308,7 @@ static void create_mesh_volume_attribute(BL::Object& b_ob,
 	        is_float,
 	        is_linear,
 	        INTERPOLATION_LINEAR,
-	        EXTENSION_REPEAT,
+	        EXTENSION_CLIP,
 	        true);
 }
 
@@ -608,7 +609,7 @@ static void attr_create_ptex_layer_data(Scene *scene, Mesh *mesh, BL::Mesh b_mes
 static void create_mesh(Scene *scene,
                         Mesh *mesh,
                         BL::Mesh& b_mesh,
-                        const vector<uint>& used_shaders)
+                        const vector<Shader*>& used_shaders)
 {
 	/* count vertices and faces */
 	int numverts = b_mesh.vertices.length();
@@ -624,13 +625,12 @@ static void create_mesh(Scene *scene,
 		numtris += (vi[3] == 0)? 1: 2;
 	}
 
-	/* reserve memory */
-	mesh->reserve(numverts, numtris, 0, 0);
+	/* allocate memory */
+	mesh->reserve_mesh(numverts, numtris);
 
 	/* create vertex coordinates and normals */
-	int i = 0;
-	for(b_mesh.vertices.begin(v); v != b_mesh.vertices.end(); ++v, ++i)
-		mesh->verts[i] = get_float3(v->co());
+	for(b_mesh.vertices.begin(v); v != b_mesh.vertices.end(); ++v)
+		mesh->add_vertex(get_float3(v->co()));
 
 	Attribute *attr_N = mesh->attributes.add(ATTR_STD_VERTEX_NORMAL);
 	float3 *N = attr_N->data_float3();
@@ -660,13 +660,12 @@ static void create_mesh(Scene *scene,
 	vector<int> nverts(numfaces);
 	vector<int> face_split_pattern(numfaces);
 	vector<int> face_flags(numfaces, FACE_FLAG_NONE);
-	int fi = 0, ti = 0;
+	int fi = 0;
 
 	for(b_mesh.tessfaces.begin(f); f != b_mesh.tessfaces.end(); ++f, ++fi) {
 		int4 vi = get_int4(f->vertices_raw());
 		int n = (vi[3] == 0)? 3: 4;
-		int mi = clamp(f->material_index(), 0, used_shaders.size()-1);
-		int shader = used_shaders[mi];
+		int shader = clamp(f->material_index(), 0, used_shaders.size()-1);
 		bool smooth = f->use_smooth() || use_loop_normals;
 
 		/* split vertices if normal is different
@@ -711,16 +710,19 @@ static void create_mesh(Scene *scene,
 			if(is_zero(cross(mesh->verts[vi[1]] - mesh->verts[vi[0]], mesh->verts[vi[2]] - mesh->verts[vi[0]])) ||
 			   is_zero(cross(mesh->verts[vi[2]] - mesh->verts[vi[0]], mesh->verts[vi[3]] - mesh->verts[vi[0]])))
 			{
-				mesh->set_triangle(ti++, vi[0], vi[1], vi[3], shader, smooth);
-				mesh->set_triangle(ti++, vi[2], vi[3], vi[1], shader, smooth);
+				// TODO(mai): order here is probably wrong
+				mesh->add_triangle(vi[0], vi[1], vi[3], shader, smooth, true);
+				mesh->add_triangle(vi[2], vi[3], vi[1], shader, smooth, true);
 				face_flags[fi] |= FACE_FLAG_DIVIDE_24;
 			}
 			else {
-				mesh->set_triangle(ti++, vi[0], vi[1], vi[2], shader, smooth);
-				mesh->set_triangle(ti++, vi[0], vi[2], vi[3], shader, smooth);
+				mesh->add_triangle(vi[0], vi[1], vi[2], shader, smooth, true);
+				mesh->add_triangle(vi[0], vi[2], vi[3], shader, smooth, true);
 				face_flags[fi] |= FACE_FLAG_DIVIDE_13;
 			}
 		}
+		else
+			mesh->add_triangle(vi[0], vi[1], vi[2], shader, smooth, false);
 
 		nverts[fi] = n;
 	}
@@ -750,51 +752,67 @@ static void create_mesh(Scene *scene,
 
 static void create_subd_mesh(Scene *scene,
                              Mesh *mesh,
+                             BL::Object& b_ob,
                              BL::Mesh& b_mesh,
                              PointerRNA *cmesh,
-                             const vector<uint>& used_shaders)
+                             const vector<Shader*>& used_shaders,
+                             float dicing_rate,
+                             int max_subdivisions)
 {
-	/* create subd mesh */
-	SubdMesh sdmesh;
+	Mesh basemesh;
+	create_mesh(scene, &basemesh, b_mesh, used_shaders);
 
-	/* create vertices */
-	BL::Mesh::vertices_iterator v;
+	SubdParams sdparams(mesh, 0, true, false);
+	sdparams.dicing_rate = max(0.1f, RNA_float_get(cmesh, "dicing_rate") * dicing_rate);
+	sdparams.max_level = max_subdivisions;
 
-	for(b_mesh.vertices.begin(v); v != b_mesh.vertices.end(); ++v)
-		sdmesh.add_vert(get_float3(v->co()));
-
-	/* create faces */
-	BL::Mesh::tessfaces_iterator f;
-
-	for(b_mesh.tessfaces.begin(f); f != b_mesh.tessfaces.end(); ++f) {
-		int4 vi = get_int4(f->vertices_raw());
-		int n = (vi[3] == 0) ? 3: 4;
-		//int shader = used_shaders[f->material_index()];
-
-		if(n == 4)
-			sdmesh.add_face(vi[0], vi[1], vi[2], vi[3]);
-		else
-			sdmesh.add_face(vi[0], vi[1], vi[2]);
-	}
-
-	/* finalize subd mesh */
-	sdmesh.finish();
-
-	/* parameters */
-	bool need_ptex = mesh->need_attribute(scene, ATTR_STD_PTEX_FACE_ID) ||
-	                 mesh->need_attribute(scene, ATTR_STD_PTEX_UV);
-
-	SubdParams sdparams(mesh, used_shaders[0], true, need_ptex);
-	sdparams.dicing_rate = RNA_float_get(cmesh, "dicing_rate");
-	//scene->camera->update();
-	//sdparams.camera = scene->camera;
+	scene->camera->update();
+	sdparams.camera = scene->camera;
+	sdparams.objecttoworld = get_transform(b_ob.matrix_world());
 
 	/* tesselate */
 	DiagSplit dsplit(sdparams);
-	sdmesh.tessellate(&dsplit);
+	basemesh.tessellate(&dsplit);
 }
 
 /* Sync */
+
+static void sync_mesh_fluid_motion(BL::Object& b_ob, Scene *scene, Mesh *mesh)
+{
+	if(scene->need_motion() == Scene::MOTION_NONE)
+		return;
+
+	BL::DomainFluidSettings b_fluid_domain = object_fluid_domain_find(b_ob);
+
+	if(!b_fluid_domain)
+		return;
+
+	/* If the mesh has modifiers following the fluid domain we can't export motion. */
+	if(b_fluid_domain.fluid_mesh_vertices.length() != mesh->verts.size())
+		return;
+
+	/* Find or add attribute */
+	float3 *P = &mesh->verts[0];
+	Attribute *attr_mP = mesh->attributes.find(ATTR_STD_MOTION_VERTEX_POSITION);
+
+	if(!attr_mP) {
+		attr_mP = mesh->attributes.add(ATTR_STD_MOTION_VERTEX_POSITION);
+	}
+
+	/* Only export previous and next frame, we don't have any in between data. */
+	float motion_times[2] = {-1.0f, 1.0f};
+	for (int step = 0; step < 2; step++) {
+		float relative_time = motion_times[step] * scene->motion_shutter_time() * 0.5f;
+		float3 *mP = attr_mP->data_float3() + step*mesh->verts.size();
+
+		BL::DomainFluidSettings::fluid_mesh_vertices_iterator fvi;
+		int i = 0;
+
+		for(b_fluid_domain.fluid_mesh_vertices.begin(fvi); fvi != b_fluid_domain.fluid_mesh_vertices.end(); ++fvi, ++i) {
+			mP[i] = P[i] + get_float3(fvi->velocity()) * relative_time;
+		}
+	}
+}
 
 Mesh *BlenderSync::sync_mesh(BL::Object& b_ob,
                              bool object_updated,
@@ -814,7 +832,7 @@ Mesh *BlenderSync::sync_mesh(BL::Object& b_ob,
 	BL::Material material_override = render_layer.material_override;
 
 	/* find shader indices */
-	vector<uint> used_shaders;
+	vector<Shader*> used_shaders;
 
 	BL::Object::material_slots_iterator slot;
 	for(b_ob.material_slots.begin(slot); slot != b_ob.material_slots.end(); ++slot) {
@@ -856,8 +874,8 @@ Mesh *BlenderSync::sync_mesh(BL::Object& b_ob,
 			 * because the shader needs different mesh attributes */
 			bool attribute_recalc = false;
 
-			foreach(uint shader, mesh->used_shaders)
-				if(scene->shaders[shader]->need_update_attributes)
+			foreach(Shader *shader, mesh->used_shaders)
+				if(shader->need_update_attributes)
 					attribute_recalc = true;
 
 			if(!attribute_recalc)
@@ -874,11 +892,12 @@ Mesh *BlenderSync::sync_mesh(BL::Object& b_ob,
 	/* create derived mesh */
 	PointerRNA cmesh = RNA_pointer_get(&b_ob_data.ptr, "cycles");
 
-	vector<Mesh::Triangle> oldtriangle = mesh->triangles;
+	array<int> oldtriangle = mesh->triangles;
 	
 	/* compares curve_keys rather than strands in order to handle quick hair
 	 * adjustments in dynamic BVH - other methods could probably do this better*/
-	vector<float4> oldcurve_keys = mesh->curve_keys;
+	array<float3> oldcurve_keys = mesh->curve_keys;
+	array<float> oldcurve_radius = mesh->curve_radius;
 
 	mesh->clear();
 	mesh->used_shaders = used_shaders;
@@ -899,8 +918,9 @@ Mesh *BlenderSync::sync_mesh(BL::Object& b_ob,
 
 		if(b_mesh) {
 			if(render_layer.use_surfaces && !hide_tris) {
-				if(cmesh.data && experimental && RNA_boolean_get(&cmesh, "use_subdivision"))
-					create_subd_mesh(scene, mesh, b_mesh, &cmesh, used_shaders);
+				if(cmesh.data && experimental && RNA_enum_get(&cmesh, "subdivision_type"))
+					create_subd_mesh(scene, mesh, b_ob, b_mesh, &cmesh, used_shaders,
+					                 dicing_rate, max_subdivisions);
 				else
 					create_mesh(scene, mesh, b_mesh, used_shaders);
 
@@ -915,14 +935,17 @@ Mesh *BlenderSync::sync_mesh(BL::Object& b_ob,
 			}
 
 			/* free derived mesh */
-			b_data.meshes.remove(b_mesh);
+			b_data.meshes.remove(b_mesh, false);
 		}
 	}
 	mesh->geometry_flags = requested_geometry_flags;
 
 	/* displacement method */
 	if(cmesh.data) {
-		const int method = RNA_enum_get(&cmesh, "displacement_method");
+		const int method = get_enum(cmesh,
+		                            "displacement_method",
+		                            Mesh::DISPLACE_NUM_METHODS,
+		                            Mesh::DISPLACE_BUMP);
 
 		if(method == 0 || !experimental)
 			mesh->displacement_method = Mesh::DISPLACE_BUMP;
@@ -932,20 +955,30 @@ Mesh *BlenderSync::sync_mesh(BL::Object& b_ob,
 			mesh->displacement_method = Mesh::DISPLACE_BOTH;
 	}
 
+	/* fluid motion */
+	sync_mesh_fluid_motion(b_ob, scene, mesh);
+
 	/* tag update */
 	bool rebuild = false;
 
 	if(oldtriangle.size() != mesh->triangles.size())
 		rebuild = true;
 	else if(oldtriangle.size()) {
-		if(memcmp(&oldtriangle[0], &mesh->triangles[0], sizeof(Mesh::Triangle)*oldtriangle.size()) != 0)
+		if(memcmp(&oldtriangle[0], &mesh->triangles[0], sizeof(int)*oldtriangle.size()) != 0)
 			rebuild = true;
 	}
 
 	if(oldcurve_keys.size() != mesh->curve_keys.size())
 		rebuild = true;
 	else if(oldcurve_keys.size()) {
-		if(memcmp(&oldcurve_keys[0], &mesh->curve_keys[0], sizeof(float4)*oldcurve_keys.size()) != 0)
+		if(memcmp(&oldcurve_keys[0], &mesh->curve_keys[0], sizeof(float3)*oldcurve_keys.size()) != 0)
+			rebuild = true;
+	}
+
+	if(oldcurve_radius.size() != mesh->curve_radius.size())
+		rebuild = true;
+	else if(oldcurve_radius.size()) {
+		if(memcmp(&oldcurve_radius[0], &mesh->curve_radius[0], sizeof(float)*oldcurve_radius.size()) != 0)
 			rebuild = true;
 	}
 	
@@ -1014,6 +1047,11 @@ void BlenderSync::sync_mesh_motion(BL::Object& b_ob,
 	 * would need a more extensive check to see which objects are animated */
 	BL::Mesh b_mesh(PointerRNA_NULL);
 
+	/* fluid motion is exported immediate with mesh, skip here */
+	BL::DomainFluidSettings b_fluid_domain = object_fluid_domain_find(b_ob);
+	if (b_fluid_domain)
+		return;
+
 	if(ccl::BKE_object_is_deform_modified(b_ob, b_scene, preview)) {
 		/* get derived mesh */
 		b_mesh = object_to_mesh(b_data, b_ob, b_scene, true, !preview, false);
@@ -1042,8 +1080,8 @@ void BlenderSync::sync_mesh_motion(BL::Object& b_ob,
 			Attribute *attr_mP = mesh->curve_attributes.find(ATTR_STD_MOTION_VERTEX_POSITION);
 
 			if(attr_mP) {
-				float4 *keys = &mesh->curve_keys[0];
-				memcpy(attr_mP->data_float4() + time_index*numkeys, keys, sizeof(float4)*numkeys);
+				float3 *keys = &mesh->curve_keys[0];
+				memcpy(attr_mP->data_float3() + time_index*numkeys, keys, sizeof(float3)*numkeys);
 			}
 		}
 
@@ -1086,7 +1124,12 @@ void BlenderSync::sync_mesh_motion(BL::Object& b_ob,
 			   memcmp(mP, &mesh->verts[0], sizeof(float3)*numverts) == 0)
 			{
 				/* no motion, remove attributes again */
-				VLOG(1) << "No actual deformation motion for object " << b_ob.name();
+				if(b_mesh.vertices.length() != numverts) {
+					VLOG(1) << "Topology differs, disabling motion blur.";
+				}
+				else {
+					VLOG(1) << "No actual deformation motion for object " << b_ob.name();
+				}
 				mesh->attributes.remove(ATTR_STD_MOTION_VERTEX_POSITION);
 				if(attr_mN)
 					mesh->attributes.remove(ATTR_STD_MOTION_VERTEX_NORMAL);
@@ -1112,7 +1155,7 @@ void BlenderSync::sync_mesh_motion(BL::Object& b_ob,
 		sync_curves(mesh, b_mesh, b_ob, true, time_index);
 
 	/* free derived mesh */
-	b_data.meshes.remove(b_mesh);
+	b_data.meshes.remove(b_mesh, false);
 }
 
 CCL_NAMESPACE_END

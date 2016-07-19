@@ -80,9 +80,12 @@ def load_image(imagepath,
     # Utility Functions
 
     def _image_load_placeholder(path):
-        name = bpy.path.basename(path)
-        if type(name) == bytes:
-            name = name.decode("utf-8", "replace")
+        name = path
+        if type(path) is str:
+            name = name.encode("utf-8", "replace")
+        name = name.decode("utf-8", "replace")
+        name = os.path.basename(name)
+
         image = bpy.data.images.new(name, 128, 128)
         # allow the path to be resolved later
         image.filepath = path
@@ -94,6 +97,10 @@ def load_image(imagepath,
 
         if convert_callback:
             path = convert_callback(path)
+
+        # Ensure we're not relying on the 'CWD' to resolve the path.
+        if not os.path.isabs(path):
+            path = os.path.abspath(path)
 
         try:
             image = bpy.data.images.load(path, check_existing)
@@ -142,6 +149,8 @@ def load_image(imagepath,
                         yield os.path.join(dirpath, filename)
 
     # -------------------------------------------------------------------------
+
+    imagepath = bpy.path.native_pathsep(imagepath)
 
     if verbose:
         print("load_image('%s', '%s', ...)" % (imagepath, dirname))

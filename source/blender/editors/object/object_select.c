@@ -577,7 +577,6 @@ static bool select_grouped_parent(bContext *C) /* Makes parent active and de-sel
 
 	/* can be NULL if parent in other scene */
 	if (baspar && BASE_SELECTABLE(v3d, baspar)) {
-		ED_base_object_select(basact, BA_DESELECT);
 		ED_base_object_select(baspar, BA_SELECT);
 		ED_base_object_activate(C, baspar);
 		changed = true;
@@ -1297,7 +1296,7 @@ void OBJECT_OT_select_less(wmOperatorType *ot)
 static int object_select_random_exec(bContext *C, wmOperator *op)
 {	
 	const float randfac = RNA_float_get(op->ptr, "percent") / 100.0f;
-	const int seed = RNA_int_get(op->ptr, "seed");
+	const int seed = WM_operator_properties_select_random_seed_increment_get(op);
 	const bool select = (RNA_enum_get(op->ptr, "action") == SEL_SELECT);
 
 	RNG *rng = BLI_rng_new_srandom(seed);

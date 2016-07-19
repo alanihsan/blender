@@ -246,22 +246,19 @@ static int map_insert_vert(PBVH *bvh, GHash *map,
 	void *key, **value_p;
 
 	key = SET_INT_IN_POINTER(vertex);
-	value_p = BLI_ghash_lookup_p(map, key);
-
-	if (value_p == NULL) {
-		void *value;
-		if (BLI_BITMAP_TEST(bvh->vert_bitmap, vertex)) {
-			value = SET_INT_IN_POINTER(~(*face_verts));
-			++(*face_verts);
+	if (!BLI_ghash_ensure_p(map, key, &value_p)) {
+		int value_i;
+		if (BLI_BITMAP_TEST(bvh->vert_bitmap, vertex) == 0) {
+			BLI_BITMAP_ENABLE(bvh->vert_bitmap, vertex);
+			value_i = *uniq_verts;
+			(*uniq_verts)++;
 		}
 		else {
-			BLI_BITMAP_ENABLE(bvh->vert_bitmap, vertex);
-			value = SET_INT_IN_POINTER(*uniq_verts);
-			++(*uniq_verts);
+			value_i = ~(*face_verts);
+			(*face_verts)++;
 		}
-		
-		BLI_ghash_insert(map, key, value);
-		return GET_INT_FROM_POINTER(value);
+		*value_p = SET_INT_IN_POINTER(value_i);
+		return value_i;
 	}
 	else {
 		return GET_INT_FROM_POINTER(*value_p);
@@ -279,16 +276,14 @@ static void build_mesh_leaf_node(PBVH *bvh, PBVHNode *node)
 	/* reserve size is rough guess */
 	GHash *map = BLI_ghash_int_new_ex("build_mesh_leaf_node gh", 2 * totface);
 
-	int (*face_vert_indices)[4] = MEM_callocN(sizeof(int[4]) * totface,
+	int (*face_vert_indices)[3] = MEM_mallocN(sizeof(int[3]) * totface,
 	                                          "bvh node face vert indices");
 
-	node->face_vert_indices = (const int (*)[4])face_vert_indices;
+	node->face_vert_indices = (const int (*)[3])face_vert_indices;
 
 	for (int i = 0; i < totface; ++i) {
 		const MLoopTri *lt = &bvh->looptri[node->prim_indices[i]];
-		const int sides = 3;
-
-		for (int j = 0; j < sides; ++j) {
+		for (int j = 0; j < 3; ++j) {
 			face_vert_indices[i][j] =
 			        map_insert_vert(bvh, map, &node->face_verts,
 			                        &node->uniq_verts, bvh->mloop[lt->tri[j]].v);
@@ -502,7 +497,7 @@ static void pbvh_build(PBVH *bvh, BB *cb, BBC *prim_bbc, int totprim)
 		bvh->totprim = totprim;
 		if (bvh->nodes) MEM_freeN(bvh->nodes);
 		if (bvh->prim_indices) MEM_freeN(bvh->prim_indices);
-		bvh->prim_indices = MEM_callocN(sizeof(int) * totprim,
+		bvh->prim_indices = MEM_mallocN(sizeof(int) * totprim,
 		                                "bvh prim indices");
 		for (int i = 0; i < totprim; ++i)
 			bvh->prim_indices[i] = i;
@@ -640,6 +635,7 @@ void BKE_pbvh_free(PBVH *bvh)
 				BLI_gset_free(node->bm_other_verts, NULL);
 		}
 	}
+	GPU_free_pbvh_buffer_multires(&bvh->grid_common_gpu_buffer);
 
 	if (bvh->deformed) {
 		if (bvh->verts) {
@@ -692,8 +688,7 @@ static void pbvh_stack_push(PBVHIter *iter, PBVHNode *node, bool revisiting)
 {
 	if (UNLIKELY(iter->stacksize == iter->stackspace)) {
 		iter->stackspace *= 2;
-
-		if (iter->stackspace != STACK_FIXED_DEPTH) {
+		if (iter->stackspace != (STACK_FIXED_DEPTH * 2)) {
 			iter->stack = MEM_reallocN(iter->stack, sizeof(PBVHStack) * iter->stackspace);
 		}
 		else {
@@ -982,16 +977,7 @@ static void pbvh_update_normals_accum_task_cb(void *userdata, const int n)
 					 *       Not exact equivalent though, since atomicity is only ensured for one component
 					 *       of the vector at a time, but here it shall not make any sensible difference. */
 					for (int k = 3; k--; ) {
-						/* Atomic float addition.
-						 * Note that since collision are unlikely, loop will nearly always run once. */
-						float oldval, newval;
-						uint32_t prevval;
-						do {
-							oldval = vnors[v][k];
-							newval = oldval + fn[k];
-							prevval = atomic_cas_uint32(
-							              (uint32_t *)&vnors[v][k], *(uint32_t *)(&oldval), *(uint32_t *)(&newval));
-						} while (UNLIKELY(prevval != *(uint32_t *)(&oldval)));
+						atomic_add_fl(&vnors[v][k], fn[k]);
 					}
 				}
 			}
@@ -1112,7 +1098,7 @@ static void pbvh_update_draw_buffers(PBVH *bvh, PBVHNode **nodes, int totnode)
 					                           node->totprim,
 					                           bvh->grid_hidden,
 					                           bvh->gridkey.grid_size,
-					                           &bvh->gridkey);
+					                           &bvh->gridkey, &bvh->grid_common_gpu_buffer);
 					break;
 				case PBVH_FACES:
 					node->draw_buffers =
@@ -1267,8 +1253,7 @@ void BKE_pbvh_get_grid_updates(PBVH *bvh, bool clear, void ***r_gridfaces, int *
 		if (node->flag & PBVH_UpdateNormals) {
 			for (unsigned i = 0; i < node->totprim; ++i) {
 				void *face = bvh->gridfaces[node->prim_indices[i]];
-				if (!BLI_gset_haskey(face_set, face))
-					BLI_gset_insert(face_set, face);
+				BLI_gset_add(face_set, face);
 			}
 
 			if (clear)
@@ -1474,6 +1459,30 @@ void BKE_pbvh_node_get_bm_orco_data(
 	*r_orco_coords = node->bm_orco;
 }
 
+/**
+ * \note doing a full search on all vertices here seems expensive,
+ * however this is important to avoid having to recalculate boundbox & sync the buffers to the GPU
+ * (which is far more expensive!) See: T47232.
+ */
+bool BKE_pbvh_node_vert_update_check_any(PBVH *bvh, PBVHNode *node)
+{
+	BLI_assert(bvh->type == PBVH_FACES);
+	const int *verts = node->vert_indices;
+	const int totvert = node->uniq_verts + node->face_verts;
+
+	for (int i = 0; i < totvert; ++i) {
+		const int v = verts[i];
+		const MVert *mvert = &bvh->verts[v];
+
+		if (mvert->flag & ME_VERT_PBVH_UPDATE) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+
 /********************************* Raycast ***********************************/
 
 typedef struct {
@@ -1484,12 +1493,18 @@ typedef struct {
 static bool ray_aabb_intersect(PBVHNode *node, void *data_v)
 {
 	RaycastData *rcd = data_v;
-	float bb_min[3], bb_max[3];
+	const float *bb_min, *bb_max;
 
-	if (rcd->original)
-		BKE_pbvh_node_get_original_BB(node, bb_min, bb_max);
-	else
-		BKE_pbvh_node_get_BB(node, bb_min, bb_max);
+	if (rcd->original) {
+		/* BKE_pbvh_node_get_original_BB */
+		bb_min = node->orig_vb.bmin;
+		bb_max = node->orig_vb.bmax;
+	}
+	else {
+		/* BKE_pbvh_node_get_BB */
+		bb_min = node->vb.bmin;
+		bb_max = node->vb.bmax;
+	}
 
 	return isect_ray_aabb_v3(&rcd->ray, bb_min, bb_max, &node->tmin);
 }
@@ -1789,17 +1804,21 @@ static PlaneAABBIsect test_planes_aabb(const float bb_min[3],
 
 bool BKE_pbvh_node_planes_contain_AABB(PBVHNode *node, void *data)
 {
-	float bb_min[3], bb_max[3];
+	const float *bb_min, *bb_max;
+	/* BKE_pbvh_node_get_BB */
+	bb_min = node->vb.bmin;
+	bb_max = node->vb.bmax;
 	
-	BKE_pbvh_node_get_BB(node, bb_min, bb_max);
 	return test_planes_aabb(bb_min, bb_max, data) != ISECT_OUTSIDE;
 }
 
 bool BKE_pbvh_node_planes_exclude_AABB(PBVHNode *node, void *data)
 {
-	float bb_min[3], bb_max[3];
+	const float *bb_min, *bb_max;
+	/* BKE_pbvh_node_get_BB */
+	bb_min = node->vb.bmin;
+	bb_max = node->vb.bmax;
 	
-	BKE_pbvh_node_get_BB(node, bb_min, bb_max);
 	return test_planes_aabb(bb_min, bb_max, data) != ISECT_INSIDE;
 }
 
@@ -1914,8 +1933,11 @@ void BKE_pbvh_apply_vertCos(PBVH *pbvh, float (*vertCos)[3])
 		MVert *mvert = pbvh->verts;
 		/* copy new verts coords */
 		for (int a = 0; a < pbvh->totvert; ++a, ++mvert) {
-			copy_v3_v3(mvert->co, vertCos[a]);
-			mvert->flag |= ME_VERT_PBVH_UPDATE;
+			/* no need for float comparison here (memory is exactly equal or not) */
+			if (memcmp(mvert->co, vertCos[a], sizeof(float[3])) != 0) {
+				copy_v3_v3(mvert->co, vertCos[a]);
+				mvert->flag |= ME_VERT_PBVH_UPDATE;
+			}
 		}
 
 		/* coordinates are new -- normals should also be updated */

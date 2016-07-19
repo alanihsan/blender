@@ -230,7 +230,7 @@ static void realloc_particles(ParticleSimulationData *sim, int new_totpart)
 				newboids= MEM_callocN(totpart*sizeof(BoidParticle), "boid particles");
 
 				if (newboids == NULL) {
-					 /* allocation error! */
+					/* allocation error! */
 					if (newpars)
 						MEM_freeN(newpars);
 					return;
@@ -1584,12 +1584,14 @@ static void sph_evaluate_func(BVHTree *tree, ParticleSystem **psys, float co[3],
 		}
 	}
 }
-static void sph_density_accum_cb(void *userdata, int index, float squared_dist)
+static void sph_density_accum_cb(void *userdata, int index, const float co[3], float squared_dist)
 {
 	SPHRangeData *pfr = (SPHRangeData *)userdata;
 	ParticleData *npa = pfr->npsys->particles + index;
 	float q;
 	float dist;
+
+	UNUSED_VARS(co);
 
 	if (npa == pfr->pa || squared_dist < FLT_EPSILON)
 		return;
@@ -1767,7 +1769,7 @@ static void sph_force_cb(void *sphdata_v, ParticleKey *state, float *force, floa
 	sphdata->pass++;
 }
 
-static void sphclassical_density_accum_cb(void *userdata, int index, float UNUSED(squared_dist))
+static void sphclassical_density_accum_cb(void *userdata, int index, const float co[3], float UNUSED(squared_dist))
 {
 	SPHRangeData *pfr = (SPHRangeData *)userdata;
 	ParticleData *npa = pfr->npsys->particles + index;
@@ -1779,7 +1781,7 @@ static void sphclassical_density_accum_cb(void *userdata, int index, float UNUSE
 	/* Exclude particles that are more than 2h away. Can't use squared_dist here
 	 * because it is not accurate enough. Use current state, i.e. the output of
 	 * basic_integrate() - z0r */
-	sub_v3_v3v3(vec, npa->state.co, pfr->pa->state.co);
+	sub_v3_v3v3(vec, npa->state.co, co);
 	rij = len_v3(vec);
 	rij_h = rij / pfr->h;
 	if (rij_h > 2.0f)
@@ -1798,7 +1800,7 @@ static void sphclassical_density_accum_cb(void *userdata, int index, float UNUSE
 	pfr->data[1] += q / npa->sphdensity;
 }
 
-static void sphclassical_neighbour_accum_cb(void *userdata, int index, float UNUSED(squared_dist))
+static void sphclassical_neighbour_accum_cb(void *userdata, int index, const float co[3], float UNUSED(squared_dist))
 {
 	SPHRangeData *pfr = (SPHRangeData *)userdata;
 	ParticleData *npa = pfr->npsys->particles + index;
@@ -1811,7 +1813,7 @@ static void sphclassical_neighbour_accum_cb(void *userdata, int index, float UNU
 	/* Exclude particles that are more than 2h away. Can't use squared_dist here
 	 * because it is not accurate enough. Use current state, i.e. the output of
 	 * basic_integrate() - z0r */
-	sub_v3_v3v3(vec, npa->state.co, pfr->pa->state.co);
+	sub_v3_v3v3(vec, npa->state.co, co);
 	rij = len_v3(vec);
 	rij_h = rij / pfr->h;
 	if (rij_h > 2.0f)
@@ -2883,7 +2885,7 @@ static void collision_check(ParticleSimulationData *sim, int p, float dfra, floa
 /*			Hair								*/
 /************************************************/
 /* check if path cache or children need updating and do it if needed */
-static void psys_update_path_cache(ParticleSimulationData *sim, float cfra)
+static void psys_update_path_cache(ParticleSimulationData *sim, float cfra, const bool use_render_params)
 {
 	ParticleSystem *psys = sim->psys;
 	ParticleSettings *part = psys->part;
@@ -2907,7 +2909,7 @@ static void psys_update_path_cache(ParticleSimulationData *sim, float cfra)
 				distribute_particles(sim, PART_FROM_CHILD);
 
 				if (part->childtype==PART_CHILD_FACES && part->parents != 0.0f)
-					psys_find_parents(sim);
+					psys_find_parents(sim, use_render_params);
 			}
 		}
 		else
@@ -2945,7 +2947,7 @@ static void psys_update_path_cache(ParticleSimulationData *sim, float cfra)
 	}
 
 	if (!skip) {
-		psys_cache_paths(sim, cfra);
+		psys_cache_paths(sim, cfra, use_render_params);
 
 		/* for render, child particle paths are computed on the fly */
 		if (part->childtype) {
@@ -2955,7 +2957,7 @@ static void psys_update_path_cache(ParticleSimulationData *sim, float cfra)
 				skip = 1;
 
 			if (!skip)
-				psys_cache_child_paths(sim, cfra, 0);
+				psys_cache_child_paths(sim, cfra, 0, use_render_params);
 		}
 	}
 	else if (psys->pathcache)
@@ -3191,7 +3193,7 @@ static void do_hair_dynamics(ParticleSimulationData *sim)
 	/* restore cloth effector weights */
 	psys->clmd->sim_parms->effector_weights = clmd_effweights;
 }
-static void hair_step(ParticleSimulationData *sim, float cfra)
+static void hair_step(ParticleSimulationData *sim, float cfra, const bool use_render_params)
 {
 	ParticleSystem *psys = sim->psys;
 	ParticleSettings *part = psys->part;
@@ -3223,7 +3225,7 @@ static void hair_step(ParticleSimulationData *sim, float cfra)
 
 	/* following lines were removed r29079 but cause bug [#22811], see report for details */
 	psys_update_effectors(sim);
-	psys_update_path_cache(sim, cfra);
+	psys_update_path_cache(sim, cfra, use_render_params);
 
 	psys->flag |= PSYS_HAIR_UPDATED;
 }
@@ -3289,15 +3291,20 @@ static const float TIMESTEP_EXPANSION_TOLERANCE = 1.5f;
  * step, after the velocity has been updated. element_size defines the scale of
  * the simulation, and is typically the distance to neighboring particles. */
 static void update_courant_num(ParticleSimulationData *sim, ParticleData *pa,
-                               float dtime, SPHData *sphdata)
+                               float dtime, SPHData *sphdata, SpinLock *spin)
 {
 	float relative_vel[3];
-	float speed;
 
 	sub_v3_v3v3(relative_vel, pa->prev_state.vel, sphdata->flow);
-	speed = len_v3(relative_vel);
-	if (sim->courant_num < speed * dtime / sphdata->element_size)
-		sim->courant_num = speed * dtime / sphdata->element_size;
+
+	const float courant_num = len_v3(relative_vel) * dtime / sphdata->element_size;
+	if (sim->courant_num < courant_num) {
+		BLI_spin_lock(spin);
+		if (sim->courant_num < courant_num) {
+			sim->courant_num = courant_num;
+		}
+		BLI_spin_unlock(spin);
+	}
 }
 static float get_base_time_step(ParticleSettings *part)
 {
@@ -3345,7 +3352,7 @@ typedef struct DynamicStepSolverTaskData {
 	float timestep;
 	float dtime;
 
-	ThreadMutex mutex;
+	SpinLock spin;
 } DynamicStepSolverTaskData;
 
 static void dynamics_step_sph_ddr_task_cb_ex(
@@ -3378,13 +3385,12 @@ static void dynamics_step_sph_ddr_task_cb_ex(
 	basic_rotate(part, pa, pa->state.time, data->timestep);
 
 	if (part->time_flag & PART_TIME_AUTOSF) {
-		BLI_mutex_lock(&data->mutex);
-		update_courant_num(sim, pa, data->dtime, sphdata);
-		BLI_mutex_unlock(&data->mutex);
+		update_courant_num(sim, pa, data->dtime, sphdata, &data->spin);
 	}
 }
 
-static void dynamics_step_sph_classical_basic_integrate_task_cb(void *userdata, const int p)
+static void dynamics_step_sph_classical_basic_integrate_task_cb_ex(
+        void *userdata,  void *UNUSED(userdata_chunk), const int p, const int UNUSED(thread_id))
 {
 	DynamicStepSolverTaskData *data = userdata;
 	ParticleSimulationData *sim = data->sim;
@@ -3444,9 +3450,7 @@ static void dynamics_step_sph_classical_integrate_task_cb_ex(
 	basic_rotate(part, pa, pa->state.time, data->timestep);
 
 	if (part->time_flag & PART_TIME_AUTOSF) {
-		BLI_mutex_lock(&data->mutex);
-		update_courant_num(sim, pa, data->dtime, sphdata);
-		BLI_mutex_unlock(&data->mutex);
+		update_courant_num(sim, pa, data->dtime, sphdata, &data->spin);
 	}
 }
 
@@ -3508,8 +3512,10 @@ static void dynamics_step(ParticleSimulationData *sim, float cfra)
 			boids_precalc_rules(part, cfra);
 
 			for (; pt; pt=pt->next) {
-				if (pt->ob)
-					psys_update_particle_tree(BLI_findlink(&pt->ob->particlesystem, pt->psys-1), cfra);
+				ParticleSystem *psys_target = psys_get_target_system(sim->ob, pt);
+				if (psys_target && psys_target != psys) {
+					psys_update_particle_tree(psys_target, cfra);
+				}
 			}
 			break;
 		}
@@ -3610,7 +3616,7 @@ static void dynamics_step(ParticleSimulationData *sim, float cfra)
 			    .sim = sim, .cfra = cfra, .timestep = timestep, .dtime = dtime,
 			};
 
-			BLI_mutex_init(&task_data.mutex);
+			BLI_spin_init(&task_data.spin);
 
 			if (part->fluid->solver == SPH_SOLVER_DDR) {
 				/* Apply SPH forces using double-density relaxation algorithm
@@ -3618,7 +3624,7 @@ static void dynamics_step(ParticleSimulationData *sim, float cfra)
 
 				BLI_task_parallel_range_ex(
 				            0, psys->totpart, &task_data, &sphdata, sizeof(sphdata),
-				            dynamics_step_sph_ddr_task_cb_ex, psys->totpart > 100, false);
+				            dynamics_step_sph_ddr_task_cb_ex, psys->totpart > 100, true);
 
 				sph_springs_modify(psys, timestep);
 			}
@@ -3628,24 +3634,24 @@ static void dynamics_step(ParticleSimulationData *sim, float cfra)
 				 * and Monaghan). Note that, unlike double-density relaxation,
 				 * this algorithm is separated into distinct loops. */
 
-				BLI_task_parallel_range(
-				            0, psys->totpart, &task_data,
-				            dynamics_step_sph_classical_basic_integrate_task_cb, psys->totpart > 100);
+				BLI_task_parallel_range_ex(
+				            0, psys->totpart, &task_data, NULL, 0,
+				            dynamics_step_sph_classical_basic_integrate_task_cb_ex, psys->totpart > 100, true);
 
 				/* calculate summation density */
 				/* Note that we could avoid copying sphdata for each thread here (it's only read here),
 				 * but doubt this would gain us anything except confusion... */
 				BLI_task_parallel_range_ex(
 				            0, psys->totpart, &task_data, &sphdata, sizeof(sphdata),
-				            dynamics_step_sph_classical_calc_density_task_cb_ex, psys->totpart > 100, false);
+				            dynamics_step_sph_classical_calc_density_task_cb_ex, psys->totpart > 100, true);
 
 				/* do global forces & effectors */
 				BLI_task_parallel_range_ex(
 				            0, psys->totpart, &task_data, &sphdata, sizeof(sphdata),
-				            dynamics_step_sph_classical_integrate_task_cb_ex, psys->totpart > 100, false);
+				            dynamics_step_sph_classical_integrate_task_cb_ex, psys->totpart > 100, true);
 			}
 
-			BLI_mutex_end(&task_data.mutex);
+			BLI_spin_end(&task_data.spin);
 
 			psys_sph_finalise(&sphdata);
 			break;
@@ -3726,7 +3732,7 @@ static void cached_step(ParticleSimulationData *sim, float cfra)
 	}
 }
 
-static void particles_fluid_step(ParticleSimulationData *sim, int UNUSED(cfra))
+static void particles_fluid_step(ParticleSimulationData *sim, int UNUSED(cfra), const bool use_render_params)
 {	
 	ParticleSystem *psys = sim->psys;
 	if (psys->particles) {
@@ -3769,7 +3775,7 @@ static void particles_fluid_step(ParticleSimulationData *sim, int UNUSED(cfra))
 			}
 	
 			gzread(gzf, &totpart, sizeof(totpart));
-			totpart = (G.is_rendering)?totpart:(part->disp*totpart) / 100;
+			totpart = (use_render_params) ? totpart:(part->disp*totpart) / 100;
 			
 			part->totpart= totpart;
 			part->sta=part->end = 1.0f;
@@ -3830,6 +3836,8 @@ static void particles_fluid_step(ParticleSimulationData *sim, int UNUSED(cfra))
 			
 		} // fluid sim particles done
 	}
+#else
+	UNUSED_VARS(use_render_params);
 #endif // WITH_MOD_FLUID
 }
 
@@ -3851,7 +3859,7 @@ static int emit_particles(ParticleSimulationData *sim, PTCacheID *pid, float UNU
  * 2. Check cache (if used) and return if frame is cached
  * 3. Do dynamics
  * 4. Save to cache */
-static void system_step(ParticleSimulationData *sim, float cfra)
+static void system_step(ParticleSimulationData *sim, float cfra, const bool use_render_params)
 {
 	ParticleSystem *psys = sim->psys;
 	ParticleSettings *part = psys->part;
@@ -3874,8 +3882,8 @@ static void system_step(ParticleSimulationData *sim, float cfra)
 		
 		BKE_ptcache_id_time(pid, sim->scene, 0.0f, &startframe, &endframe, NULL);
 
-		/* clear everythin on start frame */
-		if (cfra == startframe) {
+		/* clear everything on start frame, or when psys needs full reset! */
+		if ((cfra == startframe) || (psys->recalc & PSYS_RECALC_RESET)) {
 			BKE_ptcache_id_reset(sim->scene, pid, PTCACHE_RESET_OUTDATED);
 			BKE_ptcache_validate(cache, startframe);
 			cache->flag &= ~PTCACHE_REDO_NEEDED;
@@ -3913,7 +3921,7 @@ static void system_step(ParticleSimulationData *sim, float cfra)
 		if (ELEM(cache_result, PTCACHE_READ_EXACT, PTCACHE_READ_INTERPOLATED)) {
 			cached_step(sim, cfra);
 			update_children(sim);
-			psys_update_path_cache(sim, cfra);
+			psys_update_path_cache(sim, cfra, use_render_params);
 
 			BKE_ptcache_validate(cache, (int)cache_cfra);
 
@@ -4131,7 +4139,7 @@ static int hair_needs_recalc(ParticleSystem *psys)
 
 /* main particle update call, checks that things are ok on the large scale and
  * then advances in to actual particle calculations depending on particle type */
-void particle_system_update(Scene *scene, Object *ob, ParticleSystem *psys)
+void particle_system_update(Scene *scene, Object *ob, ParticleSystem *psys, const bool use_render_params)
 {
 	ParticleSimulationData sim= {0};
 	ParticleSettings *part = psys->part;
@@ -4140,7 +4148,7 @@ void particle_system_update(Scene *scene, Object *ob, ParticleSystem *psys)
 	/* drawdata is outdated after ANY change */
 	if (psys->pdd) psys->pdd->flag &= ~PARTICLE_DRAW_DATA_UPDATED;
 
-	if (!psys_check_enabled(ob, psys))
+	if (!psys_check_enabled(ob, psys, use_render_params))
 		return;
 
 	cfra= BKE_scene_frame_get(scene);
@@ -4209,7 +4217,7 @@ void particle_system_update(Scene *scene, Object *ob, ParticleSystem *psys)
 					hcfra=100.0f*(float)i/(float)psys->part->hair_step;
 					if ((part->flag & PART_HAIR_REGROW)==0)
 						BKE_animsys_evaluate_animdata(scene, &part->id, part->adt, hcfra, ADT_RECALC_ANIM);
-					system_step(&sim, hcfra);
+					system_step(&sim, hcfra, use_render_params);
 					psys->cfra = hcfra;
 					psys->recalc = 0;
 					save_hair(&sim, hcfra);
@@ -4222,12 +4230,12 @@ void particle_system_update(Scene *scene, Object *ob, ParticleSystem *psys)
 				psys->flag |= PSYS_HAIR_DONE;
 
 			if (psys->flag & PSYS_HAIR_DONE)
-				hair_step(&sim, cfra);
+				hair_step(&sim, cfra, use_render_params);
 			break;
 		}
 		case PART_FLUID:
 		{
-			particles_fluid_step(&sim, (int)cfra);
+			particles_fluid_step(&sim, (int)cfra, use_render_params);
 			break;
 		}
 		default:
@@ -4274,14 +4282,14 @@ void particle_system_update(Scene *scene, Object *ob, ParticleSystem *psys)
 					if (part->phystype == PART_PHYS_KEYED) {
 						psys_count_keyed_targets(&sim);
 						set_keyed_keys(&sim);
-						psys_update_path_cache(&sim,(int)cfra);
+						psys_update_path_cache(&sim, (int)cfra, use_render_params);
 					}
 					break;
 				}
 				default:
 				{
 					/* the main dynamic particle system step */
-					system_step(&sim, cfra);
+					system_step(&sim, cfra, use_render_params);
 					break;
 				}
 			}

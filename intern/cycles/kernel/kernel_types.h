@@ -21,14 +21,14 @@
 #include "svm/svm_types.h"
 
 #ifndef __KERNEL_GPU__
-#define __KERNEL_CPU__
+#  define __KERNEL_CPU__
 #endif
 
 /* TODO(sergey): This is only to make it possible to include this header
  * from outside of the kernel. but this could be done somewhat cleaner?
  */
 #ifndef ccl_addr_space
-#define ccl_addr_space
+#  define ccl_addr_space
 #endif
 
 CCL_NAMESPACE_BEGIN
@@ -48,8 +48,6 @@ CCL_NAMESPACE_BEGIN
 
 #define BECKMANN_TABLE_SIZE		256
 
-#define TEX_NUM_FLOAT_IMAGES	5
-
 #define SHADER_NONE				(~0)
 #define OBJECT_NONE				(~0)
 #define PRIM_NONE				(~0)
@@ -59,84 +57,83 @@ CCL_NAMESPACE_BEGIN
 
 /* device capabilities */
 #ifdef __KERNEL_CPU__
-#ifdef __KERNEL_SSE2__
-#  define __QBVH__
-#endif
-#define __KERNEL_SHADING__
-#define __KERNEL_ADV_SHADING__
-#define __BRANCHED_PATH__
-#ifdef WITH_OSL
-#define __OSL__
-#endif
-#define __SUBSURFACE__
-#define __CMJ__
-#define __VOLUME__
-#define __VOLUME_DECOUPLED__
-#define __VOLUME_SCATTER__
-#define __SHADOW_RECORD_ALL__
-#define __VOLUME_RECORD_ALL__
-#endif
+#  ifdef __KERNEL_SSE2__
+#    define __QBVH__
+#  endif
+#  define __KERNEL_SHADING__
+#  define __KERNEL_ADV_SHADING__
+#  define __BRANCHED_PATH__
+#  ifdef WITH_OSL
+#    define __OSL__
+#  endif
+#  define __SUBSURFACE__
+#  define __CMJ__
+#  define __VOLUME__
+#  define __VOLUME_DECOUPLED__
+#  define __VOLUME_SCATTER__
+#  define __SHADOW_RECORD_ALL__
+#  define __VOLUME_RECORD_ALL__
+#endif  /* __KERNEL_CPU__ */
 
 #ifdef __KERNEL_CUDA__
-#define __KERNEL_SHADING__
-#define __KERNEL_ADV_SHADING__
-#define __BRANCHED_PATH__
-#define __VOLUME__
-#define __VOLUME_SCATTER__
-#define __SUBSURFACE__
-#define __CMJ__
-#endif
+#  define __KERNEL_SHADING__
+#  define __KERNEL_ADV_SHADING__
+#  define __BRANCHED_PATH__
+#  define __VOLUME__
+#  define __VOLUME_SCATTER__
+#  define __SUBSURFACE__
+#  define __CMJ__
+#endif  /* __KERNEL_CUDA__ */
 
 #ifdef __KERNEL_OPENCL__
 
 /* keep __KERNEL_ADV_SHADING__ in sync with opencl_kernel_use_advanced_shading! */
 
-#ifdef __KERNEL_OPENCL_NVIDIA__
-#  define __KERNEL_SHADING__
-#  define __KERNEL_ADV_SHADING__
-#  ifdef __KERNEL_EXPERIMENTAL__
-#    define __CMJ__
-#  endif
-#endif
+#  ifdef __KERNEL_OPENCL_NVIDIA__
+#    define __KERNEL_SHADING__
+#    define __KERNEL_ADV_SHADING__
+#    ifdef __KERNEL_EXPERIMENTAL__
+#      define __CMJ__
+#    endif
+#  endif  /* __KERNEL_OPENCL_NVIDIA__ */
 
-#ifdef __KERNEL_OPENCL_APPLE__
-#  define __KERNEL_SHADING__
-#  define __KERNEL_ADV_SHADING__
+#  ifdef __KERNEL_OPENCL_APPLE__
+#    define __KERNEL_SHADING__
+#    define __KERNEL_ADV_SHADING__
 /* TODO(sergey): Currently experimental section is ignored here,
  * this is because megakernel in device_opencl does not support
  * custom cflags depending on the scene features.
  */
-#  ifdef __KERNEL_EXPERIMENTAL__
-#    define __CMJ__
-#  endif
-#endif
+#    ifdef __KERNEL_EXPERIMENTAL__
+#      define __CMJ__
+#    endif
+#  endif  /* __KERNEL_OPENCL_NVIDIA__ */
 
-#ifdef __KERNEL_OPENCL_AMD__
-#  define __CL_USE_NATIVE__
-#  define __KERNEL_SHADING__
-#  define __MULTI_CLOSURE__
-#  define __PASSES__
-#  define __BACKGROUND_MIS__
-#  define __LAMP_MIS__
-#  define __AO__
-#  define __CAMERA_MOTION__
-#  define __OBJECT_MOTION__
-#  define __HAIR__
-#  ifdef __KERNEL_EXPERIMENTAL__
+#  ifdef __KERNEL_OPENCL_AMD__
+#    define __CL_USE_NATIVE__
+#    define __KERNEL_SHADING__
+#    define __MULTI_CLOSURE__
+#    define __PASSES__
+#    define __BACKGROUND_MIS__
+#    define __LAMP_MIS__
+#    define __AO__
+#    define __CAMERA_MOTION__
+#    define __OBJECT_MOTION__
+#    define __HAIR__
+#    define __BAKING__
 #    define __TRANSPARENT_SHADOWS__
-#  endif
-#endif
+#  endif  /* __KERNEL_OPENCL_AMD__ */
 
-#ifdef __KERNEL_OPENCL_INTEL_CPU__
-#  define __CL_USE_NATIVE__
-#  define __KERNEL_SHADING__
-#  define __KERNEL_ADV_SHADING__
-#  ifdef __KERNEL_EXPERIMENTAL__
-#    define __CMJ__
-#  endif
-#endif
+#  ifdef __KERNEL_OPENCL_INTEL_CPU__
+#    define __CL_USE_NATIVE__
+#    define __KERNEL_SHADING__
+#    define __KERNEL_ADV_SHADING__
+#    ifdef __KERNEL_EXPERIMENTAL__
+#      define __CMJ__
+#    endif
+#  endif  /* __KERNEL_OPENCL_INTEL_CPU__ */
 
-#endif // __KERNEL_OPENCL__
+#endif  /* __KERNEL_OPENCL__ */
 
 /* kernel features */
 #define __SOBOL__
@@ -152,30 +149,31 @@ CCL_NAMESPACE_BEGIN
 #define __CLAMP_SAMPLE__
 
 #ifdef __KERNEL_SHADING__
-#define __SVM__
-#define __EMISSION__
-#define __TEXTURES__
-#define __EXTRA_NODES__
-#define __HOLDOUT__
+#  define __SVM__
+#  define __EMISSION__
+#  define __TEXTURES__
+#  define __EXTRA_NODES__
+#  define __HOLDOUT__
 #endif
 
 #ifdef __KERNEL_ADV_SHADING__
-#define __MULTI_CLOSURE__
-#define __TRANSPARENT_SHADOWS__
-#define __PASSES__
-#define __BACKGROUND_MIS__
-#define __LAMP_MIS__
-#define __AO__
-#define __CAMERA_MOTION__
-#define __OBJECT_MOTION__
-#define __HAIR__
+#  define __MULTI_CLOSURE__
+#  define __TRANSPARENT_SHADOWS__
+#  define __PASSES__
+#  define __BACKGROUND_MIS__
+#  define __LAMP_MIS__
+#  define __AO__
+#  define __CAMERA_MOTION__
+#  define __OBJECT_MOTION__
+#  define __HAIR__
+#  define __BAKING__
 #endif
 
 #ifdef WITH_CYCLES_DEBUG
 #  define __KERNEL_DEBUG__
 #endif
 
-/* Scene-based selective featrues compilation. */
+/* Scene-based selective features compilation. */
 #ifdef __NO_CAMERA_MOTION__
 #  undef __CAMERA_MOTION__
 #endif
@@ -185,8 +183,15 @@ CCL_NAMESPACE_BEGIN
 #ifdef __NO_HAIR__
 #  undef __HAIR__
 #endif
+#ifdef __NO_VOLUME__
+#  undef __VOLUME__
+#  undef __VOLUME_SCATTER__
+#endif
 #ifdef __NO_SUBSURFACE__
 #  undef __SUBSURFACE__
+#endif
+#ifdef __NO_BAKING__
+#  undef __BAKING__
 #endif
 #ifdef __NO_BRANCHED_PATH__
 #  undef __BRANCHED_PATH__
@@ -264,13 +269,12 @@ enum PathTraceDimension {
 
 enum SamplingPattern {
 	SAMPLING_PATTERN_SOBOL = 0,
-	SAMPLING_PATTERN_CMJ = 1
+	SAMPLING_PATTERN_CMJ = 1,
+
+	SAMPLING_NUM_PATTERNS,
 };
 
-/* these flags values correspond to raytypes in osl.cpp, so keep them in sync!
- *
- * for ray visibility tests in BVH traversal, the upper 20 bits are used for
- * layer visibility tests. */
+/* these flags values correspond to raytypes in osl.cpp, so keep them in sync! */
 
 enum PathRayFlag {
 	PATH_RAY_CAMERA = 1,
@@ -288,15 +292,14 @@ enum PathRayFlag {
 	PATH_RAY_CURVE = 512, /* visibility flag to define curve segments */
 	PATH_RAY_VOLUME_SCATTER = 1024, /* volume scattering */
 
-	/* note that these can use maximum 12 bits, the other are for layers */
-	PATH_RAY_ALL_VISIBILITY = (1|2|4|8|16|32|64|128|256|512|1024),
+	/* Special flag to tag unaligned BVH nodes. */
+	PATH_RAY_NODE_UNALIGNED = 2048,
 
-	PATH_RAY_MIS_SKIP = 2048,
-	PATH_RAY_DIFFUSE_ANCESTOR = 4096,
-	PATH_RAY_SINGLE_PASS_DONE = 8192,
+	PATH_RAY_ALL_VISIBILITY = (1|2|4|8|16|32|64|128|256|512|1024|2048),
 
-	/* we need layer member flags to be the 20 upper bits */
-	PATH_RAY_LAYER_SHIFT = (32-20)
+	PATH_RAY_MIS_SKIP = 4096,
+	PATH_RAY_DIFFUSE_ANCESTOR = 8192,
+	PATH_RAY_SINGLE_PASS_DONE = 16384,
 };
 
 /* Closure Label */
@@ -384,12 +387,13 @@ typedef enum BakePassFilterCombos {
 	BAKE_FILTER_SUBSURFACE_INDIRECT = (BAKE_FILTER_INDIRECT | BAKE_FILTER_SUBSURFACE),
 } BakePassFilterCombos;
 
-#ifdef __PASSES__
-
 typedef ccl_addr_space struct PathRadiance {
+#ifdef __PASSES__
 	int use_light_pass;
+#endif
 
 	float3 emission;
+#ifdef __PASSES__
 	float3 background;
 	float3 ao;
 
@@ -423,25 +427,23 @@ typedef ccl_addr_space struct PathRadiance {
 
 	float4 shadow;
 	float mist;
+#endif
 } PathRadiance;
 
 typedef struct BsdfEval {
+#ifdef __PASSES__
 	int use_light_pass;
+#endif
 
 	float3 diffuse;
+#ifdef __PASSES__
 	float3 glossy;
 	float3 transmission;
 	float3 transparent;
 	float3 subsurface;
 	float3 scatter;
-} BsdfEval;
-
-#else
-
-typedef ccl_addr_space float3 PathRadiance;
-typedef float3 BsdfEval;
-
 #endif
+} BsdfEval;
 
 /* Shader Flag */
 
@@ -482,10 +484,12 @@ enum CameraType {
 /* Panorama Type */
 
 enum PanoramaType {
-	PANORAMA_EQUIRECTANGULAR,
-	PANORAMA_MIRRORBALL,
-	PANORAMA_FISHEYE_EQUIDISTANT,
-	PANORAMA_FISHEYE_EQUISOLID
+	PANORAMA_EQUIRECTANGULAR = 0,
+	PANORAMA_FISHEYE_EQUIDISTANT = 1,
+	PANORAMA_FISHEYE_EQUISOLID = 2,
+	PANORAMA_MIRRORBALL = 3,
+
+	PANORAMA_NUM_TYPES,
 };
 
 /* Differential */
@@ -625,7 +629,7 @@ typedef enum AttributeStandard {
 #    define MAX_CLOSURE __MAX_CLOSURE__
 #  endif
 #else
-#define MAX_CLOSURE 1
+#  define MAX_CLOSURE 1
 #endif
 
 /* This struct is to be 16 bytes aligned, we also keep some extra precautions:
@@ -678,31 +682,34 @@ typedef enum ShaderContext {
 
 enum ShaderDataFlag {
 	/* runtime flags */
-	SD_BACKFACING     = (1 << 0),   /* backside of surface? */
-	SD_EMISSION       = (1 << 1),   /* have emissive closure? */
-	SD_BSDF           = (1 << 2),   /* have bsdf closure? */
-	SD_BSDF_HAS_EVAL  = (1 << 3),   /* have non-singular bsdf closure? */
-	SD_BSSRDF         = (1 << 4),   /* have bssrdf */
-	SD_HOLDOUT        = (1 << 5),   /* have holdout closure? */
-	SD_ABSORPTION     = (1 << 6),   /* have volume absorption closure? */
-	SD_SCATTER        = (1 << 7),   /* have volume phase closure? */
-	SD_AO             = (1 << 8),   /* have ao closure? */
-	SD_TRANSPARENT    = (1 << 9),  /* have transparent closure? */
+	SD_BACKFACING      = (1 << 0),   /* backside of surface? */
+	SD_EMISSION        = (1 << 1),   /* have emissive closure? */
+	SD_BSDF            = (1 << 2),   /* have bsdf closure? */
+	SD_BSDF_HAS_EVAL   = (1 << 3),   /* have non-singular bsdf closure? */
+	SD_BSSRDF          = (1 << 4),   /* have bssrdf */
+	SD_HOLDOUT         = (1 << 5),   /* have holdout closure? */
+	SD_ABSORPTION      = (1 << 6),   /* have volume absorption closure? */
+	SD_SCATTER         = (1 << 7),   /* have volume phase closure? */
+	SD_AO              = (1 << 8),   /* have ao closure? */
+	SD_TRANSPARENT     = (1 << 9),  /* have transparent closure? */
+	SD_BSDF_NEEDS_LCG  = (1 << 10),
+	SD_BSDF_HAS_CUSTOM = (1 << 11), /* are the custom variables relevant? */
 
 	SD_CLOSURE_FLAGS = (SD_EMISSION|SD_BSDF|SD_BSDF_HAS_EVAL|SD_BSSRDF|
-	                    SD_HOLDOUT|SD_ABSORPTION|SD_SCATTER|SD_AO),
+	                    SD_HOLDOUT|SD_ABSORPTION|SD_SCATTER|SD_AO|
+	                    SD_BSDF_NEEDS_LCG|SD_BSDF_HAS_CUSTOM),
 
 	/* shader flags */
-	SD_USE_MIS                = (1 << 10),  /* direct light sample */
-	SD_HAS_TRANSPARENT_SHADOW = (1 << 11),  /* has transparent shadow */
-	SD_HAS_VOLUME             = (1 << 12),  /* has volume shader */
-	SD_HAS_ONLY_VOLUME        = (1 << 13),  /* has only volume shader, no surface */
-	SD_HETEROGENEOUS_VOLUME   = (1 << 14),  /* has heterogeneous volume */
-	SD_HAS_BSSRDF_BUMP        = (1 << 15),  /* bssrdf normal uses bump */
-	SD_VOLUME_EQUIANGULAR     = (1 << 16),  /* use equiangular sampling */
-	SD_VOLUME_MIS             = (1 << 17),  /* use multiple importance sampling */
-	SD_VOLUME_CUBIC           = (1 << 18),  /* use cubic interpolation for voxels */
-	SD_HAS_BUMP               = (1 << 19),  /* has data connected to the displacement input */
+	SD_USE_MIS                = (1 << 12),  /* direct light sample */
+	SD_HAS_TRANSPARENT_SHADOW = (1 << 13),  /* has transparent shadow */
+	SD_HAS_VOLUME             = (1 << 14),  /* has volume shader */
+	SD_HAS_ONLY_VOLUME        = (1 << 15),  /* has only volume shader, no surface */
+	SD_HETEROGENEOUS_VOLUME   = (1 << 16),  /* has heterogeneous volume */
+	SD_HAS_BSSRDF_BUMP        = (1 << 17),  /* bssrdf normal uses bump */
+	SD_VOLUME_EQUIANGULAR     = (1 << 18),  /* use equiangular sampling */
+	SD_VOLUME_MIS             = (1 << 19),  /* use multiple importance sampling */
+	SD_VOLUME_CUBIC           = (1 << 20),  /* use cubic interpolation for voxels */
+	SD_HAS_BUMP               = (1 << 21),  /* has data connected to the displacement input */
 
 	SD_SHADER_FLAGS = (SD_USE_MIS|SD_HAS_TRANSPARENT_SHADOW|SD_HAS_VOLUME|
 	                   SD_HAS_ONLY_VOLUME|SD_HETEROGENEOUS_VOLUME|
@@ -710,13 +717,13 @@ enum ShaderDataFlag {
 	                   SD_VOLUME_CUBIC|SD_HAS_BUMP),
 
 	/* object flags */
-	SD_HOLDOUT_MASK             = (1 << 20),  /* holdout for camera rays */
-	SD_OBJECT_MOTION            = (1 << 21),  /* has object motion blur */
-	SD_TRANSFORM_APPLIED        = (1 << 22),  /* vertices have transform applied */
-	SD_NEGATIVE_SCALE_APPLIED   = (1 << 23),  /* vertices have negative scale applied */
-	SD_OBJECT_HAS_VOLUME        = (1 << 24),  /* object has a volume shader */
-	SD_OBJECT_INTERSECTS_VOLUME = (1 << 25),  /* object intersects AABB of an object with volume shader */
-	SD_OBJECT_HAS_VERTEX_MOTION = (1 << 26),  /* has position for motion vertices */
+	SD_HOLDOUT_MASK             = (1 << 22),  /* holdout for camera rays */
+	SD_OBJECT_MOTION            = (1 << 23),  /* has object motion blur */
+	SD_TRANSFORM_APPLIED        = (1 << 24),  /* vertices have transform applied */
+	SD_NEGATIVE_SCALE_APPLIED   = (1 << 25),  /* vertices have negative scale applied */
+	SD_OBJECT_HAS_VOLUME        = (1 << 26),  /* object has a volume shader */
+	SD_OBJECT_INTERSECTS_VOLUME = (1 << 27),  /* object intersects AABB of an object with volume shader */
+	SD_OBJECT_HAS_VERTEX_MOTION = (1 << 28),  /* has position for motion vertices */
 
 	SD_OBJECT_FLAGS = (SD_HOLDOUT_MASK|SD_OBJECT_MOTION|SD_TRANSFORM_APPLIED|
 	                   SD_NEGATIVE_SCALE_APPLIED|SD_OBJECT_HAS_VOLUME|
@@ -765,7 +772,7 @@ typedef ccl_addr_space struct ShaderData {
 	int type;
 
 	/* parametric coordinates
-	* - barycentric weights for triangles */
+	 * - barycentric weights for triangles */
 	float u;
 	float v;
 	/* object id if there is one, ~0 otherwise */
@@ -788,14 +795,14 @@ typedef ccl_addr_space struct ShaderData {
 #endif
 #ifdef __DPDU__
 	/* differential of P w.r.t. parametric coordinates. note that dPdu is
-	* not readily suitable as a tangent for shading on triangles. */
+	 * not readily suitable as a tangent for shading on triangles. */
 	float3 dPdu;
 	float3 dPdv;
 #endif
 
 #ifdef __OBJECT_MOTION__
 	/* object <-> world space transformations, cached to avoid
-	* re-interpolating them constantly for shading */
+	 * re-interpolating them constantly for shading */
 	Transform ob_tfm;
 	Transform ob_itfm;
 #endif
@@ -804,6 +811,9 @@ typedef ccl_addr_space struct ShaderData {
 	struct ShaderClosure closure[MAX_CLOSURE];
 	int num_closure;
 	float randb_closure;
+
+	/* LCG state for closures that require additional random numbers. */
+	uint lcg_state;
 
 	/* ray start position, only set for backgrounds */
 	float3 ray_P;
@@ -826,7 +836,7 @@ typedef struct VolumeStack {
 
 typedef struct PathState {
 	/* see enum PathRayFlag */
-	int flag;          
+	int flag;
 
 	/* random number generator state */
 	int rng_offset;    		/* dimension offset */
@@ -897,6 +907,12 @@ typedef struct KernelCamera {
 	float fisheye_fov;
 	float fisheye_lens;
 	float4 equirectangular_range;
+
+	/* stereo */
+	float interocular_offset;
+	float convergence_distance;
+	float pole_merge_angle_from;
+	float pole_merge_angle_to;
 
 	/* matrices */
 	Transform cameratoworld;
@@ -1065,9 +1081,6 @@ typedef struct KernelIntegrator {
 	/* seed */
 	int seed;
 
-	/* render layer */
-	int layer_flag;
-
 	/* clamp */
 	float sample_clamp_direct;
 	float sample_clamp_indirect;
@@ -1161,43 +1174,59 @@ typedef ccl_addr_space struct DebugData {
 #define QUEUE_EMPTY_SLOT -1
 
 /*
-* Queue 1 - Active rays
-* Queue 2 - Background queue
-* Queue 3 - Shadow ray cast kernel - AO
-* Queeu 4 - Shadow ray cast kernel - direct lighting
-*/
+ * Queue 1 - Active rays
+ * Queue 2 - Background queue
+ * Queue 3 - Shadow ray cast kernel - AO
+ * Queeu 4 - Shadow ray cast kernel - direct lighting
+ */
 #define NUM_QUEUES 4
 
 /* Queue names */
 enum QueueNumber {
-	QUEUE_ACTIVE_AND_REGENERATED_RAYS = 0,     /* All active rays and regenerated rays are enqueued here. */
-	QUEUE_HITBG_BUFF_UPDATE_TOREGEN_RAYS = 1,  /* All
-	                                            * 1. Background-hit rays,
-	                                            * 2. Rays that has exited path-iteration but needs to update output buffer
-	                                            * 3. Rays to be regenerated
-	                                            * are enqueued here.
-	                                            */
-	QUEUE_SHADOW_RAY_CAST_AO_RAYS = 2,         /* All rays for which a shadow ray should be cast to determine radiance
-	                                            * contribution for AO are enqueued here.
-	                                            */
-	QUEUE_SHADOW_RAY_CAST_DL_RAYS = 3,         /* All rays for which a shadow ray should be cast to determine radiance
-	                                            * contributing for direct lighting are enqueued here.
-	                                            */
+	/* All active rays and regenerated rays are enqueued here. */
+	QUEUE_ACTIVE_AND_REGENERATED_RAYS = 0,
+
+	/* All
+	 * 1. Background-hit rays,
+	 * 2. Rays that has exited path-iteration but needs to update output buffer
+	 * 3. Rays to be regenerated
+	 * are enqueued here.
+	 */
+	QUEUE_HITBG_BUFF_UPDATE_TOREGEN_RAYS = 1,
+
+	/* All rays for which a shadow ray should be cast to determine radiance
+	 * contribution for AO are enqueued here.
+	 */
+	QUEUE_SHADOW_RAY_CAST_AO_RAYS = 2,
+
+	/* All rays for which a shadow ray should be cast to determine radiance
+	 * contributing for direct lighting are enqueued here.
+	 */
+	QUEUE_SHADOW_RAY_CAST_DL_RAYS = 3,
 };
 
 /* We use RAY_STATE_MASK to get ray_state (enums 0 to 5) */
 #define RAY_STATE_MASK 0x007
 #define RAY_FLAG_MASK 0x0F8
 enum RayState {
-	RAY_ACTIVE = 0,             // Denotes ray is actively involved in path-iteration
-	RAY_INACTIVE = 1,           // Denotes ray has completed processing all samples and is inactive
-	RAY_UPDATE_BUFFER = 2,      // Denoted ray has exited path-iteration and needs to update output buffer
-	RAY_HIT_BACKGROUND = 3,     // Donotes ray has hit background
-	RAY_TO_REGENERATE = 4,      // Denotes ray has to be regenerated
-	RAY_REGENERATED = 5,        // Denotes ray has been regenerated
-	RAY_SKIP_DL = 6,            // Denotes ray should skip direct lighting
-	RAY_SHADOW_RAY_CAST_AO = 16, // Flag's ray has to execute shadow blocked function in AO part
-	RAY_SHADOW_RAY_CAST_DL = 32 // Flag's ray has to execute shadow blocked function in direct lighting part
+	/* Denotes ray is actively involved in path-iteration. */
+	RAY_ACTIVE = 0,
+	/* Denotes ray has completed processing all samples and is inactive. */
+	RAY_INACTIVE = 1,
+	/* Denoted ray has exited path-iteration and needs to update output buffer. */
+	RAY_UPDATE_BUFFER = 2,
+	/* Donotes ray has hit background */
+	RAY_HIT_BACKGROUND = 3,
+	/* Denotes ray has to be regenerated */
+	RAY_TO_REGENERATE = 4,
+	/* Denotes ray has been regenerated */
+	RAY_REGENERATED = 5,
+	/* Denotes ray should skip direct lighting */
+	RAY_SKIP_DL = 6,
+	/* Flag's ray has to execute shadow blocked function in AO part */
+	RAY_SHADOW_RAY_CAST_AO = 16,
+	/* Flag's ray has to execute shadow blocked function in direct lighting part. */
+	RAY_SHADOW_RAY_CAST_DL = 32,
 };
 
 #define ASSIGN_RAY_STATE(ray_state, ray_index, state) (ray_state[ray_index] = ((ray_state[ray_index] & RAY_FLAG_MASK) | state))

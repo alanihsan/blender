@@ -28,6 +28,22 @@ set(SRC
 	kernels/cuda/kernel.cu
 )
 
+set(SRC_BVH_HEADERS
+	bvh/bvh.h
+	bvh/bvh_nodes.h
+	bvh/bvh_shadow_all.h
+	bvh/bvh_subsurface.h
+	bvh/bvh_traversal.h
+	bvh/bvh_volume.h
+	bvh/bvh_volume_all.h
+	bvh/qbvh_nodes.h
+	bvh/qbvh_shadow_all.h
+	bvh/qbvh_subsurface.h
+	bvh/qbvh_traversal.h
+	bvh/qbvh_volume.h
+	bvh/qbvh_volume_all.h
+)
+
 set(SRC_HEADERS
 	kernel_accumulate.h
 	kernel_bake.h
@@ -67,6 +83,7 @@ set(SRC_KERNELS_CPU_HEADERS
 	kernel.h
 	kernels/cpu/kernel_cpu.h
 	kernels/cpu/kernel_cpu_impl.h
+	kernels/cpu/kernel_cpu_image.h
 )
 
 set(SRC_CLOSURE_HEADERS
@@ -75,6 +92,8 @@ set(SRC_CLOSURE_HEADERS
 	closure/bsdf_diffuse.h
 	closure/bsdf_diffuse_ramp.h
 	closure/bsdf_microfacet.h
+	closure/bsdf_microfacet_multi.h
+	closure/bsdf_microfacet_multi_impl.h
 	closure/bsdf_oren_nayar.h
 	closure/bsdf_phong_ramp.h
 	closure/bsdf_reflection.h
@@ -97,6 +116,7 @@ set(SRC_SVM_HEADERS
 	svm/svm_closure.h
 	svm/svm_convert.h
 	svm/svm_checker.h
+	svm/svm_color_util.h
 	svm/svm_brick.h
 	svm/svm_displace.h
 	svm/svm_fresnel.h
@@ -136,23 +156,11 @@ set(SRC_SVM_HEADERS
 set(SRC_GEOM_HEADERS
 	geom/geom.h
 	geom/geom_attribute.h
-	geom/geom_bvh.h
-	geom/geom_bvh_shadow.h
-	geom/geom_bvh_subsurface.h
-	geom/geom_bvh_traversal.h
-	geom/geom_bvh_volume.h
-	geom/geom_bvh_volume_all.h
 	geom/geom_curve.h
 	geom/geom_motion_curve.h
 	geom/geom_motion_triangle.h
 	geom/geom_object.h
 	geom/geom_primitive.h
-	geom/geom_qbvh.h
-	geom/geom_qbvh_shadow.h
-	geom/geom_qbvh_subsurface.h
-	geom/geom_qbvh_traversal.h
-	geom/geom_qbvh_volume.h
-	geom/geom_qbvh_volume_all.h
 	geom/geom_triangle.h
 	geom/geom_triangle_intersect.h
 	geom/geom_volume.h
@@ -165,6 +173,7 @@ set(SRC_UTIL_HEADERS
 	../util/util_math.h
 	../util/util_math_fast.h
 	../util/util_transform.h
+	../util/util_texture.h
 	../util/util_types.h
 )
 
@@ -186,7 +195,7 @@ set(SRC_SPLIT_HEADERS
 
 if(WITH_CYCLES_CUDA_BINARIES)
 	# 32 bit or 64 bit
-	if("${CMAKE_SIZEOF_VOID_P}" EQUAL "8")
+	if(CUDA_64_BIT_DEVICE_CODE)
 		set(CUDA_BITS 64)
 	else()
 		set(CUDA_BITS 32)
@@ -194,20 +203,27 @@ if(WITH_CYCLES_CUDA_BINARIES)
 
 	# CUDA version
 	execute_process(COMMAND ${CUDA_NVCC_EXECUTABLE} "--version" OUTPUT_VARIABLE NVCC_OUT)
-	string(REGEX REPLACE ".*release ([0-9]+)\\.([0-9]+).*" "\\1" CUDA_VERSION_MAJOR ${NVCC_OUT})
-	string(REGEX REPLACE ".*release ([0-9]+)\\.([0-9]+).*" "\\2" CUDA_VERSION_MINOR ${NVCC_OUT})
+	string(REGEX REPLACE ".*release ([0-9]+)\\.([0-9]+).*" "\\1" CUDA_VERSION_MAJOR "${NVCC_OUT}")
+	string(REGEX REPLACE ".*release ([0-9]+)\\.([0-9]+).*" "\\2" CUDA_VERSION_MINOR "${NVCC_OUT}")
 	set(CUDA_VERSION "${CUDA_VERSION_MAJOR}${CUDA_VERSION_MINOR}")
 
 	# warn for other versions
-	if(CUDA_VERSION MATCHES "65")
+	if(CUDA_VERSION MATCHES "75")
 	else()
 		message(WARNING
 			"CUDA version ${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR} detected, "
-			"build may succeed but only CUDA 6.5 is officially supported")
+			"build may succeed but only CUDA 7.5 is officially supported")
 	endif()
 
 	# build for each arch
-	set(cuda_sources kernels/cuda/kernel.cu ${SRC_HEADERS} ${SRC_SVM_HEADERS} ${SRC_GEOM_HEADERS} ${SRC_CLOSURE_HEADERS} ${SRC_UTIL_HEADERS})
+	set(cuda_sources kernels/cuda/kernel.cu
+		${SRC_HEADERS}
+		${SRC_BVH_HEADERS}
+		${SRC_SVM_HEADERS}
+		${SRC_GEOM_HEADERS}
+		${SRC_CLOSURE_HEADERS}
+		${SRC_UTIL_HEADERS}
+	)
 	set(cuda_cubins)
 
 	macro(CYCLES_CUDA_KERNEL_ADD arch experimental)
@@ -232,6 +248,7 @@ if(WITH_CYCLES_CUDA_BINARIES)
 			OUTPUT ${cuda_cubin}
 			COMMAND ${CUDA_NVCC_EXECUTABLE}
 					-arch=${arch}
+					${CUDA_NVCC_FLAGS}
 					-m${CUDA_BITS}
 					--cubin ${CMAKE_CURRENT_SOURCE_DIR}/kernels/cuda/kernel.cu
 					-o ${CMAKE_CURRENT_BINARY_DIR}/${cuda_cubin}
@@ -306,6 +323,7 @@ add_library(cycles_kernel
 	${SRC}
 	${SRC_HEADERS}
 	${SRC_KERNELS_CPU_HEADERS}
+	${SRC_BVH_HEADERS}
 	${SRC_CLOSURE_HEADERS}
 	${SRC_SVM_HEADERS}
 	${SRC_GEOM_HEADERS}
@@ -340,6 +358,7 @@ delayed_install(${CMAKE_CURRENT_SOURCE_DIR} "kernels/opencl/kernel_next_iteratio
 delayed_install(${CMAKE_CURRENT_SOURCE_DIR} "kernels/opencl/kernel_sum_all_radiance.cl" ${CYCLES_INSTALL_PATH}/kernel/kernels/opencl)
 delayed_install(${CMAKE_CURRENT_SOURCE_DIR} "kernels/cuda/kernel.cu" ${CYCLES_INSTALL_PATH}/kernel/kernels/cuda)
 delayed_install(${CMAKE_CURRENT_SOURCE_DIR} "${SRC_HEADERS}" ${CYCLES_INSTALL_PATH}/kernel)
+delayed_install(${CMAKE_CURRENT_SOURCE_DIR} "${SRC_BVH_HEADERS}" ${CYCLES_INSTALL_PATH}/kernel/bvh)
 delayed_install(${CMAKE_CURRENT_SOURCE_DIR} "${SRC_CLOSURE_HEADERS}" ${CYCLES_INSTALL_PATH}/kernel/closure)
 delayed_install(${CMAKE_CURRENT_SOURCE_DIR} "${SRC_SVM_HEADERS}" ${CYCLES_INSTALL_PATH}/kernel/svm)
 delayed_install(${CMAKE_CURRENT_SOURCE_DIR} "${SRC_GEOM_HEADERS}" ${CYCLES_INSTALL_PATH}/kernel/geom)
