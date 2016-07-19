@@ -155,13 +155,8 @@ void BlenderSync::sync_light(BL::Object& b_parent,
 	light->dir = -transform_get_column(&tfm, 2);
 
 	/* shader */
-	vector<uint> used_shaders;
-
+	vector<Shader*> used_shaders;
 	find_shader(b_lamp, used_shaders, scene->default_light);
-
-	if(used_shaders.size() == 0)
-		used_shaders.push_back(scene->default_light);
-
 	light->shader = used_shaders[0];
 
 	/* shadow */
@@ -258,11 +253,10 @@ static bool object_boundbox_clip(Scene *scene,
 		                       boundbox[3 * i + 1],
 		                       boundbox[3 * i + 2]);
 		p = transform_point(&tfm, p);
-		p = transform_point(&worldtondc, p);
+		p = transform_perspective(&worldtondc, p);
 		if(p.z >= -margin) {
 			all_behind = false;
 		}
-		p /= p.z;
 		bb_min = min(bb_min, p);
 		bb_max = max(bb_max, p);
 	}
@@ -370,13 +364,12 @@ Object *BlenderSync::sync_object(BL::Object& b_parent,
 	}
 
 	/* make holdout objects on excluded layer invisible for non-camera rays */
-	if(use_holdout && (layer_flag & render_layer.exclude_layer))
+	if(use_holdout && (layer_flag & render_layer.exclude_layer)) {
 		visibility &= ~(PATH_RAY_ALL_VISIBILITY - PATH_RAY_CAMERA);
+	}
 
-	/* camera flag is not actually used, instead is tested against render layer
-	 * flags */
-	if(visibility & PATH_RAY_CAMERA) {
-		visibility |= layer_flag << PATH_RAY_LAYER_SHIFT;
+	/* hide objects not on render layer from camera rays */
+	if(!(layer_flag & render_layer.layer)) {
 		visibility &= ~PATH_RAY_CAMERA;
 	}
 
@@ -577,7 +570,6 @@ void BlenderSync::sync_objects(BL::SpaceView3D& b_v3d, float motion_time)
 			bool hide = (render_layer.use_viewport_visibility)? b_ob.hide(): b_ob.hide_render();
 			uint ob_layer = get_layer(b_base->layers(),
 			                          b_base->layers_local_view(),
-			                          render_layer.use_localview,
 			                          object_is_light(b_ob),
 			                          scene_layers);
 			hide = hide || !(ob_layer & scene_layer);
@@ -727,12 +719,7 @@ void BlenderSync::sync_motion(BL::RenderSettings& b_render,
 		        << relative_time << ".";
 
 		/* fixed shutter time to get previous and next frame for motion pass */
-		float shuttertime;
-
-		if(scene->need_motion() == Scene::MOTION_PASS)
-			shuttertime = 2.0f;
-		else
-			shuttertime = scene->camera->shuttertime;
+		float shuttertime = scene->motion_shutter_time();
 
 		/* compute frame and subframe time */
 		float time = frame_center + frame_center_delta + relative_time * shuttertime * 0.5f;

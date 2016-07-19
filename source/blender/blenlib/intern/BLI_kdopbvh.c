@@ -72,6 +72,12 @@
 #  define KDOPBVH_THREAD_LEAF_THRESHOLD 1024
 #endif
 
+
+/* -------------------------------------------------------------------- */
+
+/** \name Struct Definitions
+ * \{ */
+
 typedef unsigned char axis_t;
 
 typedef struct BVHNode {
@@ -157,13 +163,27 @@ typedef struct BVHNearestRayData {
 	BVHTree *tree;
 	BVHTree_NearestToRayCallback callback;
 	void    *userdata;
-	BVHTreeRay ray;
 
-	struct NearestRayToAABB_Precalc nearest_precalc;
+	struct {
+		bool sign[3];
+		float origin[3];
+		float direction[3];
+
+		float direction_scaled_square[3];
+		float inv_dir[3];
+
+		float cdot_axis[3];
+	} ray;
 
 	bool pick_smallest[3];
+
 	BVHTreeNearest nearest;
+
+	float scale[3];
 } BVHNearestRayData;
+
+/** \} */
+
 
 /**
  * Bounding Volume Hierarchy Definition
@@ -178,6 +198,12 @@ const float bvhtree_kdop_axes[13][3] = {
 	{1.0, -1.0, -1.0}, {1.0, 1.0, 0}, {1.0, 0, 1.0}, {0, 1.0, 1.0}, {1.0, -1.0, 0}, {1.0, 0, -1.0},
 	{0, 1.0, -1.0}
 };
+
+
+/* -------------------------------------------------------------------- */
+
+/** \name Utility Functions
+ * \{ */
 
 MINLINE axis_t min_axis(axis_t a, axis_t b)
 {
@@ -287,6 +313,14 @@ static void node_minmax_init(const BVHTree *tree, BVHNode *node)
 		bv[axis_iter][1] = -FLT_MAX;
 	}
 }
+
+/** \} */
+
+
+/* -------------------------------------------------------------------- */
+
+/** \name Balance Utility Functions
+ * \{ */
 
 /**
  * Insertion sort algorithm
@@ -897,8 +931,13 @@ static void non_recursive_bvh_div_nodes(BVHTree *tree, BVHNode *branches_array, 
 	}
 }
 
+/** \} */
+
+
 /* -------------------------------------------------------------------- */
-/* BLI_bvhtree api */
+
+/** \name BLI_bvhtree API
+ * \{ */
 
 /**
  * \note many callers don't check for ``NULL`` return.
@@ -1086,15 +1125,27 @@ void BLI_bvhtree_update_tree(BVHTree *tree)
 	for (; index >= root; index--)
 		node_join(tree, *index);
 }
+/**
+ * Number of times #BLI_bvhtree_insert has been called.
+ * mainly useful for asserts functions to check we added the correct number.
+ */
+int BLI_bvhtree_get_size(const BVHTree *tree)
+{
+	return tree->totleaf;
+}
 
-float BLI_bvhtree_getepsilon(const BVHTree *tree)
+float BLI_bvhtree_get_epsilon(const BVHTree *tree)
 {
 	return tree->epsilon;
 }
 
+/** \} */
+
 
 /* -------------------------------------------------------------------- */
-/* BLI_bvhtree_overlap */
+
+/** \name BLI_bvhtree_overlap
+ * \{ */
 
 /**
  * overlap - is it possible for 2 bv's to collide ?
@@ -1298,6 +1349,14 @@ BVHTreeOverlap *BLI_bvhtree_overlap(
 	return overlap;
 }
 
+/** \} */
+
+
+/* -------------------------------------------------------------------- */
+
+/** \name BLI_bvhtree_find_nearest
+ * \{ */
+
 /* Determines the nearest point of the given node BV. Returns the squared distance to that point. */
 static float calc_nearest_point_squared(const float proj[3], BVHNode *node, float nearest[3])
 {
@@ -1472,8 +1531,9 @@ static void bfs_find_nearest(BVHNearestData *data, BVHNode *node)
 #endif
 
 
-int BLI_bvhtree_find_nearest(BVHTree *tree, const float co[3], BVHTreeNearest *nearest,
-                             BVHTree_NearestPointCallback callback, void *userdata)
+int BLI_bvhtree_find_nearest(
+        BVHTree *tree, const float co[3], BVHTreeNearest *nearest,
+        BVHTree_NearestPointCallback callback, void *userdata)
 {
 	axis_t axis_iter;
 
@@ -1511,16 +1571,20 @@ int BLI_bvhtree_find_nearest(BVHTree *tree, const float co[3], BVHTreeNearest *n
 	return data.nearest.index;
 }
 
+/** \} */
 
-/**
- * Raycast - BLI_bvhtree_ray_cast
+
+/* -------------------------------------------------------------------- */
+
+/** \name BLI_bvhtree_ray_cast
  *
- * raycast is done by performing a DFS on the BVHTree and saving the closest hit
- */
+ * raycast is done by performing a DFS on the BVHTree and saving the closest hit.
+ *
+ * \{ */
 
 
 /* Determines the distance that the ray must travel to hit the bounding volume of the given node */
-static float ray_nearest_hit(BVHRayCastData *data, const float bv[6])
+static float ray_nearest_hit(const BVHRayCastData *data, const float bv[6])
 {
 	int i;
 
@@ -1590,7 +1654,9 @@ static void dfs_raycast(BVHRayCastData *data, BVHNode *node)
 	 * before calling the ray-primitive functions */
 	/* XXX: temporary solution for particles until fast_ray_nearest_hit supports ray.radius */
 	float dist = (data->ray.radius == 0.0f) ? fast_ray_nearest_hit(data, node) : ray_nearest_hit(data, node->bv);
-	if (dist >= data->hit.dist) return;
+	if (dist >= data->hit.dist) {
+		return;
+	}
 
 	if (node->totnode == 0) {
 		if (data->callback) {
@@ -1617,6 +1683,9 @@ static void dfs_raycast(BVHRayCastData *data, BVHNode *node)
 	}
 }
 
+/**
+ * A version of #dfs_raycast with minor changes to reset the index & dist each ray cast.
+ */
 static void dfs_raycast_all(BVHRayCastData *data, BVHNode *node)
 {
 	int i;
@@ -1625,18 +1694,16 @@ static void dfs_raycast_all(BVHRayCastData *data, BVHNode *node)
 	 * before calling the ray-primitive functions */
 	/* XXX: temporary solution for particles until fast_ray_nearest_hit supports ray.radius */
 	float dist = (data->ray.radius == 0.0f) ? fast_ray_nearest_hit(data, node) : ray_nearest_hit(data, node->bv);
+	if (dist >= data->hit.dist) {
+		return;
+	}
 
 	if (node->totnode == 0) {
-		if (data->callback) {
-			data->hit.index = -1;
-			data->hit.dist = BVH_RAYCAST_DIST_MAX;
-			data->callback(data->userdata, node->index, &data->ray, &data->hit);
-		}
-		else {
-			data->hit.index = node->index;
-			data->hit.dist  = dist;
-			madd_v3_v3v3fl(data->hit.co, data->ray.origin, data->ray.direction, dist);
-		}
+		/* no need to check for 'data->callback' (using 'all' only makes sense with a callback). */
+		dist = data->hit.dist;
+		data->callback(data->userdata, node->index, &data->ray, &data->hit);
+		data->hit.index = -1;
+		data->hit.dist = dist;
 	}
 	else {
 		/* pick loop direction to dive into the tree (based on ray direction and split axis) */
@@ -1787,9 +1854,14 @@ float BLI_bvhtree_bb_raycast(const float bv[6], const float light_start[3], cons
 
 /**
  * Calls the callback for every ray intersection
+ *
+ * \note Using a \a callback which resets or never sets the #BVHTreeRayHit index & dist works too,
+ * however using this function means existing generic callbacks can be used from custom callbacks without
+ * having to handle resetting the hit beforehand.
+ * It also avoid redundant argument and return value which aren't meaningful when collecting multiple hits.
  */
-int BLI_bvhtree_ray_cast_all_ex(
-        BVHTree *tree, const float co[3], const float dir[3], float radius,
+void BLI_bvhtree_ray_cast_all_ex(
+        BVHTree *tree, const float co[3], const float dir[3], float radius, float hit_dist,
         BVHTree_RayCastCallback callback, void *userdata,
         int flag)
 {
@@ -1797,6 +1869,7 @@ int BLI_bvhtree_ray_cast_all_ex(
 	BVHNode *root = tree->nodes[tree->totleaf];
 
 	BLI_ASSERT_UNIT_V3(dir);
+	BLI_assert(callback != NULL);
 
 	data.tree = tree;
 
@@ -1810,44 +1883,327 @@ int BLI_bvhtree_ray_cast_all_ex(
 	bvhtree_ray_cast_data_precalc(&data, flag);
 
 	data.hit.index = -1;
-	data.hit.dist = BVH_RAYCAST_DIST_MAX;
+	data.hit.dist = hit_dist;
 
 	if (root) {
 		dfs_raycast_all(&data, root);
 	}
-
-	return data.hit.index;
 }
 
-int BLI_bvhtree_ray_cast_all(
-        BVHTree *tree, const float co[3], const float dir[3], float radius,
+void BLI_bvhtree_ray_cast_all(
+        BVHTree *tree, const float co[3], const float dir[3], float radius, float hit_dist,
         BVHTree_RayCastCallback callback, void *userdata)
 {
-	return BLI_bvhtree_ray_cast_all_ex(tree, co, dir, radius, callback, userdata, BVH_RAYCAST_DEFAULT);
+	BLI_bvhtree_ray_cast_all_ex(tree, co, dir, radius, hit_dist, callback, userdata, BVH_RAYCAST_DEFAULT);
+}
+
+
+/* -------------------------------------------------------------------- */
+
+/** \name BLI_bvhtree_find_nearest_to_ray functions
+ *
+ * \{ */
+
+static void dist_squared_ray_to_aabb_scaled_v3_precalc(
+        BVHNearestRayData *data,
+        const float ray_origin[3], const float ray_direction[3],
+        const bool ray_is_normalized, const float scale[3])
+{
+	if (scale) {
+		copy_v3_v3(data->scale, scale);
+	}
+	else {
+		copy_v3_fl(data->scale, 1.0f);
+	}
+	/* un-normalize ray */
+	if (ray_is_normalized && scale &&
+	    (data->scale[0] != 1.0f || data->scale[1] != 1.0f || data->scale[2] != 1.0f))
+	{
+		data->ray.direction[0] = ray_direction[0] * data->scale[0];
+		data->ray.direction[1] = ray_direction[1] * data->scale[1];
+		data->ray.direction[2] = ray_direction[2] * data->scale[2];
+
+		mul_v3_v3fl(data->ray.direction, ray_direction, 1 / len_v3(data->ray.direction));
+	}
+	else {
+		copy_v3_v3(data->ray.direction, ray_direction);
+	}
+
+	float dir_sq[3];
+
+	for (int i = 0; i < 3; i++) {
+		data->ray.origin[i] = ray_origin[i];
+		data->ray.inv_dir[i] = (data->ray.direction[i] != 0.0f) ?
+		                       (1.0f / data->ray.direction[i]) : FLT_MAX;
+		/* It has to be in function of `ray.inv_dir`,
+		 * since the division of 1 by 0.0f, can be -inf or +inf */
+		data->ray.sign[i] = (data->ray.inv_dir[i] < 0.0f);
+
+		data->ray.direction_scaled_square[i] = data->ray.direction[i] * data->scale[i];
+
+		dir_sq[i] = SQUARE(data->ray.direction_scaled_square[i]);
+
+		data->ray.direction_scaled_square[i] *= data->scale[i];
+	}
+
+	/* `diag_sq` Length square of each face diagonal */
+	float diag_sq[3] = {
+		dir_sq[1] + dir_sq[2],
+		dir_sq[0] + dir_sq[2],
+		dir_sq[0] + dir_sq[1],
+	};
+
+	data->ray.cdot_axis[0] = (diag_sq[0] != 0.0f) ? data->ray.direction[0] / diag_sq[0] : FLT_MAX;
+	data->ray.cdot_axis[1] = (diag_sq[1] != 0.0f) ? data->ray.direction[1] / diag_sq[1] : FLT_MAX;
+	data->ray.cdot_axis[2] = (diag_sq[2] != 0.0f) ? data->ray.direction[2] / diag_sq[2] : FLT_MAX;
+}
+
+/**
+ * Returns the squared distance from a ray to a bound-box `AABB`.
+ * It is based on `fast_ray_nearest_hit` solution to obtain
+ * the coordinates of the nearest edge of Bound Box to the ray
+ */
+MINLINE float dist_squared_ray_to_aabb_scaled_v3__impl(
+        const BVHNearestRayData *data,
+        const float bv[6], float *r_depth_sq, bool r_axis_closest[3])
+{
+
+	/* `tmin` is a vector that has the smaller distances to each of the
+	 * infinite planes of the `AABB` faces (hit in nearest face X plane,
+	 * nearest face Y plane and nearest face Z plane) */
+	float local_bvmin[3], local_bvmax[3];
+
+	if (data->ray.sign[0]) {
+		local_bvmin[0] = bv[1];
+		local_bvmax[0] = bv[0];
+	}
+	else {
+		local_bvmin[0] = bv[0];
+		local_bvmax[0] = bv[1];
+	}
+
+	if (data->ray.sign[1]) {
+		local_bvmin[1] = bv[3];
+		local_bvmax[1] = bv[2];
+	}
+	else {
+		local_bvmin[1] = bv[2];
+		local_bvmax[1] = bv[3];
+	}
+
+	if (data->ray.sign[2]) {
+		local_bvmin[2] = bv[5];
+		local_bvmax[2] = bv[4];
+	}
+	else {
+		local_bvmin[2] = bv[4];
+		local_bvmax[2] = bv[5];
+	}
+
+	sub_v3_v3(local_bvmin, data->ray.origin);
+	sub_v3_v3(local_bvmax, data->ray.origin);
+
+	const float tmin[3] = {
+		local_bvmin[0] * data->ray.inv_dir[0],
+		local_bvmin[1] * data->ray.inv_dir[1],
+		local_bvmin[2] * data->ray.inv_dir[2],
+	};
+
+	/* `tmax` is a vector that has the longer distances to each of the
+	 * infinite planes of the `AABB` faces (hit in farthest face X plane,
+	 * farthest face Y plane and farthest face Z plane) */
+	const float tmax[3] = {
+		local_bvmax[0] * data->ray.inv_dir[0],
+		local_bvmax[1] * data->ray.inv_dir[1],
+		local_bvmax[2] * data->ray.inv_dir[2],
+	};
+	/* `v1` and `v3` is be the coordinates of the nearest `AABB` edge to the ray*/
+	float v1[3], v2[3];
+	/* `rtmin` is the highest value of the smaller distances. == max_axis_v3(tmin)
+	 * `rtmax` is the lowest value of longer distances. == min_axis_v3(tmax)*/
+	float rtmin, rtmax, mul;
+	/* `main_axis` is the axis equivalent to edge close to the ray */
+	int main_axis;
+
+	r_axis_closest[0] = false;
+	r_axis_closest[1] = false;
+	r_axis_closest[2] = false;
+
+	/* *** min_axis_v3(tmax) *** */
+	if ((tmax[0] <= tmax[1]) && (tmax[0] <= tmax[2])) {
+		// printf("# Hit in X %s\n", data->sign[0] ? "min", "max");
+		rtmax = tmax[0];
+		v1[0] = v2[0] = local_bvmax[0];
+		mul = local_bvmax[0] * data->ray.direction_scaled_square[0];
+		main_axis = 3;
+		r_axis_closest[0] = data->ray.sign[0];
+	}
+	else if ((tmax[1] <= tmax[0]) && (tmax[1] <= tmax[2])) {
+		// printf("# Hit in Y %s\n", data->sign[1] ? "min", "max");
+		rtmax = tmax[1];
+		v1[1] = v2[1] = local_bvmax[1];
+		mul = local_bvmax[1] * data->ray.direction_scaled_square[1];
+		main_axis = 2;
+		r_axis_closest[1] = data->ray.sign[1];
+	}
+	else {
+		// printf("# Hit in Z %s\n", data->sign[2] ? "min", "max");
+		rtmax = tmax[2];
+		v1[2] = v2[2] = local_bvmax[2];
+		mul = local_bvmax[2] * data->ray.direction_scaled_square[2];
+		main_axis = 1;
+		r_axis_closest[2] = data->ray.sign[2];
+	}
+
+	/* *** max_axis_v3(tmin) *** */
+	if ((tmin[0] >= tmin[1]) && (tmin[0] >= tmin[2])) {
+		// printf("# To X %s\n", data->sign[0] ? "max", "min");
+		rtmin = tmin[0];
+		v1[0] = v2[0] = local_bvmin[0];
+		mul += local_bvmin[0] * data->ray.direction_scaled_square[0];
+		main_axis -= 3;
+		r_axis_closest[0] = !data->ray.sign[0];
+	}
+	else if ((tmin[1] >= tmin[0]) && (tmin[1] >= tmin[2])) {
+		// printf("# To Y %s\n", data->sign[1] ? "max", "min");
+		rtmin = tmin[1];
+		v1[1] = v2[1] = local_bvmin[1];
+		mul += local_bvmin[1] * data->ray.direction_scaled_square[1];
+		main_axis -= 1;
+		r_axis_closest[1] = !data->ray.sign[1];
+	}
+	else {
+		// printf("# To Z %s\n", data->sign[2] ? "max", "min");
+		rtmin = tmin[2];
+		v1[2] = v2[2] = local_bvmin[2];
+		mul += local_bvmin[2] * data->ray.direction_scaled_square[2];
+		main_axis -= 2;
+		r_axis_closest[2] = !data->ray.sign[2];
+	}
+	/* *** end min/max axis *** */
+
+	if (main_axis < 0)
+		main_axis += 3;
+
+	/* if rtmin < rtmax, ray intersect `AABB` */
+	if (rtmin <= rtmax) {
+#ifdef IGNORE_BEHIND_RAY
+		/* `if rtmax < depth_min`, the whole `AABB` is behind us */
+		if (rtmax < min_depth) {
+			return fallback;
+		}
+#endif
+		const float proj = rtmin * data->ray.direction[main_axis];
+
+		if (data->ray.sign[main_axis])
+			r_axis_closest[main_axis] = (proj - local_bvmax[main_axis]) < (local_bvmin[main_axis] - proj);
+		else
+			r_axis_closest[main_axis] = (proj - local_bvmin[main_axis]) < (local_bvmax[main_axis] - proj);
+
+		//if (r_depth_sq)
+		//	*r_depth_sq = SQUARE(rtmin);
+
+		return 0.0f;
+	}
+#ifdef IGNORE_BEHIND_RAY
+	/* `if rtmin < depth_min`, the whole `AABB` is behing us */
+	else if (rtmin < min_depth) {
+		return fallback;
+	}
+#endif
+
+	if (data->ray.sign[main_axis]) {
+		v1[main_axis] = local_bvmax[main_axis];
+		v2[main_axis] = local_bvmin[main_axis];
+	}
+	else {
+		v1[main_axis] = local_bvmin[main_axis];
+		v2[main_axis] = local_bvmax[main_axis];
+	}
+	{
+		/* `proj` equals to nearest point on the ray closest to the edge `v1 v2` of the `AABB`. */
+		const float proj = mul * data->ray.cdot_axis[main_axis];
+		float depth_sq, r_point[3];
+		if (v1[main_axis] > proj) { /* the nearest point to the ray is the point v1 */
+			r_axis_closest[main_axis] = true;
+			/* `depth` is equivalent the distance of the the projection of v1 on the ray */
+			depth_sq = mul + data->ray.direction_scaled_square[main_axis] * v1[main_axis];
+
+			copy_v3_v3(r_point, v1);
+		}
+		else if (v2[main_axis] < proj) { /* the nearest point of the ray is the point v2 */
+			r_axis_closest[main_axis] = false;
+
+			depth_sq = mul + data->ray.direction_scaled_square[main_axis] * v2[main_axis];
+
+			copy_v3_v3(r_point, v2);
+		}
+		else {  /* the nearest point of the ray is on the edge of the `AABB`. */
+			r_axis_closest[main_axis] = (proj - v1[main_axis]) < (v2[main_axis] - proj);
+
+			depth_sq = mul + data->ray.direction_scaled_square[main_axis] * proj;
+#if 0
+			r_point[0] = main_axis == 0 ? proj : v2[0];
+			r_point[1] = main_axis == 1 ? proj : v2[1];
+			r_point[2] = main_axis == 2 ? proj : v2[2];
+#else
+			v2[main_axis] = proj;
+			copy_v3_v3(r_point, v2);
+#endif
+		}
+		depth_sq *= depth_sq;
+
+		if (r_depth_sq)
+			*r_depth_sq = depth_sq;
+
+		/* TODO: scale can be optional */
+		r_point[0] *= data->scale[0];
+		r_point[1] *= data->scale[1];
+		r_point[2] *= data->scale[2];
+
+		return len_squared_v3(r_point) - depth_sq;
+	}
+}
+
+/**
+ * <pre>
+ *  + r_point
+ *  |
+ *  | dist
+ *  |
+ *  +----depth----+orig <-- dir
+ *
+ * tangent = dist/depth
+ * </pre>
+ */
+static float calc_tangent_sq(BVHNearestRayData *data, BVHNode *node)
+{
+	float depth_sq;
+	const float dist_sq = dist_squared_ray_to_aabb_scaled_v3__impl(
+	        data, node->bv, &depth_sq, data->pick_smallest);
+
+	return (dist_sq != 0.0f) ? (dist_sq / depth_sq) : 0.0f;
 }
 
 static float calc_dist_sq_to_ray(BVHNearestRayData *data, BVHNode *node)
 {
-	const float *bv = node->bv;
-	const float bb_min[3] = {bv[0], bv[2], bv[4]};
-	const float bb_max[3] = {bv[1], bv[3], bv[5]};
-	return dist_squared_ray_to_aabb_v3(&data->nearest_precalc, bb_min, bb_max, data->pick_smallest);
+	return dist_squared_ray_to_aabb_scaled_v3__impl(
+	        data, node->bv, NULL,
+	        data->pick_smallest);
 }
 
-static void dfs_find_nearest_to_ray_dfs(BVHNearestRayData *data, BVHNode *node)
+static void dfs_find_lowest_tangent_dfs(BVHNearestRayData *data, BVHNode *node)
 {
 	if (node->totnode == 0) {
 		if (data->callback) {
-			data->callback(data->userdata, node->index, &data->ray, &data->nearest);
+			data->callback(data->userdata, data->ray.origin, data->ray.direction,
+			               data->scale, node->index, &data->nearest);
 		}
 		else {
-			const float dist_sq = calc_dist_sq_to_ray(data, node);
-			if (dist_sq != FLT_MAX) {  /* not an invalid ray */
-				data->nearest.index = node->index;
-				data->nearest.dist_sq = dist_sq;
-				/* TODO: return a value to the data->nearest.co
-				 * not urgent however since users currently define own callbacks */
-			}
+			data->nearest.index = node->index;
+			data->nearest.dist_sq = calc_tangent_sq(data, node);
+			/* TODO: return a value to the data->nearest.co
+			 * not urgent however since users currently define own callbacks */
 		}
 	}
 	else {
@@ -1855,51 +2211,74 @@ static void dfs_find_nearest_to_ray_dfs(BVHNearestRayData *data, BVHNode *node)
 		/* First pick the closest node to dive on */
 		if (data->pick_smallest[node->main_axis]) {
 			for (i = 0; i != node->totnode; i++) {
-				if (calc_dist_sq_to_ray(data, node->children[i]) >= data->nearest.dist_sq) {
-					continue;
+				if (calc_tangent_sq(data, node->children[i]) < data->nearest.dist_sq) {
+					dfs_find_lowest_tangent_dfs(data, node->children[i]);
 				}
-				dfs_find_nearest_to_ray_dfs(data, node->children[i]);
 			}
 		}
 		else {
 			for (i = node->totnode - 1; i >= 0; i--) {
-				if (calc_dist_sq_to_ray(data, node->children[i]) >= data->nearest.dist_sq) {
-					continue;
+				if (calc_tangent_sq(data, node->children[i]) < data->nearest.dist_sq) {
+					dfs_find_lowest_tangent_dfs(data, node->children[i]);
 				}
-				dfs_find_nearest_to_ray_dfs(data, node->children[i]);
 			}
 		}
 	}
 }
 
-static void dfs_find_nearest_to_ray_begin(BVHNearestRayData *data, BVHNode *node)
+static void dfs_find_nearest_to_ray_dfs(BVHNearestRayData *data, BVHNode *node)
 {
-	float dist_sq = calc_dist_sq_to_ray(data, node);
-	if (dist_sq >= data->nearest.dist_sq) {
-		return;
+	if (node->totnode == 0) {
+		if (data->callback) {
+			data->callback(data->userdata, data->ray.origin, data->ray.direction,
+			               data->scale, node->index, &data->nearest);
+		}
+		else {
+			data->nearest.index = node->index;
+			data->nearest.dist_sq = calc_dist_sq_to_ray(data, node);
+			/* TODO: return a value to the data->nearest.co
+			 * not urgent however since users currently define own callbacks */
+		}
 	}
-	dfs_find_nearest_to_ray_dfs(data, node);
+	else {
+		int i;
+		/* First pick the closest node to dive on */
+		if (data->pick_smallest[node->main_axis]) {
+			for (i = 0; i != node->totnode; i++) {
+				if (calc_dist_sq_to_ray(data, node->children[i]) < data->nearest.dist_sq) {
+					dfs_find_nearest_to_ray_dfs(data, node->children[i]);
+				}
+			}
+		}
+		else {
+			for (i = node->totnode - 1; i >= 0; i--) {
+				if (calc_dist_sq_to_ray(data, node->children[i]) < data->nearest.dist_sq) {
+					dfs_find_nearest_to_ray_dfs(data, node->children[i]);
+				}
+			}
+		}
+	}
 }
 
-int BLI_bvhtree_find_nearest_to_ray(
-	BVHTree *tree, const float co[3], const float dir[3], float radius, BVHTreeNearest *nearest,
-	BVHTree_NearestToRayCallback callback, void *userdata)
+/**
+ * Returns the point whose tangent defined by the angle between the point and ray is the lowest
+ * nearest.dist_sq returns the angle's tangent
+ */
+int BLI_bvhtree_find_nearest_to_ray_angle(
+        BVHTree *tree, const float co[3], const float dir[3],
+        const bool ray_is_normalized, const float scale[3],
+        BVHTreeNearest *nearest,
+        BVHTree_NearestToRayCallback callback, void *userdata)
 {
 	BVHNearestRayData data;
 	BVHNode *root = tree->nodes[tree->totleaf];
-
-	BLI_ASSERT_UNIT_V3(dir);
 
 	data.tree = tree;
 
 	data.callback = callback;
 	data.userdata = userdata;
 
-	copy_v3_v3(data.ray.origin, co);
-	copy_v3_v3(data.ray.direction, dir);
-	data.ray.radius = radius;
-
-	dist_squared_ray_to_aabb_v3_precalc(&data.nearest_precalc, co, dir);
+	dist_squared_ray_to_aabb_scaled_v3_precalc(&data, co, dir, ray_is_normalized, scale);
 
 	if (nearest) {
 		memcpy(&data.nearest, nearest, sizeof(*nearest));
@@ -1911,7 +2290,8 @@ int BLI_bvhtree_find_nearest_to_ray(
 
 	/* dfs search */
 	if (root) {
-		dfs_find_nearest_to_ray_begin(&data, root);
+		if (calc_tangent_sq(&data, root) < data.nearest.dist_sq)
+			dfs_find_lowest_tangent_dfs(&data, root);
 	}
 
 	/* copy back results */
@@ -1922,12 +2302,58 @@ int BLI_bvhtree_find_nearest_to_ray(
 	return data.nearest.index;
 }
 
-/**
- * Range Query - as request by broken :P
+/* return the nearest point to ray */
+int BLI_bvhtree_find_nearest_to_ray(
+        BVHTree *tree, const float co[3], const float dir[3],
+        const bool ray_is_normalized, const float scale[3],
+        BVHTreeNearest *nearest,
+        BVHTree_NearestToRayCallback callback, void *userdata)
+{
+	BVHNearestRayData data;
+	BVHNode *root = tree->nodes[tree->totleaf];
+
+	data.tree = tree;
+
+	data.callback = callback;
+	data.userdata = userdata;
+
+	dist_squared_ray_to_aabb_scaled_v3_precalc(&data, co, dir, ray_is_normalized, scale);
+
+	if (nearest) {
+		memcpy(&data.nearest, nearest, sizeof(*nearest));
+	}
+	else {
+		data.nearest.index = -1;
+		data.nearest.dist_sq = FLT_MAX;
+	}
+
+	/* dfs search */
+	if (root) {
+		if (calc_dist_sq_to_ray(&data, root) < data.nearest.dist_sq) {
+			dfs_find_nearest_to_ray_dfs(&data, root);
+		}
+	}
+
+	/* copy back results */
+	if (nearest) {
+		memcpy(nearest, &data.nearest, sizeof(*nearest));
+	}
+
+	return data.nearest.index;
+}
+
+/** \} */
+
+
+/* -------------------------------------------------------------------- */
+
+/** \name BLI_bvhtree_range_query
  *
- * Allocs and fills an array with the indexs of node that are on the given spherical range (center, radius) 
+ * Allocs and fills an array with the indexs of node that are on the given spherical range (center, radius).
  * Returns the size of the array.
- */
+ *
+ * \{ */
+
 typedef struct RangeQueryData {
 	BVHTree *tree;
 	const float *center;
@@ -1960,7 +2386,7 @@ static void dfs_range_query(RangeQueryData *data, BVHNode *node)
 				/* Its a leaf.. call the callback */
 				if (node->children[i]->totnode == 0) {
 					data->hits++;
-					data->callback(data->userdata, node->children[i]->index, dist_sq);
+					data->callback(data->userdata, node->children[i]->index, data->center, dist_sq);
 				}
 				else
 					dfs_range_query(data, node->children[i]);
@@ -1969,7 +2395,9 @@ static void dfs_range_query(RangeQueryData *data, BVHNode *node)
 	}
 }
 
-int BLI_bvhtree_range_query(BVHTree *tree, const float co[3], float radius, BVHTree_RangeQuery callback, void *userdata)
+int BLI_bvhtree_range_query(
+        BVHTree *tree, const float co[3], float radius,
+        BVHTree_RangeQuery callback, void *userdata)
 {
 	BVHNode *root = tree->nodes[tree->totleaf];
 
@@ -1989,7 +2417,7 @@ int BLI_bvhtree_range_query(BVHTree *tree, const float co[3], float radius, BVHT
 			/* Its a leaf.. call the callback */
 			if (root->totnode == 0) {
 				data.hits++;
-				data.callback(data.userdata, root->index, dist_sq);
+				data.callback(data.userdata, root->index, co, dist_sq);
 			}
 			else
 				dfs_range_query(&data, root);
@@ -1998,6 +2426,8 @@ int BLI_bvhtree_range_query(BVHTree *tree, const float co[3], float radius, BVHT
 
 	return data.hits;
 }
+
+/** \} */
 
 
 /* -------------------------------------------------------------------- */
@@ -2023,7 +2453,7 @@ static bool bvhtree_walk_dfs_recursive(
 		/* First pick the closest node to recurse into */
 		if (walk_order_cb((const BVHTreeAxisRange *)node->bv, node->main_axis, userdata)) {
 			for (int i = 0; i != node->totnode; i++) {
-				if (walk_parent_cb((const BVHTreeAxisRange *)node->bv, userdata)) {
+				if (walk_parent_cb((const BVHTreeAxisRange *)node->children[i]->bv, userdata)) {
 					if (!bvhtree_walk_dfs_recursive(
 					        walk_parent_cb, walk_leaf_cb, walk_order_cb,
 					        node->children[i], userdata))
@@ -2035,7 +2465,7 @@ static bool bvhtree_walk_dfs_recursive(
 		}
 		else {
 			for (int i = node->totnode - 1; i >= 0; i--) {
-				if (walk_parent_cb((const BVHTreeAxisRange *)node->bv, userdata)) {
+				if (walk_parent_cb((const BVHTreeAxisRange *)node->children[i]->bv, userdata)) {
 					if (!bvhtree_walk_dfs_recursive(
 					        walk_parent_cb, walk_leaf_cb, walk_order_cb,
 					        node->children[i], userdata))
@@ -2069,7 +2499,10 @@ void BLI_bvhtree_walk_dfs(
 {
 	const BVHNode *root = tree->nodes[tree->totleaf];
 	if (root != NULL) {
-		bvhtree_walk_dfs_recursive(walk_parent_cb, walk_leaf_cb, walk_order_cb, root, userdata);
+		/* first make sure the bv of root passes in the test too */
+		if (walk_parent_cb((const BVHTreeAxisRange *)root->bv, userdata)) {
+			bvhtree_walk_dfs_recursive(walk_parent_cb, walk_leaf_cb, walk_order_cb, root, userdata);
+		}
 	}
 }
 

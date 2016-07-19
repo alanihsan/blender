@@ -367,7 +367,13 @@ static int calc_manipulator_stats(const bContext *C)
 							calc_tw_center(scene, ebo->tail);
 							totsel++;
 						}
-						if (ebo->flag & BONE_ROOTSEL) {
+						if ((ebo->flag & BONE_ROOTSEL) &&
+						    /* don't include same point multiple times */
+						    ((ebo->flag & BONE_CONNECTED) &&
+						     (ebo->parent != NULL) &&
+						     (ebo->parent->flag & BONE_TIPSEL) &&
+						     EBONE_VISIBLE(arm, ebo->parent)) == 0)
+						{
 							calc_tw_center(scene, ebo->head);
 							totsel++;
 						}
@@ -989,8 +995,7 @@ static void draw_manipulator_rotate(
 			vec[0] = 0; // XXX (float)(t->mouse.imval[0] - t->center2d[0]);
 			vec[1] = 0; // XXX (float)(t->mouse.imval[1] - t->center2d[1]);
 			vec[2] = 0.0f;
-			normalize_v3(vec);
-			mul_v3_fl(vec, 1.2f * size);
+			normalize_v3_length(vec, 1.2f * size);
 			glBegin(GL_LINES);
 			glVertex3f(0.0f, 0.0f, 0.0f);
 			glVertex3fv(vec);
@@ -1510,8 +1515,7 @@ static void draw_manipulator_rotate_cyl(
 			vec[0] = 0; // XXX (float)(t->mouse.imval[0] - t->center2d[0]);
 			vec[1] = 0; // XXX (float)(t->mouse.imval[1] - t->center2d[1]);
 			vec[2] = 0.0f;
-			normalize_v3(vec);
-			mul_v3_fl(vec, 1.2f * size);
+			normalize_v3_length(vec, 1.2f * size);
 			glBegin(GL_LINES);
 			glVertex3f(0.0, 0.0, 0.0);
 			glVertex3fv(vec);

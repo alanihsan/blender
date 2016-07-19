@@ -45,15 +45,16 @@
 #include "kernel_differential.h"
 #include "kernel_montecarlo.h"
 #include "kernel_camera.h"
-
+#include "kernels/cpu/kernel_cpu_image.h"
 #include "geom/geom.h"
+#include "bvh/bvh.h"
 
 #include "kernel_projection.h"
 #include "kernel_accumulate.h"
 #include "kernel_shader.h"
 
 #ifdef WITH_PTEX
-#include <Ptexture.h>
+#  include <Ptexture.h>
 #endif
 
 CCL_NAMESPACE_BEGIN
@@ -912,7 +913,7 @@ bool OSLRenderServices::texture(ustring filename,
 #endif
 	bool status;
 
-	if(filename[0] == '@') {
+	if(filename.length() && filename[0] == '@') {
 		int slot = atoi(filename.c_str() + 1);
 		float4 rgba = kernel_tex_image_interp(slot, s, 1.0f - t);
 
@@ -926,17 +927,6 @@ bool OSLRenderServices::texture(ustring filename,
 		status = true;
 	}
 	else {
-#if OIIO_VERSION < 10500
-		(void) dresultds;  /* Ignored. */
-		(void) dresultdt;  /* Ignored. */
-		status = ts->texture(texture_handle,
-		                     texture_thread_info,
-		                     options,
-		                     s, t,
-		                     dsdx, dtdx,
-		                     dsdy, dtdy,
-		                     result);
-#else
 		if(texture_handle != NULL) {
 			status = ts->texture(texture_handle,
 			                     texture_thread_info,
@@ -958,7 +948,6 @@ bool OSLRenderServices::texture(ustring filename,
 			                     result,
 			                     dresultds, dresultdt);
 		}
-#endif
 	}
 
 	if(!status) {
@@ -1005,7 +994,7 @@ bool OSLRenderServices::texture3d(ustring filename,
 	}
 
 	bool status;
-	if(filename[0] == '@') {
+	if(filename.length() && filename[0] == '@') {
 		int slot = atoi(filename.c_str() + 1);
 		float4 rgba = kernel_tex_image_interp_3d(slot, P.x, P.y, P.z);
 
@@ -1019,17 +1008,6 @@ bool OSLRenderServices::texture3d(ustring filename,
 		status = true;
 	}
 	else {
-#if OIIO_VERSION < 10500
-		(void) dresultds;  /* Ignored. */
-		(void) dresultdt;  /* Ignored. */
-		(void) dresultdr;  /* Ignored. */
-		status = ts->texture3d(texture_handle,
-		                       texture_thread_info,
-		                       options,
-		                       P,
-		                       dPdx, dPdy, dPdz,
-		                       result);
-#else
 		if(texture_handle != NULL) {
 			status = ts->texture3d(texture_handle,
 			                       texture_thread_info,
@@ -1049,7 +1027,6 @@ bool OSLRenderServices::texture3d(ustring filename,
 			                       result,
 			                       dresultds, dresultdt, dresultdr);
 		}
-#endif
 	}
 
 	if(!status) {
@@ -1084,14 +1061,9 @@ bool OSLRenderServices::environment(ustring filename, TextureOpt &options,
 
 	OIIO::TextureSystem::TextureHandle *th = ts->get_texture_handle(filename, thread_info);
 
-#if OIIO_VERSION < 10500
-	bool status = ts->environment(th, thread_info,
-	                              options, R, dRdx, dRdy, result);
-#else
 	bool status = ts->environment(th, thread_info,
 	                              options, R, dRdx, dRdy,
 	                              nchannels, result);
-#endif
 
 	if(!status) {
 		if(nchannels == 3 || nchannels == 4) {
