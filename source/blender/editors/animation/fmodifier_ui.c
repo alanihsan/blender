@@ -41,6 +41,7 @@
 #include <string.h>
 
 #include "DNA_anim_types.h"
+#include "DNA_object_types.h"
 #include "DNA_scene_types.h"
 
 #include "MEM_guardedalloc.h"
@@ -50,7 +51,9 @@
 #include "BLI_blenlib.h"
 #include "BLI_utildefines.h"
 
+#include "BKE_animsys.h"
 #include "BKE_context.h"
+#include "BKE_depsgraph.h"
 #include "BKE_fcurve.h"
 
 #include "WM_api.h"
@@ -99,6 +102,26 @@ static void delete_fmodifier_cb(bContext *C, void *fmods_v, void *fcm_v)
 	/* send notifiers */
 	// XXX for now, this is the only way to get updates in all the right places... but would be nice to have a special one in this case 
 	WM_event_add_notifier(C, NC_ANIMATION | ND_KEYFRAME | NA_EDITED, NULL);
+
+	/* XXX - need a way to only update the ID to which the modifier is attached */
+	WM_event_add_notifier(C, NC_SCENE | ND_FRAME, CTX_data_scene(C));
+}
+
+/* from rna_FModifier_update */
+static void update_fmodifier_cb(bContext *C, void *custom_data, void *custom_data2)
+{
+	ID *id = (ID *)custom_data;
+	AnimData *adt = BKE_animdata_from_id(id);
+
+	DAG_id_tag_update(id, (GS(id->name) == ID_OB) ? OB_RECALC_OB : OB_RECALC_DATA);
+
+	if (adt != NULL) {
+		adt->recalc |= ADT_RECALC_ANIM;
+	}
+
+	WM_event_add_notifier(C, NC_OBJECT | ND_DRAW, NULL);
+
+	UNUSED_VARS(custom_data2);
 }
 
 /* --------------- */
@@ -169,8 +192,9 @@ static void draw_modifier__generator(uiLayout *layout, ID *id, FModifier *fcm, s
 					uiDefBut(block, UI_BTYPE_LABEL, 1, "y =", 0, 0, 2 * UI_UNIT_X, UI_UNIT_Y, NULL, 0.0, 0.0, 0, 0, "");
 				
 				/* coefficient */
-				uiDefButF(block, UI_BTYPE_NUM, B_FMODIFIER_REDRAW, "", 0, 0, bwidth / 2, UI_UNIT_Y, cp, -UI_FLT_MAX, UI_FLT_MAX,
+				but = uiDefButF(block, UI_BTYPE_NUM, B_FMODIFIER_REDRAW, "", 0, 0, bwidth / 2, UI_UNIT_Y, cp, -UI_FLT_MAX, UI_FLT_MAX,
 				          10, 3, TIP_("Coefficient for polynomial"));
+				UI_but_func_set(but, update_fmodifier_cb, id, NULL);
 				
 				/* 'x' param (and '+' if necessary) */
 				if (i == 0)
@@ -225,13 +249,15 @@ static void draw_modifier__generator(uiLayout *layout, ID *id, FModifier *fcm, s
 				uiDefBut(block, UI_BTYPE_LABEL, 1, "(", 0, 0, UI_UNIT_X, UI_UNIT_Y, NULL, 0.0, 0.0, 0, 0, "");
 				
 				/* coefficients */
-				uiDefButF(block, UI_BTYPE_NUM, B_FMODIFIER_REDRAW, "", 0, 0, 5 * UI_UNIT_X, UI_UNIT_Y, cp, -UI_FLT_MAX, UI_FLT_MAX,
+				but = uiDefButF(block, UI_BTYPE_NUM, B_FMODIFIER_REDRAW, "", 0, 0, 5 * UI_UNIT_X, UI_UNIT_Y, cp, -UI_FLT_MAX, UI_FLT_MAX,
 				          10, 3, TIP_("Coefficient of x"));
+				UI_but_func_set(but, update_fmodifier_cb, id, NULL);
 				
 				uiDefBut(block, UI_BTYPE_LABEL, 1, "x +", 0, 0, 2 * UI_UNIT_X, UI_UNIT_Y, NULL, 0.0, 0.0, 0, 0, "");
 				
-				uiDefButF(block, UI_BTYPE_NUM, B_FMODIFIER_REDRAW, "", 0, 0, 5 * UI_UNIT_X, UI_UNIT_Y, cp + 1, -UI_FLT_MAX, UI_FLT_MAX,
+				but = uiDefButF(block, UI_BTYPE_NUM, B_FMODIFIER_REDRAW, "", 0, 0, 5 * UI_UNIT_X, UI_UNIT_Y, cp + 1, -UI_FLT_MAX, UI_FLT_MAX,
 				          10, 3, TIP_("Second coefficient"));
+				UI_but_func_set(but, update_fmodifier_cb, id, NULL);
 				
 				/* closing bracket and multiplication sign */
 				if ( (i != (data->poly_order - 1)) || ((i == 0) && data->poly_order == 2) ) {
