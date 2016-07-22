@@ -88,27 +88,8 @@ static void validate_fmodifier_cb(bContext *UNUSED(C), void *fcm_v, void *UNUSED
 		fmi->verify_data(fcm);
 }
 
-/* callback to remove the given modifier  */
-static void delete_fmodifier_cb(bContext *C, void *fmods_v, void *fcm_v)
-{
-	ListBase *modifiers = (ListBase *)fmods_v;
-	FModifier *fcm = (FModifier *)fcm_v;
-	
-	/* remove the given F-Modifier from the active modifier-stack */
-	remove_fmodifier(modifiers, fcm);
-
-	ED_undo_push(C, "Delete F-Curve Modifier");
-	
-	/* send notifiers */
-	// XXX for now, this is the only way to get updates in all the right places... but would be nice to have a special one in this case 
-	WM_event_add_notifier(C, NC_ANIMATION | ND_KEYFRAME | NA_EDITED, NULL);
-
-	/* XXX - need a way to only update the ID to which the modifier is attached */
-	WM_event_add_notifier(C, NC_SCENE | ND_FRAME, CTX_data_scene(C));
-}
-
 /* from rna_FModifier_update */
-static void update_fmodifier_cb(bContext *C, void *custom_data, void *custom_data2)
+static void update_fmodifier_cb(bContext *C, void *custom_data, void *args2)
 {
 	ID *id = (ID *)custom_data;
 	AnimData *adt = BKE_animdata_from_id(id);
@@ -121,7 +102,32 @@ static void update_fmodifier_cb(bContext *C, void *custom_data, void *custom_dat
 
 	WM_event_add_notifier(C, NC_OBJECT | ND_DRAW, NULL);
 
-	UNUSED_VARS(custom_data2);
+	UNUSED_VARS(args2);
+}
+
+typedef struct UpdateModifierCb {
+	ID *id;
+	ListBase *modifiers;
+	FModifier *fcm;
+} UpdateModifierCb;
+
+/* callback to remove the given modifier  */
+static void delete_fmodifier_cb(bContext *C, void *custom_data, void *args2)
+{
+	UpdateModifierCb *data = (UpdateModifierCb *)custom_data;
+	ListBase *modifiers = data->modifiers;
+	FModifier *fcm = data->fcm;
+	
+	/* remove the given F-Modifier from the active modifier-stack */
+	remove_fmodifier(modifiers, fcm);
+
+	ED_undo_push(C, "Delete F-Curve Modifier");
+	
+	/* send notifiers */
+	// XXX for now, this is the only way to get updates in all the right places... but would be nice to have a special one in this case 
+	WM_event_add_notifier(C, NC_ANIMATION | ND_KEYFRAME | NA_EDITED, NULL);
+
+	update_fmodifier_cb(C, data->id, args2);
 }
 
 /* --------------- */
@@ -626,11 +632,16 @@ void ANIM_uiTemplate_fmodifier_draw(uiLayout *layout, ID *id, ListBase *modifier
 		uiItemR(sub, &ptr, "mute", UI_ITEM_R_ICON_ONLY, "", ICON_NONE);
 		
 		UI_block_emboss_set(block, UI_EMBOSS_NONE);
+
+		UpdateModifierCb *cb = MEM_callocN(sizeof(UpdateModifierCb), "UpdateModifierCb");
+		cb->fcm = fcm;
+		cb->modifiers = modifiers;
+		cb->id = id;
 		
 		/* delete button */
 		but = uiDefIconBut(block, UI_BTYPE_BUT, B_REDR, ICON_X, 0, 0, UI_UNIT_X, UI_UNIT_Y,
 		                   NULL, 0.0, 0.0, 0.0, 0.0, TIP_("Delete F-Curve Modifier"));
-		UI_but_func_set(but, delete_fmodifier_cb, modifiers, fcm);
+		UI_but_funcN_set(but, delete_fmodifier_cb, cb, NULL);
 		
 		UI_block_emboss_set(block, UI_EMBOSS);
 	}
