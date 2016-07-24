@@ -77,19 +77,8 @@
 #define B_REDR                  1
 #define B_FMODIFIER_REDRAW      20
 
-/* callback to verify modifier data */
-static void validate_fmodifier_cb(bContext *UNUSED(C), void *fcm_v, void *UNUSED(arg))
-{
-	FModifier *fcm = (FModifier *)fcm_v;
-	const FModifierTypeInfo *fmi = fmodifier_get_typeinfo(fcm);
-	
-	/* call the verify callback on the modifier if applicable */
-	if (fmi && fmi->verify_data)
-		fmi->verify_data(fcm);
-}
-
 /* from rna_FModifier_update */
-static void update_fmodifier_cb(bContext *C, void *custom_data, void *args2)
+static void update_fmodifier_cb(bContext *C, void *custom_data, void *UNUSED(args2))
 {
 	ID *id = (ID *)custom_data;
 	AnimData *adt = BKE_animdata_from_id(id);
@@ -101,10 +90,23 @@ static void update_fmodifier_cb(bContext *C, void *custom_data, void *args2)
 	}
 
 	WM_event_add_notifier(C, NC_OBJECT | ND_DRAW, NULL);
-
-	UNUSED_VARS(args2);
 }
 
+/* callback to verify modifier data */
+static void validate_fmodifier_cb(bContext *C, void *fcm_v, void *arg)
+{
+	FModifier *fcm = (FModifier *)fcm_v;
+	const FModifierTypeInfo *fmi = fmodifier_get_typeinfo(fcm);
+	
+	/* call the verify callback on the modifier if applicable */
+	if (fmi && fmi->verify_data)
+		fmi->verify_data(fcm);
+
+	update_fmodifier_cb(C, arg, NULL);
+}
+
+/* Used to pass data to button update callbacks that needs more than 2 custom
+ * parameters. */
 typedef struct UpdateModifierCb {
 	ID *id;
 	ListBase *modifiers;
@@ -150,7 +152,7 @@ static void draw_modifier__generator(uiLayout *layout, ID *id, FModifier *fcm, s
 	block = uiLayoutGetBlock(layout);
 	UI_block_align_begin(block);
 	but = uiDefButR(block, UI_BTYPE_MENU, B_FMODIFIER_REDRAW, NULL, 0, 0, bwidth, UI_UNIT_Y, &ptr, "mode", -1, 0, 0, -1, -1, NULL);
-	UI_but_func_set(but, validate_fmodifier_cb, fcm, NULL);
+	UI_but_func_set(but, validate_fmodifier_cb, fcm, id);
 	
 	uiDefButR(block, UI_BTYPE_TOGGLE, B_FMODIFIER_REDRAW, NULL, 0, 0, bwidth, UI_UNIT_Y, &ptr, "use_additive", -1, 0, 0, -1, -1, NULL);
 	UI_block_align_end(block);
@@ -171,7 +173,7 @@ static void draw_modifier__generator(uiLayout *layout, ID *id, FModifier *fcm, s
 			but = uiDefButI(block, UI_BTYPE_NUM, B_FMODIFIER_REDRAW, IFACE_("Poly Order:"), 0.5f * UI_UNIT_X, 0, bwidth, UI_UNIT_Y,
 			                &data->poly_order, 1, 100, 0, 0,
 			                TIP_("'Order' of the Polynomial (for a polynomial with n terms, 'order' is n-1)"));
-			UI_but_func_set(but, validate_fmodifier_cb, fcm, NULL);
+			UI_but_func_set(but, validate_fmodifier_cb, fcm, id);
 			
 			
 			/* calculate maximum width of label for "x^n" labels */
@@ -237,7 +239,7 @@ static void draw_modifier__generator(uiLayout *layout, ID *id, FModifier *fcm, s
 			but = uiDefButI(block, UI_BTYPE_NUM, B_FMODIFIER_REDRAW, IFACE_("Poly Order:"), 0, 0, width - 1.5 * UI_UNIT_X, UI_UNIT_Y,
 			                &data->poly_order, 1, 100, 0, 0,
 			                TIP_("'Order' of the Polynomial (for a polynomial with n terms, 'order' is n-1)"));
-			UI_but_func_set(but, validate_fmodifier_cb, fcm, NULL);
+			UI_but_func_set(but, validate_fmodifier_cb, fcm, id);
 			
 			
 			/* draw controls for each pair of coefficients */
@@ -363,10 +365,11 @@ static void draw_modifier__noise(uiLayout *layout, ID *id, FModifier *fcm, short
 }
 
 /* callback to add new envelope data point */
-static void fmod_envelope_addpoint_cb(bContext *C, void *fcm_dv, void *UNUSED(arg))
+static void fmod_envelope_addpoint_cb(bContext *C, void *custom_data, void *UNUSED(arg))
 {
 	Scene *scene = CTX_data_scene(C);
-	FMod_Envelope *env = (FMod_Envelope *)fcm_dv;
+	UpdateModifierCb *data = (UpdateModifierCb *)custom_data;
+	FMod_Envelope *env = (FMod_Envelope *)data->fcm->data;
 	FCM_EnvelopeData *fedn;
 	FCM_EnvelopeData fed;
 	
@@ -411,13 +414,16 @@ static void fmod_envelope_addpoint_cb(bContext *C, void *fcm_dv, void *UNUSED(ar
 		
 		env->totvert = 1;
 	}
+
+	update_fmodifier_cb(C, data->id, NULL);
 }
 
 /* callback to remove envelope data point */
 // TODO: should we have a separate file for things like this?
-static void fmod_envelope_deletepoint_cb(bContext *UNUSED(C), void *fcm_dv, void *ind_v)
+static void fmod_envelope_deletepoint_cb(bContext *C, void *custom_data, void *ind_v)
 {
-	FMod_Envelope *env = (FMod_Envelope *)fcm_dv;
+	UpdateModifierCb *data = (UpdateModifierCb *)custom_data;
+	FMod_Envelope *env = (FMod_Envelope *)data->fcm->data;
 	FCM_EnvelopeData *fedn;
 	int index = GET_INT_FROM_POINTER(ind_v);
 	
@@ -442,6 +448,8 @@ static void fmod_envelope_deletepoint_cb(bContext *UNUSED(C), void *fcm_dv, void
 		}
 		env->totvert = 0;
 	}
+
+	update_fmodifier_cb(C, data->id, NULL);
 }
 
 /* draw settings for envelope modifier */
@@ -454,6 +462,10 @@ static void draw_modifier__envelope(uiLayout *layout, ID *id, FModifier *fcm, sh
 	uiBut *but;
 	PointerRNA ptr;
 	int i;
+
+	UpdateModifierCb *cb = MEM_callocN(sizeof(UpdateModifierCb), "UpdateModifierCb");
+	cb->fcm = fcm;
+	cb->id = id;
 	
 	/* init the RNA-pointer */
 	RNA_pointer_create(id, &RNA_FModifierEnvelope, fcm, &ptr);
@@ -477,7 +489,7 @@ static void draw_modifier__envelope(uiLayout *layout, ID *id, FModifier *fcm, sh
 		
 	but = uiDefBut(block, UI_BTYPE_BUT, B_FMODIFIER_REDRAW, IFACE_("Add Point"), 0, 0, 7.5 * UI_UNIT_X, UI_UNIT_Y,
 	               NULL, 0, 0, 0, 0, TIP_("Add a new control-point to the envelope on the current frame"));
-	UI_but_func_set(but, fmod_envelope_addpoint_cb, env, NULL);
+	UI_but_funcN_set(but, fmod_envelope_addpoint_cb, cb, NULL);
 		
 	/* control points list */
 	for (i = 0, fed = env->data; i < env->totvert; i++, fed++) {
@@ -488,16 +500,19 @@ static void draw_modifier__envelope(uiLayout *layout, ID *id, FModifier *fcm, sh
 		UI_block_align_begin(block);
 		but = uiDefButF(block, UI_BTYPE_NUM, B_FMODIFIER_REDRAW, IFACE_("Fra:"), 0, 0, 4.5 * UI_UNIT_X, UI_UNIT_Y,
 		                &fed->time, -MAXFRAMEF, MAXFRAMEF, 10, 1, TIP_("Frame that envelope point occurs"));
-		UI_but_func_set(but, validate_fmodifier_cb, fcm, NULL);
+		UI_but_func_set(but, validate_fmodifier_cb, fcm, id);
 			
-		uiDefButF(block, UI_BTYPE_NUM, B_FMODIFIER_REDRAW, IFACE_("Min:"), 0, 0, 5 * UI_UNIT_X, UI_UNIT_Y,
-		          &fed->min, -UI_FLT_MAX, UI_FLT_MAX, 10, 2, TIP_("Minimum bound of envelope at this point"));
-		uiDefButF(block, UI_BTYPE_NUM, B_FMODIFIER_REDRAW, IFACE_("Max:"), 0, 0, 5 * UI_UNIT_X, UI_UNIT_Y,
-		          &fed->max, -UI_FLT_MAX, UI_FLT_MAX, 10, 2, TIP_("Maximum bound of envelope at this point"));
+		but = uiDefButF(block, UI_BTYPE_NUM, B_FMODIFIER_REDRAW, IFACE_("Min:"), 0, 0, 5 * UI_UNIT_X, UI_UNIT_Y,
+		                &fed->min, -UI_FLT_MAX, UI_FLT_MAX, 10, 2, TIP_("Minimum bound of envelope at this point"));
+		UI_but_func_set(but, update_fmodifier_cb, id, NULL);
+
+		but = uiDefButF(block, UI_BTYPE_NUM, B_FMODIFIER_REDRAW, IFACE_("Max:"), 0, 0, 5 * UI_UNIT_X, UI_UNIT_Y,
+		                &fed->max, -UI_FLT_MAX, UI_FLT_MAX, 10, 2, TIP_("Maximum bound of envelope at this point"));
+		UI_but_func_set(but, update_fmodifier_cb, id, NULL);
 
 		but = uiDefIconBut(block, UI_BTYPE_BUT, B_FMODIFIER_REDRAW, ICON_X, 0, 0, 0.9 * UI_UNIT_X, UI_UNIT_Y,
 		                   NULL, 0.0, 0.0, 0.0, 0.0, TIP_("Delete envelope control point"));
-		UI_but_func_set(but, fmod_envelope_deletepoint_cb, env, SET_INT_IN_POINTER(i));
+		UI_but_funcN_set(but, fmod_envelope_deletepoint_cb, MEM_dupallocN(cb), SET_INT_IN_POINTER(i));
 		UI_block_align_begin(block);
 	}
 }
@@ -593,6 +608,7 @@ void ANIM_uiTemplate_fmodifier_draw(uiLayout *layout, ID *id, ListBase *modifier
 	uiBut *but;
 	short width = 314;
 	PointerRNA ptr;
+	UpdateModifierCb *cb;
 	
 	/* init the RNA-pointer */
 	RNA_pointer_create(id, &RNA_FModifier, fcm, &ptr);
@@ -633,7 +649,7 @@ void ANIM_uiTemplate_fmodifier_draw(uiLayout *layout, ID *id, ListBase *modifier
 		
 		UI_block_emboss_set(block, UI_EMBOSS_NONE);
 
-		UpdateModifierCb *cb = MEM_callocN(sizeof(UpdateModifierCb), "UpdateModifierCb");
+		cb = MEM_callocN(sizeof(UpdateModifierCb), "UpdateModifierCb");
 		cb->fcm = fcm;
 		cb->modifiers = modifiers;
 		cb->id = id;
