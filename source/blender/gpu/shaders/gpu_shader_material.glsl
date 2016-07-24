@@ -3613,7 +3613,9 @@ void volume_absorption(vec4 color, float density, out vec4 result)
 
 void volume_scatter(vec4 color, float density, float anisotropy, out vec4 result)
 {
-	result = color * density;
+	vec3 transmittance = exp(color.rgb * vec3(-density));
+	result.rgb = transmittance;
+	result.a = color.a * density;
 }
 
 /* ********************** matcap style render ******************** */
