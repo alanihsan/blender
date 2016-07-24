@@ -83,7 +83,10 @@ static void update_fmodifier_cb(bContext *C, void *custom_data, void *UNUSED(arg
 	ID *id = (ID *)custom_data;
 	AnimData *adt = BKE_animdata_from_id(id);
 
-	DAG_id_tag_update(id, (GS(id->name) == ID_OB) ? OB_RECALC_OB : OB_RECALC_DATA);
+	if (GS(id->name) == ID_OB)
+		DAG_id_tag_update(id, OB_RECALC_OB);
+	else
+		DAG_id_tag_update(id, OB_RECALC_DATA);
 
 	if (adt != NULL) {
 		adt->recalc |= ADT_RECALC_ANIM;
