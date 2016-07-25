@@ -836,7 +836,10 @@ static void draw_volume_fancy(void)
 	GPUVertexAttribs gattribs;
 	GPU_object_material_bind(1, &gattribs);
 
-
+	/* TODOs:
+	 * - set shader uniforms (needs to get the shader)
+	 * - set vertex pointers
+	 */
 
 	GPU_object_material_unbind();
 }
