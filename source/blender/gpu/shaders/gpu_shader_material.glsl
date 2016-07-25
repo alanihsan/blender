@@ -1142,14 +1142,10 @@ void mtex_rgb_color(vec3 outcol, vec3 texcol, float fact, float facg, out vec3 i
 
 void mtex_rgb_soft(vec3 outcol, vec3 texcol, float fact, float facg, out vec3 incol)
 {
-	float facm;
+	vec4 col;
 
-	fact *= facg;
-	facm = 1.0 - fact;
-
-	vec3 one = vec3(1.0);
-	vec3 scr = one - (one - texcol) * (one - outcol);
-	incol = facm * outcol + fact * ((one - texcol) * outcol * texcol + outcol * scr);
+	mix_soft(fact * facg, vec4(outcol, 1.0), vec4(texcol, 1.0), col);
+	incol.rgb = col.rgb;
 }
 
 void mtex_rgb_linear(vec3 outcol, vec3 texcol, float fact, float facg, out vec3 incol)
@@ -3606,6 +3602,20 @@ void node_output_material(vec4 surface, vec4 volume, float displacement, out vec
 void node_output_world(vec4 surface, vec4 volume, out vec4 result)
 {
 	result = surface;
+}
+
+/* volume */
+
+void volume_absorption(vec4 color, float density, out vec4 result)
+{
+	result = color * density;
+}
+
+void volume_scatter(vec4 color, float density, float anisotropy, out vec4 result)
+{
+	vec3 transmittance = exp(color.rgb * vec3(-density));
+	result.rgb = transmittance;
+	result.a = color.a * density;
 }
 
 /* ********************** matcap style render ******************** */
