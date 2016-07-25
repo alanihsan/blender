@@ -830,3 +830,24 @@ void draw_smoke_heat(SmokeDomainSettings *domain, Object *ob)
 			}
 }
 #endif
+
+static void draw_volume_fancy(void)
+{
+	GPUVertexAttribs gattribs;
+	GPU_object_material_bind(1, &gattribs);
+
+
+
+	GPU_object_material_unbind();
+}
+
+void draw_volume_material(Scene *scene, View3D *v3d, RegionView3D *rv3d, Object *ob)
+{
+	/* Setup gpu material state. */
+	GPU_begin_object_materials(v3d, rv3d, scene, ob, true, NULL);
+
+	draw_volume_fancy();
+
+	/* Reset gpu material state. */
+	GPU_end_object_materials();
+}

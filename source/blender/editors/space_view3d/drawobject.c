@@ -7770,7 +7770,6 @@ void draw_object(Scene *scene, ARegion *ar, View3D *v3d, Base *base, const short
 					if (dt == OB_BOUNDBOX) {
 						draw_bounding_volume(ob, ob->boundtype);
 					}
-					// draw_openvdb_tree(ob);
 				}
 
 				float viewnormal[3];
@@ -7780,7 +7779,13 @@ void draw_object(Scene *scene, ARegion *ar, View3D *v3d, Base *base, const short
 				mul_v3_mat3_m4v3(viewnormal, ob->imat, rv3d->viewinv[2]);
 				normalize_v3(viewnormal);
 
-				draw_volume(ob, viewnormal);
+				if (v3d->drawtype == OB_MATERIAL && dt > OB_SOLID) {
+					drawaxes(rv3d->viewmatob, 1.0, OB_ARROWS);
+					draw_volume_material(scene, v3d, rv3d, ob);
+				}
+				else {
+					draw_volume(ob, viewnormal);
+				}
 
 				break;
 			}

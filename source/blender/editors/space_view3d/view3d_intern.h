@@ -297,6 +297,7 @@ void draw_smoke_volume(struct SmokeDomainSettings *sds, struct Object *ob,
 
 void draw_volume(struct Object *ob, const float viewnormal[3]);
 void create_volume_texture_atlas(struct VolumeData *data);
+void draw_volume_material(struct Scene *scene, struct View3D *v3d, struct RegionView3D *rv3d, struct Object *ob);
 
 //#define SMOKE_DEBUG_VELOCITY
 //#define SMOKE_DEBUG_HEAT
