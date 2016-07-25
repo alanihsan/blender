@@ -59,7 +59,7 @@ extern char datatoc_gpu_shader_material_glsl[];
 extern char datatoc_gpu_shader_vertex_glsl[];
 extern char datatoc_gpu_shader_vertex_world_glsl[];
 extern char datatoc_gpu_shader_geometry_glsl[];
-extern char datatoc_gpu_shader_smoke_vert_glsl[];
+extern char datatoc_gpu_shader_vertex_volume_glsl[];
 
 static char *glsl_material_library = NULL;
 
@@ -777,7 +777,7 @@ static char *code_generate_vertex(ListBase *nodes, const GPUMatType type)
 			vertcode = datatoc_gpu_shader_vertex_world_glsl;
 			break;
 		case GPU_MATERIAL_TYPE_VOLUME:
-			vertcode = datatoc_gpu_shader_smoke_vert_glsl;
+			vertcode = datatoc_gpu_shader_vertex_volume_glsl;
 			break;
 		default:
 			fprintf(stderr, "invalid material type, set one after GPU_material_construct_begin\n");

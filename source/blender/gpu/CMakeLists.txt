@@ -83,6 +83,7 @@ set(SRC
 	shaders/gpu_shader_sparse_volume_frag.glsl
 	shaders/gpu_shader_sparse_volume_vert.glsl
 	shaders/gpu_shader_vdb_frag.glsl
+	shaders/gpu_shader_vertex_volume.glsl
 
 	GPU_basic_shader.h
 	GPU_buffers.h
@@ -115,6 +116,7 @@ data_to_c_simple(shaders/gpu_shader_basic_vert.glsl SRC)
 data_to_c_simple(shaders/gpu_shader_basic_geom.glsl SRC)
 data_to_c_simple(shaders/gpu_shader_vertex.glsl SRC)
 data_to_c_simple(shaders/gpu_shader_vertex_world.glsl SRC)
+data_to_c_simple(shaders/gpu_shader_vertex_volume.glsl SRC)
 data_to_c_simple(shaders/gpu_shader_vsm_store_frag.glsl SRC)
 data_to_c_simple(shaders/gpu_shader_vsm_store_vert.glsl SRC)
 data_to_c_simple(shaders/gpu_shader_fx_vert.glsl SRC)
