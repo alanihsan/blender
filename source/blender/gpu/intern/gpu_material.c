@@ -2133,7 +2133,7 @@ GPUMaterial *GPU_material_world(struct Scene *scene, struct World *wo)
 }
 
 
-GPUMaterial *GPU_material_from_blender(Scene *scene, Material *ma, bool use_opensubdiv)
+GPUMaterial *GPU_material_from_blender(Scene *scene, Material *ma, bool use_opensubdiv, bool is_volume)
 {
 	GPUMaterial *mat;
 	GPUNodeLink *outlink;
@@ -2151,7 +2151,7 @@ GPUMaterial *GPU_material_from_blender(Scene *scene, Material *ma, bool use_open
 	/* allocate material */
 	mat = GPU_material_construct_begin(ma);
 	mat->scene = scene;
-	mat->type = GPU_MATERIAL_TYPE_MESH;
+	mat->type = is_volume ? GPU_MATERIAL_TYPE_VOLUME : GPU_MATERIAL_TYPE_MESH;
 	mat->is_opensubdiv = use_opensubdiv;
 
 	/* render pipeline option */
@@ -2670,7 +2670,7 @@ GPUShaderExport *GPU_shader_export(struct Scene *scene, struct Material *ma)
 	int liblen, fraglen;
 
 	/* TODO(sergey): How to determine whether we need OSD or not here? */
-	GPUMaterial *mat = GPU_material_from_blender(scene, ma, false);
+	GPUMaterial *mat = GPU_material_from_blender(scene, ma, false, false);
 	GPUPass *pass = (mat) ? mat->pass : NULL;
 
 	if (pass && pass->fragmentcode && pass->vertexcode) {

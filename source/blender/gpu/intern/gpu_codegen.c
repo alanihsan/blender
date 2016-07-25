@@ -59,6 +59,7 @@ extern char datatoc_gpu_shader_material_glsl[];
 extern char datatoc_gpu_shader_vertex_glsl[];
 extern char datatoc_gpu_shader_vertex_world_glsl[];
 extern char datatoc_gpu_shader_geometry_glsl[];
+extern char datatoc_gpu_shader_smoke_vert_glsl[];
 
 static char *glsl_material_library = NULL;
 
@@ -728,6 +729,8 @@ static char *code_generate_fragment(ListBase *nodes, GPUOutput *output)
 	if (G.debug & G_DEBUG) printf("%s\n", code);
 #endif
 
+	fprintf(stderr, "================= Fragment =================\n%s\n", code);
+
 	return code;
 }
 
@@ -772,6 +775,9 @@ static char *code_generate_vertex(ListBase *nodes, const GPUMatType type)
 			break;
 		case GPU_MATERIAL_TYPE_WORLD:
 			vertcode = datatoc_gpu_shader_vertex_world_glsl;
+			break;
+		case GPU_MATERIAL_TYPE_VOLUME:
+			vertcode = datatoc_gpu_shader_smoke_vert_glsl;
 			break;
 		default:
 			fprintf(stderr, "invalid material type, set one after GPU_material_construct_begin\n");
@@ -835,6 +841,9 @@ static char *code_generate_vertex(ListBase *nodes, const GPUMatType type)
 #if 0
 	if (G.debug & G_DEBUG) printf("%s\n", code);
 #endif
+
+
+	fprintf(stderr, "================= Vertex =================\n%s\n", code);
 
 	return code;
 }

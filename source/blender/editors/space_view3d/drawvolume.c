@@ -844,7 +844,7 @@ static void draw_volume_fancy(void)
 void draw_volume_material(Scene *scene, View3D *v3d, RegionView3D *rv3d, Object *ob)
 {
 	/* Setup gpu material state. */
-	GPU_begin_object_materials(v3d, rv3d, scene, ob, true, NULL);
+	GPU_begin_object_materials(v3d, rv3d, scene, ob, true, NULL, true);
 
 	draw_volume_fancy();
 

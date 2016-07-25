@@ -4271,7 +4271,7 @@ static bool draw_mesh_object(Scene *scene, ARegion *ar, View3D *v3d, RegionView3
 			if (dt > OB_WIRE) {
 				const bool glsl = draw_glsl_material(scene, ob, v3d, dt);
 
-				GPU_begin_object_materials(v3d, rv3d, scene, ob, glsl, NULL);
+				GPU_begin_object_materials(v3d, rv3d, scene, ob, glsl, NULL, false);
 			}
 		}
 
@@ -4293,7 +4293,7 @@ static bool draw_mesh_object(Scene *scene, ARegion *ar, View3D *v3d, RegionView3
 				if (dt == OB_SOLID || glsl) {
 					const bool check_alpha = check_alpha_pass(base);
 					GPU_begin_object_materials(v3d, rv3d, scene, ob, glsl,
-					                           (check_alpha) ? &do_alpha_after : NULL);
+					                           (check_alpha) ? &do_alpha_after : NULL, false);
 				}
 			}
 
@@ -4583,7 +4583,7 @@ static bool drawCurveDerivedMesh(Scene *scene, View3D *v3d, RegionView3D *rv3d, 
 
 	if (dt > OB_WIRE && dm->getNumPolys(dm)) {
 		bool glsl = draw_glsl_material(scene, ob, v3d, dt);
-		GPU_begin_object_materials(v3d, rv3d, scene, ob, glsl, NULL);
+		GPU_begin_object_materials(v3d, rv3d, scene, ob, glsl, NULL, false);
 
 		if (!glsl)
 			dm->drawFacesSolid(dm, NULL, 0, GPU_object_material_bind);
@@ -4646,12 +4646,12 @@ static bool drawDispList_nobackface(Scene *scene, View3D *v3d, RegionView3D *rv3
 				}
 				else {
 					if (draw_glsl_material(scene, ob, v3d, dt)) {
-						GPU_begin_object_materials(v3d, rv3d, scene, ob, 1, NULL);
+						GPU_begin_object_materials(v3d, rv3d, scene, ob, 1, NULL, false);
 						drawDispListsolid(lb, ob, dflag, ob_wire_col, true);
 						GPU_end_object_materials();
 					}
 					else {
-						GPU_begin_object_materials(v3d, rv3d, scene, ob, 0, NULL);
+						GPU_begin_object_materials(v3d, rv3d, scene, ob, 0, NULL, false);
 						drawDispListsolid(lb, ob, dflag, ob_wire_col, false);
 						GPU_end_object_materials();
 					}
@@ -4681,12 +4681,12 @@ static bool drawDispList_nobackface(Scene *scene, View3D *v3d, RegionView3D *rv3
 				if (dl->nors == NULL) BKE_displist_normals_add(lb);
 
 				if (draw_glsl_material(scene, ob, v3d, dt)) {
-					GPU_begin_object_materials(v3d, rv3d, scene, ob, 1, NULL);
+					GPU_begin_object_materials(v3d, rv3d, scene, ob, 1, NULL, false);
 					drawDispListsolid(lb, ob, dflag, ob_wire_col, true);
 					GPU_end_object_materials();
 				}
 				else {
-					GPU_begin_object_materials(v3d, rv3d, scene, ob, 0, NULL);
+					GPU_begin_object_materials(v3d, rv3d, scene, ob, 0, NULL, false);
 					drawDispListsolid(lb, ob, dflag, ob_wire_col, false);
 					GPU_end_object_materials();
 				}
@@ -4706,12 +4706,12 @@ static bool drawDispList_nobackface(Scene *scene, View3D *v3d, RegionView3D *rv3
 				if (solid) {
 
 					if (draw_glsl_material(scene, ob, v3d, dt)) {
-						GPU_begin_object_materials(v3d, rv3d, scene, ob, 1, NULL);
+						GPU_begin_object_materials(v3d, rv3d, scene, ob, 1, NULL, false);
 						drawDispListsolid(lb, ob, dflag, ob_wire_col, true);
 						GPU_end_object_materials();
 					}
 					else {
-						GPU_begin_object_materials(v3d, rv3d, scene, ob, 0, NULL);
+						GPU_begin_object_materials(v3d, rv3d, scene, ob, 0, NULL, false);
 						drawDispListsolid(lb, ob, dflag, ob_wire_col, false);
 						GPU_end_object_materials();
 					}
@@ -8531,7 +8531,7 @@ static void draw_object_mesh_instance(Scene *scene, View3D *v3d, RegionView3D *r
 
 		if (dm) {
 			bool glsl = draw_glsl_material(scene, ob, v3d, dt);
-			GPU_begin_object_materials(v3d, rv3d, scene, ob, glsl, NULL);
+			GPU_begin_object_materials(v3d, rv3d, scene, ob, glsl, NULL, false);
 		}
 		
 		glFrontFace((ob->transflag & OB_NEG_SCALE) ? GL_CW : GL_CCW);

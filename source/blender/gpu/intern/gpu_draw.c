@@ -1656,6 +1656,7 @@ static struct GPUMaterialState {
 	int lastmatnr, lastretval;
 	GPUBlendMode lastalphablend;
 	bool is_opensubdiv;
+	bool is_volume;
 } GMS = {NULL};
 
 /* fixed function material, alpha handed by caller */
@@ -1732,7 +1733,7 @@ void GPU_end_dupli_object(void)
 
 void GPU_begin_object_materials(
         View3D *v3d, RegionView3D *rv3d, Scene *scene, Object *ob,
-        bool glsl, bool *do_alpha_after)
+        bool glsl, bool *do_alpha_after, bool is_volume)
 {
 	Material *ma;
 	GPUMaterial *gpumat;
@@ -1800,6 +1801,7 @@ void GPU_begin_object_materials(
 	GMS.gviewmat = rv3d->viewmat;
 	GMS.gviewinv = rv3d->viewinv;
 	GMS.gviewcamtexcofac = rv3d->viewcamtexcofac;
+	GMS.is_volume = is_volume;
 
 	/* alpha pass setup. there's various cases to handle here:
 	 * - object transparency on: only solid materials draw in the first pass,
@@ -1843,7 +1845,7 @@ void GPU_begin_object_materials(
 
 			if (glsl) {
 				GMS.gmatbuf[0] = &defmaterial;
-				GPU_material_from_blender(GMS.gscene, &defmaterial, GMS.is_opensubdiv);
+				GPU_material_from_blender(GMS.gscene, &defmaterial, GMS.is_opensubdiv, GMS.is_volume);
 			}
 
 			GMS.alphablend[0] = GPU_BLEND_SOLID;
@@ -1857,7 +1859,7 @@ void GPU_begin_object_materials(
 			if (ma == NULL) ma = &defmaterial;
 
 			/* create glsl material if requested */
-			gpumat = glsl ? GPU_material_from_blender(GMS.gscene, ma, GMS.is_opensubdiv) : NULL;
+			gpumat = glsl ? GPU_material_from_blender(GMS.gscene, ma, GMS.is_opensubdiv, GMS.is_volume) : NULL;
 
 			if (gpumat) {
 				/* do glsl only if creating it succeed, else fallback */
@@ -1956,7 +1958,7 @@ int GPU_object_material_bind(int nr, void *attribs)
 	/* unbind glsl material */
 	if (GMS.gboundmat) {
 		if (GMS.is_alpha_pass) glDepthMask(0);
-		GPU_material_unbind(GPU_material_from_blender(GMS.gscene, GMS.gboundmat, GMS.is_opensubdiv));
+		GPU_material_unbind(GPU_material_from_blender(GMS.gscene, GMS.gboundmat, GMS.is_opensubdiv, GMS.is_volume));
 		GMS.gboundmat = NULL;
 	}
 
@@ -1983,7 +1985,7 @@ int GPU_object_material_bind(int nr, void *attribs)
 
 			float auto_bump_scale;
 
-			GPUMaterial *gpumat = GPU_material_from_blender(GMS.gscene, mat, GMS.is_opensubdiv);
+			GPUMaterial *gpumat = GPU_material_from_blender(GMS.gscene, mat, GMS.is_opensubdiv, GMS.is_volume);
 			GPU_material_vertex_attributes(gpumat, gattribs);
 
 			if (GMS.dob)
@@ -2082,7 +2084,7 @@ void GPU_object_material_unbind(void)
 			glDisable(GL_CULL_FACE);
 
 		if (GMS.is_alpha_pass) glDepthMask(0);
-		GPU_material_unbind(GPU_material_from_blender(GMS.gscene, GMS.gboundmat, GMS.is_opensubdiv));
+		GPU_material_unbind(GPU_material_from_blender(GMS.gscene, GMS.gboundmat, GMS.is_opensubdiv, GMS.is_volume));
 		GMS.gboundmat = NULL;
 	}
 	else
@@ -2377,7 +2379,8 @@ void GPU_draw_update_fvar_offset(DerivedMesh *dm)
 
 		gpu_material = GPU_material_from_blender(GMS.gscene,
 		                                         material,
-		                                         GMS.is_opensubdiv);
+		                                         GMS.is_opensubdiv,
+		                                         GMS.is_volume);
 
 		GPU_material_update_fvar_offset(gpu_material, dm);
 	}
