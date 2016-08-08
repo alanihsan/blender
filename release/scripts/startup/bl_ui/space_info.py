@@ -159,6 +159,9 @@ class INFO_MT_file_import(Menu):
         layout = self.layout
         if bpy.app.build_options.collada:
             layout.operator("wm.collada_import", text="Collada (Default) (.dae)")
+            self.layout.operator("wm.collada_import", text="Collada (Default) (.dae)")
+        if bpy.app.build_options.alembic:
+            self.layout.operator("wm.alembic_import", text="Alembic (.abc)")
         layout.operator("wm.volume_import", text="OpenVDB (.vdb)")
 
 
@@ -169,6 +172,8 @@ class INFO_MT_file_export(Menu):
     def draw(self, context):
         if bpy.app.build_options.collada:
             self.layout.operator("wm.collada_export", text="Collada (Default) (.dae)")
+        if bpy.app.build_options.alembic:
+            self.layout.operator("wm.alembic_export", text="Alembic (.abc)")
 
 
 class INFO_MT_file_external_data(Menu):

@@ -33,9 +33,17 @@
 
 #include "WM_api.h"
 
+#include "WM_api.h"
+
 #ifdef WITH_COLLADA
 #  include "io_collada.h"
 #endif
+
+#ifdef WITH_ALEMBIC
+#  include "io_alembic.h"
+#endif
+
+#include "io_cache.h"
 
 void ED_operatortypes_io(void) 
 {
@@ -44,5 +52,12 @@ void ED_operatortypes_io(void)
 	WM_operatortype_append(WM_OT_collada_export);
 	WM_operatortype_append(WM_OT_collada_import);
 #endif
+#ifdef WITH_ALEMBIC
+	WM_operatortype_append(WM_OT_alembic_import);
+	WM_operatortype_append(WM_OT_alembic_export);
+#endif
+
+	WM_operatortype_append(CACHEFILE_OT_open);
+	WM_operatortype_append(CACHEFILE_OT_reload);
 	WM_operatortype_append(WM_OT_volume_import);
 }
