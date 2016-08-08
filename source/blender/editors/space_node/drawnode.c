@@ -69,6 +69,7 @@
 #include "node_intern.h"  /* own include */
 #include "NOD_composite.h"
 #include "NOD_shader.h"
+#include "NOD_smoke.h"
 #include "NOD_texture.h"
 
 
@@ -3003,6 +3004,7 @@ void ED_node_init_butfuncs(void)
 	ntreeType_Composite->ui_icon = ICON_RENDERLAYERS;
 	ntreeType_Shader->ui_icon = ICON_MATERIAL;
 	ntreeType_Texture->ui_icon = ICON_TEXTURE;
+	ntreeType_Smoke->ui_icon = ICON_MOD_SMOKE;
 }
 
 void ED_init_custom_node_type(bNodeType *ntype)

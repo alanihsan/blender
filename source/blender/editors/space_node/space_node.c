@@ -563,6 +563,9 @@ static void node_area_refresh(const struct bContext *C, ScrArea *sa)
 				ED_preview_shader_job(C, sa, snode->id, NULL, NULL, 100, 100, PR_NODE_RENDER);
 			}
 		}
+		else if (snode->nodetree->type == NTREE_SMOKE) {
+			/* TODO */
+		}
 	}
 }
 

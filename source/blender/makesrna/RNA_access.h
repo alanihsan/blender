@@ -553,6 +553,8 @@ extern StructRNA RNA_SmokeCollSettings;
 extern StructRNA RNA_SmokeDomainSettings;
 extern StructRNA RNA_SmokeFlowSettings;
 extern StructRNA RNA_SmokeModifier;
+extern StructRNA RNA_SmokeNode;
+extern StructRNA RNA_SmokeNodeTree;
 extern StructRNA RNA_SmoothModifier;
 extern StructRNA RNA_SoftBodyModifier;
 extern StructRNA RNA_SoftBodySettings;

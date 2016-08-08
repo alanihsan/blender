@@ -75,7 +75,8 @@ static int node_group_operator_active(bContext *C)
 		 */
 		if (STREQ(snode->tree_idname, "ShaderNodeTree") ||
 		    STREQ(snode->tree_idname, "CompositorNodeTree") ||
-		    STREQ(snode->tree_idname, "TextureNodeTree"))
+		    STREQ(snode->tree_idname, "TextureNodeTree") ||
+		    STREQ(snode->tree_idname, "SmokeNodeTree"))
 		{
 			return true;
 		}
@@ -94,7 +95,8 @@ static int node_group_operator_editable(bContext *C)
 		 */
 		if (STREQ(snode->tree_idname, "ShaderNodeTree") ||
 		    STREQ(snode->tree_idname, "CompositorNodeTree") ||
-		    STREQ(snode->tree_idname, "TextureNodeTree"))
+		    STREQ(snode->tree_idname, "TextureNodeTree") ||
+		    STREQ(snode->tree_idname, "SmokeNodeTree"))
 		{
 			return true;
 		}
@@ -118,6 +120,8 @@ static const char *group_node_idname(bContext *C)
 		return "CompositorNodeGroup";
 	else if (STREQ(snode->tree_idname, "TextureNodeTree"))
 		return "TextureNodeGroup";
+	else if (STREQ(snode->tree_idname, "SmokeNodeTree"))
+		return "SmokeNodeGroup";
 	
 	return "";
 }

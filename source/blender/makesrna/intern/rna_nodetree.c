@@ -481,6 +481,20 @@ static EnumPropertyItem *rna_node_static_type_itemf(bContext *UNUSED(C), Pointer
 #undef DefNode
 	}
 
+	if (RNA_struct_is_a(ptr->type, &RNA_SmokeNode)) {
+#define DefNode(Category, ID, DefFunc, EnumName, StructName, UIName, UIDesc) \
+		if (STREQ(#Category, "SmokeNode")) { \
+			tmp.value = ID; \
+			tmp.identifier = EnumName; \
+			tmp.name = UIName; \
+			tmp.description = UIDesc; \
+			tmp.icon = ICON_NONE; \
+			RNA_enum_item_add(&item, &totitem, &tmp); \
+		}
+#include "../../nodes/NOD_static_types.h"
+#undef DefNode
+	}
+
 	RNA_enum_item_end(&item, &totitem);
 	*r_free = true;
 	
@@ -1488,6 +1502,23 @@ static StructRNA *rna_TextureNode_register(
 	/* update while blender is running */
 	WM_main_add_notifier(NC_NODE | NA_EDITED, NULL);
 	
+	return nt->ext.srna;
+}
+
+static StructRNA *rna_SmokeNode_register(
+        Main *bmain, ReportList *reports,
+        void *data, const char *identifier,
+        StructValidateFunc validate, StructCallbackFunc call, StructFreeFunc free)
+{
+	bNodeType *nt = rna_Node_register_base(bmain, reports, &RNA_SmokeNode, data, identifier, validate, call, free);
+	if (!nt)
+		return NULL;
+
+	nodeRegisterType(nt);
+
+	/* update while blender is running */
+	WM_main_add_notifier(NC_NODE | NA_EDITED, NULL);
+
 	return nt->ext.srna;
 }
 
@@ -6834,6 +6865,16 @@ static void rna_def_texture_node(BlenderRNA *brna)
 	RNA_def_struct_register_funcs(srna, "rna_TextureNode_register", "rna_Node_unregister", NULL);
 }
 
+static void rna_def_smoke_node(BlenderRNA *brna)
+{
+	StructRNA *srna;
+
+	srna = RNA_def_struct(brna, "SmokeNode", "NodeInternal");
+	RNA_def_struct_ui_text(srna, "Smoke Node", "");
+	RNA_def_struct_sdna(srna, "bNode");
+	RNA_def_struct_register_funcs(srna, "rna_SmokeNode_register", "rna_Node_unregister", NULL);
+}
+
 /* -------------------------------------------------------------------------- */
 
 static void rna_def_node_socket(BlenderRNA *brna)
@@ -8255,6 +8296,16 @@ static void rna_def_texture_nodetree(BlenderRNA *brna)
 	RNA_def_struct_ui_icon(srna, ICON_TEXTURE);
 }
 
+static void rna_def_smoke_nodetree(BlenderRNA *brna)
+{
+	StructRNA *srna;
+
+	srna = RNA_def_struct(brna, "SmokeNodeTree", "NodeTree");
+	RNA_def_struct_ui_text(srna, "Smoke Node Tree", "Node tree consisting of linked nodes used for smoke simulation");
+	RNA_def_struct_sdna(srna, "bNodeTree");
+	RNA_def_struct_ui_icon(srna, ICON_MOD_SMOKE);
+}
+
 static StructRNA *define_specific_node(BlenderRNA *brna, const char *struct_name, const char *base_name,
                                        const char *ui_name, const char *ui_desc, void (*def_func)(StructRNA *))
 {
@@ -8334,6 +8385,7 @@ void RNA_def_nodetree(BlenderRNA *brna)
 	rna_def_shader_node(brna);
 	rna_def_compositor_node(brna);
 	rna_def_texture_node(brna);
+	rna_def_smoke_node(brna);
 	
 	rna_def_nodetree(brna);
 	
@@ -8342,6 +8394,7 @@ void RNA_def_nodetree(BlenderRNA *brna)
 	rna_def_composite_nodetree(brna);
 	rna_def_shader_nodetree(brna);
 	rna_def_texture_nodetree(brna);
+	rna_def_smoke_nodetree(brna);
 	
 #define DefNode(Category, ID, DefFunc, EnumName, StructName, UIName, UIDesc) \
 	{ \
@@ -8363,6 +8416,7 @@ void RNA_def_nodetree(BlenderRNA *brna)
 	define_specific_node(brna, "ShaderNodeGroup", "ShaderNode", "Group", "", def_group);
 	define_specific_node(brna, "CompositorNodeGroup", "CompositorNode", "Group", "", def_group);
 	define_specific_node(brna, "TextureNodeGroup", "TextureNode", "Group", "", def_group);
+	define_specific_node(brna, "SmokeNodeGroup", "SmokeNode", "Group", "", def_group);
 	def_custom_group(brna);
 	
 	/* special socket types */
