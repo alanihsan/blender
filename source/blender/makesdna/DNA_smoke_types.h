@@ -54,8 +54,6 @@ enum {
 #define MOD_SMOKE_NOISEWAVE (1<<0)
 #define MOD_SMOKE_NOISEFFT (1<<1)
 #define MOD_SMOKE_NOISECURL (1<<2)
-/* viewsettings */
-#define MOD_SMOKE_VIEW_SHOWBIG (1<<0)
 
 /* cache compression */
 #define SM_CACHE_LIGHT		0
@@ -68,9 +66,9 @@ enum {
 #define SM_BORDER_HORIZONTAL 3
 
 /* viewport preview types */
-#define SM_VIEWPORT_GEOM  	0
-#define SM_VIEWPORT_PREVIEW	1
-#define SM_VIEWPORT_FINAL	2
+#define SM_VIEWPORT_GEOMETRY 0
+#define SM_VIEWPORT_PREVIEW	 1
+#define SM_VIEWPORT_FINAL	 2
 
 /* collision types */
 #define SM_COLL_STATIC		0
@@ -133,17 +131,18 @@ typedef struct SmokeDomainSettings {
 	int total_cells;
 	float dx; /* 1.0f / res */
 	float scale; /* largest domain size */
+	float gravity[3];
 
 	/* user settings */
 	int adapt_margin;
 	int adapt_res;
 	float adapt_threshold;
+	char pad3[4]; /* unused */
 
 	float alpha;
 	float beta;
 	int amplify; /* wavelet amplification */
 	int maxres; /* longest axis on the BB gets this resolution assigned */
-	int previewres;
 	int flags; /* show up-res or low res, etc */
 	int viewsettings;
 	short noise; /* noise type: wave, curl, anisotropic */
@@ -159,7 +158,7 @@ typedef struct SmokeDomainSettings {
 	int openvdb_comp;
 	char cache_file_format;
 	char data_depth;
-	char pad[6];
+	char pad[2];
 	/* Liquid cache options */
 	int liquid_cache_comp;
 	char mock_pad[4]; /* unused */
@@ -209,7 +208,7 @@ typedef struct SmokeDomainSettings {
 /* behavior */
 #define MOD_SMOKE_FLOW_BEHAVIOR_INFLOW 0
 #define MOD_SMOKE_FLOW_BEHAVIOR_OUTFLOW 1
-#define MOD_SMOKE_FLOW_BEHAVIOR_STATIC 2
+#define MOD_SMOKE_FLOW_BEHAVIOR_GEOMETRY 2
 
 /* flow source */
 #define MOD_SMOKE_FLOW_SOURCE_PARTICLES 0

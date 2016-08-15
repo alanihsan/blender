@@ -79,6 +79,21 @@ static void rna_Smoke_resetCache(Main *UNUSED(bmain), Scene *UNUSED(scene), Poin
 	DAG_id_tag_update(ptr->id.data, OB_RECALC_DATA);
 }
 
+static void rna_Smoke_cachetype_set(struct PointerRNA *ptr, int value)
+{
+	SmokeDomainSettings *settings = (SmokeDomainSettings *)ptr->data;
+	Object *ob = (Object *)ptr->id.data;
+
+	if (value != settings->cache_file_format) {
+		/* Clear old caches. */
+		PTCacheID id;
+		BKE_ptcache_id_from_smoke(&id, ob, settings->smd);
+		BKE_ptcache_id_clear(&id, PTCACHE_CLEAR_ALL, 0);
+
+		settings->cache_file_format = value;
+	}
+}
+
 static void rna_Smoke_reset(Main *bmain, Scene *scene, PointerRNA *ptr)
 {
 	SmokeDomainSettings *settings = (SmokeDomainSettings *)ptr->data;
@@ -459,16 +474,16 @@ static void rna_def_smoke_domain_settings(BlenderRNA *brna)
 	};
 
 	static EnumPropertyItem smoke_domain_colli_items[] = {
-		{SM_BORDER_OPEN, "BORDEROPEN", 0, "Open", "Smoke doesn't collide with any border"},
+		{SM_BORDER_OPEN, "BORDEROPEN", 0, "Open", "Fluid doesn't collide with any border"},
 		{SM_BORDER_VERTICAL, "BORDERVERTICAL", 0, "Vertically Open",
-		 "Smoke doesn't collide with top and bottom sides"},
-		{SM_BORDER_CLOSED, "BORDERCLOSED", 0, "Collide All", "Smoke collides with every side"},
-		{SM_BORDER_HORIZONTAL, "BORDERHORIZONTAL", 0, "Horizontally Open", "Smoke doesn't collide with left, right, front and back sides"},
+		 "Fluid doesn't collide with top and bottom sides"},
+		{SM_BORDER_CLOSED, "BORDERCLOSED", 0, "Collide All", "Fluid collides with every side"},
+		{SM_BORDER_HORIZONTAL, "BORDERHORIZONTAL", 0, "Horizontally Open", "Fluid doesn't collide with left, right, front and back sides"},
 		{0, NULL, 0, NULL, NULL}
 	};
 	
 	static EnumPropertyItem smoke_quality_items[] = {
-		{SM_VIEWPORT_GEOM, "GEOMETRY", 0, "Geometry", "Display geometry"},
+		{SM_VIEWPORT_GEOMETRY, "GEOMETRY", 0, "Geometry", "Display geometry"},
 		{SM_VIEWPORT_PREVIEW, "PREVIEW", 0, "Preview", "Display preview quality results"},
 		{SM_VIEWPORT_FINAL, "FINAL", 0, "Final", "Display final quality results"},
 		{0, NULL, 0, NULL, NULL}
@@ -500,15 +515,7 @@ static void rna_def_smoke_domain_settings(BlenderRNA *brna)
 	RNA_def_property_int_sdna(prop, NULL, "maxres");
 	RNA_def_property_range(prop, 6, 512);
 	RNA_def_property_ui_range(prop, 24, 512, 2, -1);
-	RNA_def_property_ui_text(prop, "Max Res", "Domain resolution used in the fluid domain");
-	RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
-	RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, "rna_Smoke_reset");
-	
-	prop = RNA_def_property(srna, "resolution_preview", PROP_INT, PROP_NONE);
-	RNA_def_property_int_sdna(prop, NULL, "previewres");
-	RNA_def_property_range(prop, 6, 128);
-	RNA_def_property_ui_range(prop, 24, 128, 2, -1);
-	RNA_def_property_ui_text(prop, "Max Res", "Preview resolution used in the fluid domain");
+	RNA_def_property_ui_text(prop, "Max Res", "Resolution used for the fluid domain");
 	RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
 	RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, "rna_Smoke_reset");
 
@@ -516,7 +523,7 @@ static void rna_def_smoke_domain_settings(BlenderRNA *brna)
 	RNA_def_property_int_sdna(prop, NULL, "amplify");
 	RNA_def_property_range(prop, 1, 10);
 	RNA_def_property_ui_range(prop, 1, 10, 1, -1);
-	RNA_def_property_ui_text(prop, "Amplification", "Enhance the resolution of smoke by this factor using noise");
+	RNA_def_property_ui_text(prop, "Amplification", "Enhance the resolution of fluid domain by this factor");
 	RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
 	RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, "rna_Smoke_reset");
 
@@ -525,11 +532,6 @@ static void rna_def_smoke_domain_settings(BlenderRNA *brna)
 	RNA_def_property_ui_text(prop, "High res", "Enable high resolution (using amplification)");
 	RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
 	RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, "rna_Smoke_reset");
-
-	prop = RNA_def_property(srna, "show_high_resolution", PROP_BOOLEAN, PROP_NONE);
-	RNA_def_property_boolean_sdna(prop, NULL, "viewsettings", MOD_SMOKE_VIEW_SHOWBIG);
-	RNA_def_property_ui_text(prop, "Show High Resolution", "Show high resolution (using amplification)");
-	RNA_def_property_update(prop, NC_OBJECT | ND_DRAW, NULL);
 
 	prop = RNA_def_property(srna, "noise_type", PROP_ENUM, PROP_NONE);
 	RNA_def_property_enum_sdna(prop, NULL, "noise");
@@ -638,7 +640,7 @@ static void rna_def_smoke_domain_settings(BlenderRNA *brna)
 	RNA_def_property_enum_sdna(prop, NULL, "viewport_display_mode");
 	RNA_def_property_enum_items(prop, smoke_quality_items);
 	RNA_def_property_ui_text(prop, "Viewport Display Mode", "How to display the mesh in the viewport");
-	RNA_def_property_update(prop, 0, "rna_Smoke_update");
+	RNA_def_property_update(prop, NC_OBJECT | ND_DRAW, NULL);
 	
 	prop = RNA_def_property(srna, "render_display_mode", PROP_ENUM, PROP_NONE);
 	RNA_def_property_enum_sdna(prop, NULL, "render_display_mode");
@@ -665,7 +667,7 @@ static void rna_def_smoke_domain_settings(BlenderRNA *brna)
 
 	prop = RNA_def_property(srna, "vorticity", PROP_FLOAT, PROP_NONE);
 	RNA_def_property_float_sdna(prop, NULL, "vorticity");
-	RNA_def_property_range(prop, 0.01, 4.0);
+	RNA_def_property_range(prop, 0.0, 4.0);
 	RNA_def_property_ui_range(prop, 0.01, 4.0, 0.02, 5);
 	RNA_def_property_ui_text(prop, "Vorticity", "Amount of turbulence/rotation in fluid");
 	RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, "rna_Smoke_resetCache");
@@ -789,6 +791,7 @@ static void rna_def_smoke_domain_settings(BlenderRNA *brna)
 	prop = RNA_def_property(srna, "cache_file_format", PROP_ENUM, PROP_NONE);
 	RNA_def_property_enum_sdna(prop, NULL, "cache_file_format");
 	RNA_def_property_enum_items(prop, cache_file_type_items);
+	RNA_def_property_enum_funcs(prop, NULL, "rna_Smoke_cachetype_set", NULL);
 	RNA_def_property_ui_text(prop, "File Format", "Select the file format to be used for caching");
 	RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, "rna_Smoke_resetCache");
 	
@@ -811,7 +814,7 @@ static void rna_def_smoke_domain_settings(BlenderRNA *brna)
 	RNA_def_property_ui_text(prop, "Time", "Animation time of noise");
 	
 	prop = RNA_def_property(srna, "particle_randomness", PROP_FLOAT, PROP_NONE);
-	RNA_def_property_range(prop, 0.01, 1.0);
+	RNA_def_property_range(prop, 0.0, 2.0);
 	RNA_def_property_ui_range(prop, 0.01, 2.0, 1.0, 5);
 	RNA_def_property_ui_text(prop, "Randomness", "Randomness factor for particle sampling");
 	RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, "rna_Smoke_resetCache");
@@ -833,7 +836,7 @@ static void rna_def_smoke_flow_settings(BlenderRNA *brna)
 	static EnumPropertyItem smoke_flow_behaviors[] = {
 		{MOD_SMOKE_FLOW_BEHAVIOR_INFLOW, "INFLOW", 0, "Inflow", "Add fluid to simulation"},
 		{MOD_SMOKE_FLOW_BEHAVIOR_OUTFLOW, "OUTFLOW", 0, "Outflow", "Delete fluid from simulation"},
-		{MOD_SMOKE_FLOW_BEHAVIOR_STATIC, "STATIC", 0, "Static", "Only use given geometry for fluid"},
+		{MOD_SMOKE_FLOW_BEHAVIOR_GEOMETRY, "GEOMETRY", 0, "Geometry", "Only use given geometry for fluid"},
 		{0, NULL, 0, NULL, NULL}
 	};
 

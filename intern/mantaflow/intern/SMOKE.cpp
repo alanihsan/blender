@@ -74,7 +74,7 @@ SMOKE::SMOKE(int *res, SmokeModifierData *smd)
 	mConstantScaling    = (mConstantScaling < 1.0f) ? 1.0f : mConstantScaling;
 	mTotalCells         = mResX * mResY * mResZ;
 	
-	// Low res grids
+	// Smoke low res grids
 	mDensity        = NULL;
 	mFlags          = NULL;
 	mHeat           = NULL;
@@ -97,7 +97,7 @@ SMOKE::SMOKE(int *res, SmokeModifierData *smd)
 	mFuelInflow     = NULL;
 	mObstacles      = NULL;
 	
-	// High res grids
+	// Smoke high res grids
 	mDensityHigh    = NULL;
 	mFlameHigh      = NULL;
 	mFuelHigh       = NULL;
@@ -112,9 +112,11 @@ SMOKE::SMOKE(int *res, SmokeModifierData *smd)
 	mTextureV2      = NULL;
 	mTextureW2      = NULL;
 	
-	// Liquids
+	// Liquid low res grids
 	mPhi            = NULL;
 	mPhiInit        = NULL;
+	
+	// Liquid high res grids
 	mPhiHigh        = NULL;
 	
 	mNumVertices  = 0;
@@ -130,7 +132,27 @@ SMOKE::SMOKE(int *res, SmokeModifierData *smd)
 	if (mUsingLiquid) {
 		initDomain(smd);
 		initLiquid(smd);
+
 		updatePointers(smd);
+		
+		if (mUsingHighRes) {
+			// Make sure that string vector does not contain any previous commands
+			mCommands.clear();
+
+			// simulation constants
+			int amplify     = smd->domain->amplify + 1;
+			mResXHigh       = amplify * mResX;
+			mResYHigh       = amplify * mResY;
+			mResZHigh       = amplify * mResZ;
+			mTotalCellsHigh	= mResXHigh * mResYHigh * mResZHigh;
+			
+			// Initialize Mantaflow variables in Python
+			initDomainHigh(smd);
+			initLiquidHigh(smd);
+
+			updatePointersHigh(smd);
+		}
+
 		return;
 	}
 	
@@ -169,8 +191,8 @@ SMOKE::SMOKE(int *res, SmokeModifierData *smd)
 void SMOKE::initDomain(SmokeModifierData *smd)
 {
 	std::string tmpString = manta_import
-		+ solver_low
-		+ adaptive_time_stepping_low;
+		+ fluid_solver_low
+		+ fluid_adaptive_time_stepping_low;
 	std::string finalString = parseScript(tmpString, smd);
 	mCommands.clear();
 	mCommands.push_back(finalString);
@@ -180,8 +202,8 @@ void SMOKE::initDomain(SmokeModifierData *smd)
 
 void SMOKE::initDomainHigh(SmokeModifierData *smd)
 {
-	std::string tmpString = solver_high
-		+ adaptive_time_stepping_high;
+	std::string tmpString = fluid_solver_high
+		+ fluid_adaptive_time_stepping_high;
 	std::string finalString = parseScript(tmpString, smd);
 	mCommands.clear();
 	mCommands.push_back(finalString);
@@ -191,11 +213,10 @@ void SMOKE::initDomainHigh(SmokeModifierData *smd)
 
 void SMOKE::initSmoke(SmokeModifierData *smd)
 {
-	std::string tmpString = alloc_base_grids_low
-		+ fluid_variables
+	std::string tmpString = smoke_alloc_low
 		+ smoke_variables_low
-		+ prep_domain_low
-		+ manta_step
+		+ smoke_bounds_low
+		+ smoke_adaptive_step
 		+ smoke_step_low;
 	std::string finalString = parseScript(tmpString, smd);
 	mCommands.clear();
@@ -206,11 +227,11 @@ void SMOKE::initSmoke(SmokeModifierData *smd)
 
 void SMOKE::initSmokeHigh(SmokeModifierData *smd)
 {
-	std::string tmpString = alloc_base_grids_high
+	std::string tmpString = smoke_alloc_high
 		+ smoke_variables_high
-		+ uv_setup
-		+ prep_domain_high
-		+ wavelet_turbulence_noise
+		+ smoke_uv_setup
+		+ smoke_bounds_high
+		+ smoke_wavelet_turbulence_noise
 		+ smoke_step_high;
 	std::string finalString = parseScript(tmpString, smd);
 	mCommands.clear();
@@ -224,8 +245,8 @@ void SMOKE::initHeat(SmokeModifierData *smd)
 {
 	if (!mHeat) {
 		mCommands.clear();
-		mCommands.push_back(alloc_heat_low);
-		mCommands.push_back(with_heat);
+		mCommands.push_back(smoke_alloc_heat_low);
+		mCommands.push_back(smoke_with_heat);
 		
 		runPythonString(mCommands);
 		mUsingHeat = true;
@@ -236,8 +257,8 @@ void SMOKE::initFire(SmokeModifierData *smd)
 {
 	if (!mFuel) {
 		mCommands.clear();
-		mCommands.push_back(alloc_fire_low);
-		mCommands.push_back(with_fire);
+		mCommands.push_back(smoke_alloc_fire_low);
+		mCommands.push_back(smoke_with_fire);
 
 		runPythonString(mCommands);
 		mUsingFire = true;
@@ -248,8 +269,8 @@ void SMOKE::initFireHigh(SmokeModifierData *smd)
 {
 	if (!mFuelHigh) {
 		mCommands.clear();
-		mCommands.push_back(alloc_fire_high);
-		mCommands.push_back(with_fire);
+		mCommands.push_back(smoke_alloc_fire_high);
+		mCommands.push_back(smoke_with_fire);
 
 		runPythonString(mCommands);
 		mUsingFire = true;
@@ -260,11 +281,11 @@ void SMOKE::initColors(SmokeModifierData *smd)
 {
 	if (!mColorR) {
 		mCommands.clear();
-		std::string colorCodes = parseScript(set_color_codes, smd);
+		std::string colorCodes = parseScript(smoke_set_color_codes, smd);
 		mCommands.push_back(colorCodes);
-		mCommands.push_back(alloc_colors_low);
-		mCommands.push_back(init_colors_low);
-		mCommands.push_back(with_colors);
+		mCommands.push_back(smoke_alloc_colors_low);
+		mCommands.push_back(smoke_init_colors_low);
+		mCommands.push_back(smoke_with_colors);
 
 		runPythonString(mCommands);
 		mUsingColors = true;
@@ -275,11 +296,11 @@ void SMOKE::initColorsHigh(SmokeModifierData *smd)
 {
 	if (!mColorRHigh) {
 		mCommands.clear();
-		std::string colorCodes = parseScript(set_color_codes, smd);
+		std::string colorCodes = parseScript(smoke_set_color_codes, smd);
 		mCommands.push_back(colorCodes);
-		mCommands.push_back(alloc_colors_high);
-		mCommands.push_back(init_colors_high);
-		mCommands.push_back(with_colors);
+		mCommands.push_back(smoke_alloc_colors_high);
+		mCommands.push_back(smoke_init_colors_high);
+		mCommands.push_back(smoke_with_colors);
 
 		runPythonString(mCommands);
 		mUsingColors = true;
@@ -289,16 +310,15 @@ void SMOKE::initColorsHigh(SmokeModifierData *smd)
 void SMOKE::initLiquid(SmokeModifierData *smd)
 {
 	if (!mPhi) {
-		std::string tmpString = alloc_liquid
-			+ fluid_variables
-			+ liquid_variables
-//			+ prep_domain_low
-			+ init_phi
-			+ save_mesh
-			+ save_liquid_data
-			+ load_liquid_data
-			+ adaptive_step_liquid
-			+ liquid_step;
+		std::string tmpString = liquid_alloc_low
+			+ liquid_variables_low
+			+ liquid_bounds_low
+			+ liquid_init_phi
+			+ liquid_save_mesh
+			+ liquid_export_low
+			+ liquid_import_low
+			+ liquid_adaptive_step
+			+ liquid_step_low;
 		std::string finalString = parseScript(tmpString, smd);
 		mCommands.clear();
 		mCommands.push_back(finalString);
@@ -306,6 +326,20 @@ void SMOKE::initLiquid(SmokeModifierData *smd)
 		runPythonString(mCommands);
 		mUsingLiquid = true;
 	}
+}
+
+void SMOKE::initLiquidHigh(SmokeModifierData *smd)
+{
+	std::string tmpString = liquid_alloc_high
+		+ liquid_variables_high
+		+ liquid_bounds_high
+		+ liquid_step_high;
+	std::string finalString = parseScript(tmpString, smd);
+	mCommands.clear();
+	mCommands.push_back(finalString);
+		
+	runPythonString(mCommands);
+	mUsingHighRes = true;
 }
 
 void SMOKE::step(SmokeModifierData *smd)
@@ -334,30 +368,33 @@ SMOKE::~SMOKE()
 	
 	// Liquid
 	if (mUsingLiquid) {
-		mCommands.push_back(del_liquid_grids);
-		mCommands.push_back(del_liquid_vars);
+		mCommands.push_back(liquid_delete_grids_low);
+		mCommands.push_back(liquid_delete_variables_low);
+		
+		if (mUsingHighRes) mCommands.push_back(liquid_delete_grids_high);
+		if (mUsingHighRes) mCommands.push_back(liquid_delete_variables_high);
 	}
 	
 	// Smoke
 	if (mUsingSmoke) {
-		mCommands.push_back(del_base_grids_low);
-		mCommands.push_back(del_vars_low);
-		if (mUsingHeat)          mCommands.push_back(del_heat_low);
-		if (mUsingFire)          mCommands.push_back(del_fire_low);
-		if (mUsingColors)        mCommands.push_back(del_colors_low);
+		mCommands.push_back(smoke_delete_grids_low);
+		mCommands.push_back(smoke_delete_variables_low);
+		if (mUsingHeat)          mCommands.push_back(smoke_delete_heat_low);
+		if (mUsingFire)          mCommands.push_back(smoke_delete_fire_low);
+		if (mUsingColors)        mCommands.push_back(smoke_delete_colors_low);
 		
-		if (mUsingHighRes)                 mCommands.push_back(del_base_grids_high);
-		if (mUsingHighRes)                 mCommands.push_back(del_vars_high);
-		if (mUsingColors && mUsingHighRes) mCommands.push_back(del_colors_high);
-		if (mUsingFire && mUsingHighRes)   mCommands.push_back(del_fire_high);
+		if (mUsingHighRes)                 mCommands.push_back(smoke_delete_grids_high);
+		if (mUsingHighRes)                 mCommands.push_back(smoke_delete_variables_high);
+		if (mUsingColors && mUsingHighRes) mCommands.push_back(smoke_delete_colors_high);
+		if (mUsingFire && mUsingHighRes)   mCommands.push_back(smoke_delete_fire_high);
 	}
 	
 	// Make sure that everything is garbage collected
 	mCommands.push_back(gc_collect);
 
 	// Solvers always have to be the last objects to be deleted
-	mCommands.push_back(del_solver_low);
-	if (mUsingHighRes) mCommands.push_back(del_solver_high);
+	mCommands.push_back(fluid_delete_solver_low);
+	if (mUsingHighRes) mCommands.push_back(fluid_delete_solver_high);
 	
 	// Just in case: gc again
 	mCommands.push_back(gc_collect);
@@ -499,7 +536,7 @@ std::string SMOKE::getRealValue(const std::string& varName,  SmokeModifierData *
 	else if (varName == "VORTICITY")
 		ss << smd->domain->vorticity / mConstantScaling;
 	else if (varName == "UPRES")
-		ss << smd->domain->amplify;
+		ss << smd->domain->amplify + 1;
 	else if (varName == "HRESX")
 		ss << mResXHigh;
 	else if (varName == "HRESY") {
@@ -544,6 +581,12 @@ std::string SMOKE::getRealValue(const std::string& varName,  SmokeModifierData *
 		ss << md->scene->r.cfra;
 	else if (varName == "RANDOMNESS")
 		ss << smd->domain->particle_randomness;
+	else if (varName == "GRAVITY_X")
+		ss << smd->domain->gravity[0];
+	else if (varName == "GRAVITY_Y")
+		ss << smd->domain->gravity[1];
+	else if (varName == "GRAVITY_Z")
+		ss << smd->domain->gravity[2];
 	else if (varName == "MANTA_EXPORT_PATH") {
 		char parent_dir[1024];
 		BLI_split_dir_part(smd->domain->manta_filepath, parent_dir, sizeof(parent_dir));
@@ -593,48 +636,48 @@ void SMOKE::exportScript(SmokeModifierData *smd)
 	// Setup low
 	std::string manta_script =
 		manta_import +
-		solver_low +
-		alloc_base_grids_low;
+		fluid_solver_low +
+		smoke_alloc_low;
 	
 	// Add heat grid low if needed
 	if (smd->domain->active_fields & SM_ACTIVE_HEAT) {
-		manta_script += alloc_heat_low;
+		manta_script += smoke_alloc_heat_low;
 	}
 	
 	// Add color grids low if needed
 	if (smd->domain->active_fields & SM_ACTIVE_COLORS) {
-		manta_script += alloc_colors_low;
+		manta_script += smoke_alloc_colors_low;
 	}
 	
 	// Add fire grids low if needed
 	if (smd->domain->active_fields & SM_ACTIVE_FIRE) {
-		manta_script += alloc_fire_low;
+		manta_script += smoke_alloc_fire_low;
 	}
 	
 	// Rest of low res setup
-	manta_script += prep_domain_low + smoke_variables_low;
+	manta_script += smoke_bounds_low + smoke_variables_low;
 	
 	// Setup high
 	if (smd->domain->flags & MOD_SMOKE_HIGHRES) {
-		manta_script += solver_high
+		manta_script += fluid_solver_high
 			+ smoke_variables_high
-			+ uv_setup
-			+ alloc_base_grids_high;
+			+ smoke_uv_setup
+			+ smoke_alloc_high;
 	}
 	
 	// Add color grids high if needed
 	if (smd->domain->flags & MOD_SMOKE_HIGHRES && smd->domain->active_fields & SM_ACTIVE_COLORS) {
-		manta_script += alloc_colors_high;
+		manta_script += smoke_alloc_colors_high;
 	}
 	
 	// Add fire grids high if needed
 	if (smd->domain->flags & MOD_SMOKE_HIGHRES && smd->domain->active_fields & SM_ACTIVE_FIRE) {
-		manta_script += alloc_fire_high;
+		manta_script += smoke_alloc_fire_high;
 	}
 
 	// Rest of high res setup
 	if (smd->domain->flags & MOD_SMOKE_HIGHRES) {
-		manta_script += prep_domain_high + wavelet_turbulence_noise;
+		manta_script += smoke_bounds_high + smoke_wavelet_turbulence_noise;
 	}
 	
 	// Import low
@@ -660,13 +703,13 @@ void SMOKE::exportScript(SmokeModifierData *smd)
 	}
 	
 	// Step wrapper function
-	manta_script += manta_step;
+	manta_script += smoke_adaptive_step;
 	
 	// Fill in missing variables in script
 	std::string final_script = SMOKE::parseScript(manta_script, smd);
 	
 	// Add standalone mode (loop, gui, ...)
-	final_script += standalone;
+	final_script += smoke_standalone;
 	
 	// Write script
 	std::ofstream myfile;
@@ -844,7 +887,7 @@ void SMOKE::updatePointersHigh(SmokeModifierData *smd)
 	// Liquid
 	if (mUsingLiquid) {
 		// TODO (sebbas) phiInitHigh does not exist yet
-		mPhiHigh    = (float*) getGridPointer("phiInitHigh", "xl");
+		// mPhiHigh    = (float*) getGridPointer("phiInitHigh", "xl");
 	}
 	
 	if (mUsingSmoke) {
