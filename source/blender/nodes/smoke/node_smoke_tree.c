@@ -36,6 +36,35 @@
 
 bNodeTreeType *ntreeType_Smoke;
 
+static void smoke_get_from_context(const bContext *C, bNodeTreeType *treetype, bNodeTree **r_ntree, ID **r_id, ID **r_from)
+{
+	Scene *scene = CTX_data_scene(C);
+	Object *ob = OBACT;
+
+	if (!ob) {
+		return;
+	}
+
+	ModifierData *md = modifiers_findByType(ob, eModifierType_Smoke);
+
+	if (!md) {
+		return;
+	}
+
+	SmokeModifierData *smd = (SmokeModifierData *)md;
+	SmokeDomainSettings *domain = smd->domain;
+
+	if (!domain) {
+		return;
+	}
+
+	*r_from = &ob->id;
+	*r_id = &ob->id;
+	*r_ntree = domain->nodetree;
+
+	UNUSED_VARS(treetype);
+}
+
 void register_node_tree_type_smoke(void)
 {
 	bNodeTreeType *tt = ntreeType_Smoke = MEM_callocN(sizeof(bNodeTreeType), "smoke node tree type");
@@ -52,8 +81,8 @@ void register_node_tree_type_smoke(void)
 	tt->localize = localize;
 	tt->local_sync = local_sync;
 	tt->local_merge = local_merge;
-	tt->get_from_context = texture_get_from_context;
 #endif
+	tt->get_from_context = smoke_get_from_context;
 	
 	tt->ext.srna = &RNA_SmokeNodeTree;
 	

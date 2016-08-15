@@ -34,6 +34,7 @@
 #include "DNA_lamp_types.h"
 #include "DNA_material_types.h"
 #include "DNA_node_types.h"
+#include "DNA_smoke_types.h"
 #include "DNA_text_types.h"
 #include "DNA_world_types.h"
 
@@ -46,6 +47,7 @@
 #include "BKE_image.h"
 #include "BKE_library.h"
 #include "BKE_main.h"
+#include "BKE_modifier.h"
 #include "BKE_node.h"
 #include "BKE_report.h"
 #include "BKE_scene.h"
@@ -74,6 +76,7 @@
 #include "node_intern.h"  /* own include */
 #include "NOD_composite.h"
 #include "NOD_shader.h"
+#include "NOD_smoke.h"
 #include "NOD_texture.h"
 
 
@@ -537,6 +540,30 @@ void ED_node_texture_default(const bContext *C, Tex *tx)
 	nodeAddLink(tx->nodetree, in, fromsock, out, tosock);
 	
 	ntreeUpdateTree(CTX_data_main(C), tx->nodetree);
+}
+
+/* assumes nothing being done in ntree yet, sets the default in/out node */
+/* called from shading buttons or header */
+void ED_node_smoke_default(const bContext *C, struct Object *ob)
+{
+	ModifierData *md = modifiers_findByType(ob, eModifierType_Smoke);
+
+	if (!md) {
+		return;
+	}
+
+	SmokeModifierData *smd = (SmokeModifierData *)md;
+	SmokeDomainSettings *domain = smd->domain;
+
+	if (!domain) {
+		return;
+	}
+
+	bNodeTree *ntree = ntreeAddTree(NULL, "Smoke Nodetree", ntreeType_Smoke->idname);
+
+	domain->nodetree = ntree;
+
+	ntreeUpdateTree(CTX_data_main(C), ntree);
 }
 
 /* Here we set the active tree(s), even called for each redraw now, so keep it fast :) */

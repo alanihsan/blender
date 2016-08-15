@@ -76,6 +76,7 @@
 #include "BKE_effect.h"
 #include "BKE_main.h"
 #include "BKE_modifier.h"
+#include "BKE_node.h"
 #include "BKE_object.h"
 #include "BKE_particle.h"
 #include "BKE_pointcache.h"
@@ -403,6 +404,12 @@ static void smokeModifier_freeDomain(SmokeModifierData *smd)
 
 		BKE_ptcache_free_list(&(smd->domain->ptcaches[0]));
 		smd->domain->point_cache[0] = NULL;
+
+		if (smd->domain->nodetree) {
+			ntreeFreeTree(smd->domain->nodetree);
+			MEM_freeN(smd->domain->nodetree);
+			smd->domain->nodetree = NULL;
+		}
 
 		MEM_freeN(smd->domain);
 		smd->domain = NULL;

@@ -32,6 +32,7 @@
 #include "DNA_lamp_types.h"
 #include "DNA_material_types.h"
 #include "DNA_node_types.h"
+#include "DNA_object_types.h"
 #include "DNA_world_types.h"
 
 #include "MEM_guardedalloc.h"
@@ -40,6 +41,7 @@
 #include "BLI_math.h"
 
 #include "BKE_context.h"
+#include "BKE_depsgraph.h"
 #include "BKE_library.h"
 #include "BKE_scene.h"
 #include "BKE_screen.h"
@@ -565,7 +567,11 @@ static void node_area_refresh(const struct bContext *C, ScrArea *sa)
 			}
 		}
 		else if (snode->nodetree->type == NTREE_SMOKE) {
-			/* TODO */
+			BLI_assert(snode->id != NULL);
+			BLI_assert(GS(snode->id->name) == ID_OB);
+
+			/* TODO: recreate the mantaflow script from the nodes. */
+			DAG_id_tag_update(snode->id, OB_RECALC_DATA);
 		}
 	}
 }

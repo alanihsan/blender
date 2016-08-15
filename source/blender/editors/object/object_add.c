@@ -46,6 +46,7 @@
 #include "DNA_object_force.h"
 #include "DNA_object_types.h"
 #include "DNA_scene_types.h"
+#include "DNA_smoke_types.h"
 #include "DNA_vfont_types.h"
 #include "DNA_actuator_types.h"
 #include "DNA_gpencil_types.h"
@@ -78,6 +79,7 @@
 #include "BKE_key.h"
 #include "BKE_main.h"
 #include "BKE_material.h"
+#include "BKE_modifier.h"
 #include "BKE_mball.h"
 #include "BKE_mesh.h"
 #include "BKE_nla.h"
@@ -87,6 +89,7 @@
 #include "BKE_sca.h"
 #include "BKE_scene.h"
 #include "BKE_screen.h"
+#include "BKE_smoke.h"
 #include "BKE_speaker.h"
 #include "BKE_texture.h"
 
@@ -2411,6 +2414,52 @@ void OBJECT_OT_join_shapes(wmOperatorType *ot)
 	/* api callbacks */
 	ot->exec = join_shapes_exec;
 	ot->poll = join_shapes_poll;
+
+	/* flags */
+	ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+}
+
+/* ********************** Smoke node tree **************************** */
+
+static int new_smoke_tree_exec(bContext *C, wmOperator *op)
+{
+	Object *ob = CTX_data_active_object(C);
+
+	if (!ob) {
+		BKE_report(op->reports, RPT_ERROR, "No object selected\n");
+		return OPERATOR_CANCELLED;
+	}
+
+	if (ob->type != OB_MESH) {
+		BKE_report(op->reports, RPT_ERROR, "Object is not a mesh\n");
+		return OPERATOR_CANCELLED;
+	}
+
+	ModifierData *md = modifier_new(eModifierType_Smoke);
+	BLI_addtail(&ob->modifiers, md);
+
+	SmokeModifierData *smd = (SmokeModifierData *)md;
+	smd->type = MOD_SMOKE_TYPE_DOMAIN;
+
+	ob->dt = OB_WIRE;
+
+	smokeModifier_free(smd); /* XXX TODO: completely free all 3 pointers */
+	smokeModifier_createType(smd); /* create regarding of selected type */
+
+	ED_node_smoke_default(C, ob);
+
+	return OPERATOR_FINISHED;
+}
+
+void OBJECT_OT_new_smoke_tree(struct wmOperatorType *ot)
+{
+	/* identifiers */
+	ot->name = "Create New Smoke Tree";
+	ot->description = "Add a smoke modifier to the object";
+	ot->idname = "OBJECT_OT_new_smoke_tree";
+
+	/* api callbacks */
+	ot->exec = new_smoke_tree_exec;
 
 	/* flags */
 	ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;

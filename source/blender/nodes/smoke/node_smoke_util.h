@@ -36,9 +36,15 @@
 
 #include "MEM_guardedalloc.h"
 
+#include "DNA_modifier_types.h"
+#include "DNA_object_types.h"
 #include "DNA_node_types.h"
+#include "DNA_smoke_types.h"
 
 #include "BLI_utildefines.h"
+
+#include "BKE_context.h"
+#include "BKE_modifier.h"
 
 #include "NOD_smoke.h"
 

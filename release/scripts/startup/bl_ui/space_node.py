@@ -109,6 +109,9 @@ class NODE_HT_header(Header):
                 row.prop(snode, "backdrop_channels", text="", expand=True)
             layout.prop(snode, "use_auto_render")
 
+        elif snode.tree_type == 'SmokeNodeTree':
+            if not snode_id:
+                layout.operator("object.new_smoke_tree")
         else:
             # Custom node tree is edited as independent ID block
             layout.template_ID(snode, "node_tree", new="node.new_node_tree")
