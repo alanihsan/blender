@@ -51,7 +51,7 @@
 #include "BKE_mesh_mapping.h"
 #include "BKE_mesh_remap.h"
 #include "BKE_multires.h"
-#include "BKE_smoke.h" /* For smokeModifier_free & smokeModifier_createType */
+#include "BKE_smoke.h" /* For BKE_smoke_free & BKE_smoke_create_type */
 
 #include "RNA_access.h"
 #include "RNA_define.h"
@@ -611,8 +611,8 @@ static void rna_Smoke_set_type(Main *bmain, Scene *scene, PointerRNA *ptr)
 	if ((smd->type & MOD_SMOKE_TYPE_DOMAIN) && smd->domain)
 		return;
 
-	smokeModifier_free(smd); /* XXX TODO: completely free all 3 pointers */
-	smokeModifier_createType(smd); /* create regarding of selected type */
+	BKE_smoke_free(smd); /* XXX TODO: completely free all 3 pointers */
+	BKE_smoke_create_type(smd); /* create regarding of selected type */
 
 	switch (smd->type) {
 		case MOD_SMOKE_TYPE_DOMAIN:

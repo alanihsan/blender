@@ -2443,8 +2443,8 @@ static int new_smoke_tree_exec(bContext *C, wmOperator *op)
 
 	ob->dt = OB_WIRE;
 
-	smokeModifier_free(smd); /* XXX TODO: completely free all 3 pointers */
-	smokeModifier_createType(smd); /* create regarding of selected type */
+	BKE_smoke_free(smd); /* XXX TODO: completely free all 3 pointers */
+	BKE_smoke_create_type(smd); /* create regarding of selected type */
 
 	ED_node_smoke_default(C, ob);
 

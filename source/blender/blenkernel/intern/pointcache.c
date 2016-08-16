@@ -584,7 +584,7 @@ static int ptcache_smoke_write(PTCacheFile *pf, void *smoke_v)
 	SmokeModifierData *smd= (SmokeModifierData *)smoke_v;
 	SmokeDomainSettings *sds = smd->domain;
 	int ret = 0;
-	int fluid_fields = smoke_get_data_flags(sds);
+	int fluid_fields = BKE_smoke_get_data_flags(sds);
 
 	/* version header */
 	ptcache_file_write(pf, SMOKE_CACHE_VERSION, 4, sizeof(char));
@@ -720,7 +720,7 @@ static int ptcache_smoke_read_old(PTCacheFile *pf, void *smoke_v)
 		unsigned char *obstacles;
 		float *tmp_array = MEM_callocN(out_len, "Smoke old cache tmp");
 
-		int fluid_fields = smoke_get_data_flags(sds);
+		int fluid_fields = BKE_smoke_get_data_flags(sds);
 
 		/* Part part of the new cache header */
 		sds->active_color[0] = 0.7f;
@@ -807,7 +807,7 @@ static int ptcache_smoke_read(PTCacheFile *pf, void *smoke_v)
 	char version[4];
 	int ch_res[3];
 	float ch_dx;
-	int fluid_fields = smoke_get_data_flags(sds);
+	int fluid_fields = BKE_smoke_get_data_flags(sds);
 	int cache_fields = 0;
 	int active_fields = 0;
 	int reallocate = 0;
@@ -844,12 +844,12 @@ static int ptcache_smoke_read(PTCacheFile *pf, void *smoke_v)
 	/* reallocate fluid if needed*/
 	if (reallocate) {
 		sds->active_fields = active_fields | cache_fields;
-		smoke_reallocate_fluid(sds, ch_dx, ch_res, 1);
+		BKE_smoke_reallocate_fluid(sds, ch_res, 1);
 		sds->dx = ch_dx;
 		VECCOPY(sds->res, ch_res);
 		sds->total_cells = ch_res[0]*ch_res[1]*ch_res[2];
 		if (sds->flags & MOD_SMOKE_HIGHRES) {
-			smoke_reallocate_highres_fluid(sds, ch_dx, ch_res, 1);
+			BKE_smoke_reallocate_highres_fluid(sds, ch_dx, ch_res);
 		}
 	}
 	
@@ -1019,7 +1019,7 @@ static int ptcache_smoke_openvdb_write(struct OpenVDBWriter *writer, void *smoke
 	OpenVDBWriter_add_meta_v3(writer, "blender/smoke/active_color", sds->active_color);
 	OpenVDBWriter_add_meta_mat4(writer, "blender/smoke/obmat", sds->obmat);
 
-	int fluid_fields = smoke_get_data_flags(sds);
+	int fluid_fields = BKE_smoke_get_data_flags(sds);
 
 	struct OpenVDBFloatGrid *clip_grid = NULL;
 
@@ -1110,7 +1110,7 @@ static int ptcache_smoke_openvdb_read(struct OpenVDBReader *reader, void *smoke_
 
 	SmokeDomainSettings *sds = smd->domain;
 
-	int fluid_fields = smoke_get_data_flags(sds);
+	int fluid_fields = BKE_smoke_get_data_flags(sds);
 	int active_fields, cache_fields = 0;
 	int cache_res[3];
 	float cache_dx;
@@ -1152,13 +1152,13 @@ static int ptcache_smoke_openvdb_read(struct OpenVDBReader *reader, void *smoke_
 	/* reallocate fluid if needed*/
 	if (reallocate) {
 		sds->active_fields = active_fields | cache_fields;
-		smoke_reallocate_fluid(sds, cache_dx, cache_res, 1);
+		BKE_smoke_reallocate_fluid(sds, cache_res, 1);
 		sds->dx = cache_dx;
 		copy_v3_v3_int(sds->res, cache_res);
 		sds->total_cells = cache_res[0] * cache_res[1] * cache_res[2];
 
 		if (sds->flags & MOD_SMOKE_HIGHRES) {
-			smoke_reallocate_highres_fluid(sds, cache_dx, cache_res, 1);
+			BKE_smoke_reallocate_highres_fluid(sds, cache_dx, cache_res);
 		}
 	}
 
@@ -3472,9 +3472,7 @@ int  BKE_ptcache_id_reset(Scene *scene, PTCacheID *pid, int mode)
 			psys_reset(pid->calldata, PSYS_RESET_DEPSGRAPH);
 #if 0
 		else if (pid->type == PTCACHE_TYPE_SMOKE_DOMAIN)
-			smokeModifier_reset(pid->calldata);
-		else if (pid->type == PTCACHE_TYPE_SMOKE_HIGHRES)
-			smokeModifier_reset_turbulence(pid->calldata);
+			BKE_smoke_reset(pid->calldata);
 #endif
 		else if (pid->type == PTCACHE_TYPE_DYNAMICPAINT)
 			dynamicPaint_clearSurface(scene, (DynamicPaintSurface*)pid->calldata);

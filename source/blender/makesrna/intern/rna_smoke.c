@@ -98,7 +98,7 @@ static void rna_Smoke_reset(Main *bmain, Scene *scene, PointerRNA *ptr)
 {
 	SmokeDomainSettings *settings = (SmokeDomainSettings *)ptr->data;
 
-	smokeModifier_reset(settings->smd);
+	BKE_smoke_reset(settings->smd);
 	rna_Smoke_resetCache(bmain, scene, ptr);
 
 	rna_Smoke_update(bmain, scene, ptr);
@@ -108,7 +108,7 @@ static void rna_Smoke_reset_dependency(Main *bmain, Scene *scene, PointerRNA *pt
 {
 	SmokeDomainSettings *settings = (SmokeDomainSettings *)ptr->data;
 
-	smokeModifier_reset(settings->smd);
+	BKE_smoke_reset(settings->smd);
 
 	if (settings->smd && settings->smd->domain)
 		settings->smd->domain->point_cache[0]->flag |= PTCACHE_OUTDATED;

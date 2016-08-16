@@ -72,14 +72,14 @@ static void copyData(ModifierData *md, ModifierData *target)
 	SmokeModifierData *smd  = (SmokeModifierData *)md;
 	SmokeModifierData *tsmd = (SmokeModifierData *)target;
 	
-	smokeModifier_copy(smd, tsmd);
+	BKE_smoke_copy(smd, tsmd);
 }
 
 static void freeData(ModifierData *md)
 {
 	SmokeModifierData *smd = (SmokeModifierData *) md;
 	
-	smokeModifier_free(smd);
+	BKE_smoke_free(smd);
 }
 
 static CustomDataMask requiredDataMask(Object *UNUSED(ob), ModifierData *md)
@@ -109,7 +109,7 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 	if (flag & MOD_APPLY_ORCO)
 		return dm;
 
-	return smokeModifier_do(smd, md->scene, ob, dm);
+	return BKE_smoke_step(smd, md->scene, ob, dm);
 }
 
 static bool dependsOnTime(ModifierData *UNUSED(md))
