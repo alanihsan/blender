@@ -301,7 +301,6 @@ endif()
 
 
 # Modifiers
-option(WITH_MOD_FLUID           "Enable Elbeem Modifier (Fluid Simulation)" ON)
 option(WITH_MOD_SMOKE           "Enable Smoke Modifier (Smoke Simulation)" ON)
 option(WITH_MOD_BOOLEAN         "Enable Boolean Modifier" ON)
 option(WITH_MOD_REMESH          "Enable Remesh Modifier" ON)
@@ -3333,7 +3332,6 @@ if(FIRST_RUN)
 	info_cfg_text("Modifiers:")
 	info_cfg_option(WITH_MOD_BOOLEAN)
 	info_cfg_option(WITH_MOD_REMESH)
-	info_cfg_option(WITH_MOD_FLUID)
 	info_cfg_option(WITH_MOD_OCEANSIM)
 
 	info_cfg_text("OpenGL:")

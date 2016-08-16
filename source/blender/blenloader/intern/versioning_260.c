@@ -41,7 +41,6 @@
 #include "DNA_linestyle_types.h"
 #include "DNA_mesh_types.h"
 #include "DNA_meshdata_types.h"
-#include "DNA_object_fluidsim.h" // NT
 #include "DNA_object_types.h"
 #include "DNA_property_types.h"
 #include "DNA_text_types.h"
@@ -1051,23 +1050,6 @@ void blo_do_versions_260(FileData *fd, Library *UNUSED(lib), Main *main)
 		}
 	}
 
-	if (main->versionfile < 263) {
-		/* set fluidsim rate. the version patch for this in 2.62 was wrong, so
-		 * try to correct it, if rate is 0.0 that's likely not intentional */
-		Object *ob;
-
-		for (ob = main->object.first; ob; ob = ob->id.next) {
-			ModifierData *md;
-			for (md = ob->modifiers.first; md; md = md->next) {
-				if (md->type == eModifierType_Fluidsim) {
-					FluidsimModifierData *fmd = (FluidsimModifierData *)md;
-					if (fmd->fss->animRate == 0.0f)
-						fmd->fss->animRate = 1.0f;
-				}
-			}
-		}
-	}
-
 	if (main->versionfile < 262 || (main->versionfile == 262 && main->subversionfile < 1)) {
 		/* update use flags for node sockets (was only temporary before) */
 		Scene *sce;
@@ -1114,28 +1096,6 @@ void blo_do_versions_260(FileData *fd, Library *UNUSED(lib), Main *main)
 				if (md->type == eModifierType_Lattice) {
 					LatticeModifierData *lmd = (LatticeModifierData *)md;
 					lmd->strength = 1.0f;
-				}
-			}
-		}
-	}
-
-	if (main->versionfile < 262 || (main->versionfile == 262 && main->subversionfile < 4)) {
-		/* Read Viscosity presets from older files */
-		Object *ob;
-
-		for (ob = main->object.first; ob; ob = ob->id.next) {
-			ModifierData *md;
-			for (md = ob->modifiers.first; md; md = md->next) {
-				if (md->type == eModifierType_Fluidsim) {
-					FluidsimModifierData *fmd = (FluidsimModifierData *)md;
-					if (fmd->fss->viscosityMode == 3) {
-						fmd->fss->viscosityValue = 5.0;
-						fmd->fss->viscosityExponent = 5;
-					}
-					else if (fmd->fss->viscosityMode == 4) {
-						fmd->fss->viscosityValue = 2.0;
-						fmd->fss->viscosityExponent = 3;
-					}
 				}
 			}
 		}

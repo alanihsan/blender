@@ -118,10 +118,6 @@
 #include "BKE_camera.h"
 #include "BKE_image.h"
 
-#ifdef WITH_MOD_FLUID
-#include "LBM_fluidsim.h"
-#endif
-
 #ifdef WITH_PYTHON
 #include "BPY_extern.h"
 #endif

@@ -53,7 +53,6 @@
 #include "DNA_mesh_types.h"
 #include "DNA_modifier_types.h"
 #include "DNA_movieclip_types.h"
-#include "DNA_object_fluidsim.h"
 #include "DNA_object_force.h"
 #include "DNA_object_types.h"
 #include "DNA_particle_types.h"
@@ -486,13 +485,7 @@ void BKE_bpath_traverse_id(Main *bmain, ID *id, BPathVisitor visit_cb, const int
 #endif
 
 			for (md = ob->modifiers.first; md; md = md->next) {
-				if (md->type == eModifierType_Fluidsim) {
-					FluidsimModifierData *fluidmd = (FluidsimModifierData *)md;
-					if (fluidmd->fss) {
-						rewrite_path_fixed(fluidmd->fss->surfdataPath, visit_cb, absbase, bpath_user_data);
-					}
-				}
-				else if (md->type == eModifierType_Smoke) {
+				if (md->type == eModifierType_Smoke) {
 					SmokeModifierData *smd = (SmokeModifierData *)md;
 					if (smd->type & MOD_SMOKE_TYPE_DOMAIN) {
 						BPATH_TRAVERSE_POINTCACHE(smd->domain->ptcaches[0]);

@@ -3312,7 +3312,6 @@ static RNAProcessItem PROCESS_ITEMS[] = {
 	{"rna_depsgraph.c", NULL, RNA_def_depsgraph},
 	{"rna_dynamicpaint.c", NULL, RNA_def_dynamic_paint},
 	{"rna_fcurve.c", "rna_fcurve_api.c", RNA_def_fcurve},
-	{"rna_fluidsim.c", NULL, RNA_def_fluidsim},
 	{"rna_gpencil.c", NULL, RNA_def_gpencil},
 	{"rna_group.c", NULL, RNA_def_group},
 	{"rna_image.c", "rna_image_api.c", RNA_def_image},

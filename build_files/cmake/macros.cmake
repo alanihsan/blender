@@ -527,10 +527,6 @@ function(SETUP_BLENDER_SORTED_LIBS)
 		bf_render
 	)
 
-	if(WITH_MOD_FLUID)
-		list(APPEND BLENDER_LINK_LIBS bf_intern_elbeem)
-	endif()
-
 	if(WITH_CYCLES)
 		list(APPEND BLENDER_LINK_LIBS
 			cycles_render

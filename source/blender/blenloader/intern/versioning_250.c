@@ -52,7 +52,6 @@
 #include "DNA_mesh_types.h"
 #include "DNA_meshdata_types.h"
 #include "DNA_node_types.h"
-#include "DNA_object_fluidsim.h" // NT
 #include "DNA_object_types.h"
 #include "DNA_view3d_types.h"
 #include "DNA_screen_types.h"
@@ -1144,11 +1143,6 @@ void blo_do_versions_250(FileData *fd, Library *lib, Main *main)
 				sce->unit.scale_length = 1.0f;
 
 		for (ob = main->object.first; ob; ob = ob->id.next) {
-			/* fluid-sim stuff */
-			FluidsimModifierData *fluidmd = (FluidsimModifierData *) modifiers_findByType(ob, eModifierType_Fluidsim);
-			if (fluidmd)
-				fluidmd->fss->fmd = fluidmd;
-
 			/* rotation modes were added, but old objects would now default to being 'quaternion based' */
 			ob->rotmode = ROT_MODE_EUL;
 		}
@@ -1858,18 +1852,6 @@ void blo_do_versions_250(FileData *fd, Library *lib, Main *main)
 		for (brush = main->brush.first; brush; brush = brush->id.next) {
 			if (brush->curve)
 				brush->curve->preset = CURVE_PRESET_SMOOTH;
-		}
-
-		/* properly initialize active flag for fluidsim modifiers */
-		for (ob = main->object.first; ob; ob = ob->id.next) {
-			ModifierData *md;
-			for (md = ob->modifiers.first; md; md = md->next) {
-				if (md->type == eModifierType_Fluidsim) {
-					FluidsimModifierData *fmd = (FluidsimModifierData *) md;
-					fmd->fss->flag |= OB_FLUIDSIM_ACTIVE;
-					fmd->fss->flag |= OB_FLUIDSIM_OVERRIDE_TIME;
-				}
-			}
 		}
 
 		/* adjustment to color balance node values */

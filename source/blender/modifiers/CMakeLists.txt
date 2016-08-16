@@ -61,8 +61,6 @@ set(SRC
 	intern/MOD_dynamicpaint.c
 	intern/MOD_edgesplit.c
 	intern/MOD_explode.c
-	intern/MOD_fluidsim.c
-	intern/MOD_fluidsim_util.c
 	intern/MOD_hook.c
 	intern/MOD_laplaciandeform.c
 	intern/MOD_laplaciansmooth.c
@@ -107,7 +105,6 @@ set(SRC
 
 	MOD_modifiertypes.h
 	intern/MOD_boolean_util.h
-	intern/MOD_fluidsim_util.h
 	intern/MOD_meshcache_util.h
 	intern/MOD_util.h
 	intern/MOD_weightvg_util.h
@@ -135,10 +132,6 @@ if(WITH_MOD_REMESH)
 	list(APPEND INC
 		../../../intern/dualcon
 	)
-endif()
-
-if(WITH_MOD_FLUID)
-	add_definitions(-DWITH_MOD_FLUID)
 endif()
 
 if(WITH_MOD_OCEANSIM)

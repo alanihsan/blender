@@ -46,10 +46,6 @@ if(WITH_MOD_REMESH)
 	add_subdirectory(dualcon)
 endif()
 
-if(WITH_MOD_FLUID)
-	add_subdirectory(elbeem)
-endif()
-
 if(WITH_MOD_SMOKE)
 	add_subdirectory(smoke)
 endif()

@@ -41,7 +41,6 @@ set(SRC
 	particle_boids.c
 	particle_edit.c
 	particle_object.c
-	physics_fluid.c
 	physics_ops.c
 	physics_pointcache.c
 	rigidbody_constraint.c
@@ -50,10 +49,6 @@ set(SRC
 
 	physics_intern.h
 )
-
-if(WITH_MOD_FLUID)
-	add_definitions(-DWITH_MOD_FLUID)
-endif()
 
 if(WITH_INTERNATIONAL)
 	add_definitions(-DWITH_INTERNATIONAL)

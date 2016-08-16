@@ -58,7 +58,6 @@
 #include "DNA_meshdata_types.h"
 #include "DNA_nla_types.h"
 #include "DNA_node_types.h"
-#include "DNA_object_fluidsim.h" // NT
 #include "DNA_object_types.h"
 #include "DNA_property_types.h"
 #include "DNA_view3d_types.h"
@@ -3124,12 +3123,6 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *main)
 					}
 				}
 
-				{
-					FluidsimModifierData *fluidmd = (FluidsimModifierData *)modifiers_findByType(ob, eModifierType_Fluidsim);
-					if (fluidmd && fluidmd->fss && fluidmd->fss->type == OB_FLUIDSIM_PARTICLE)
-						part->type = PART_FLUID;
-				}
-
 				do_version_free_effects_245(&ob->effect);
 
 				printf("Old particle system converted to new system.\n");
@@ -3267,28 +3260,6 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *main)
 			}
 		}
 	}
-
-	/* convert fluids to modifier */
-	if (main->versionfile < 246 || (main->versionfile == 246 && main->subversionfile < 1)) {
-		Object *ob;
-
-		for (ob = main->object.first; ob; ob = ob->id.next) {
-			if (ob->fluidsimSettings) {
-				FluidsimModifierData *fluidmd = (FluidsimModifierData *)modifier_new(eModifierType_Fluidsim);
-				BLI_addhead(&ob->modifiers, (ModifierData *)fluidmd);
-
-				MEM_freeN(fluidmd->fss);
-				fluidmd->fss = MEM_dupallocN(ob->fluidsimSettings);
-				fluidmd->fss->ipo = blo_do_versions_newlibadr_us(fd, ob->id.lib, ob->fluidsimSettings->ipo);
-				MEM_freeN(ob->fluidsimSettings);
-
-				fluidmd->fss->lastgoodframe = INT_MAX;
-				fluidmd->fss->flag = 0;
-				fluidmd->fss->meshVelocities = NULL;
-			}
-		}
-	}
-
 
 	if (main->versionfile < 246 || (main->versionfile == 246 && main->subversionfile < 1)) {
 		Mesh *me;

@@ -56,7 +56,6 @@
 #include "DNA_modifier_types.h"
 #include "DNA_node_types.h"
 #include "DNA_object_types.h"
-#include "DNA_object_fluidsim.h"
 #include "DNA_particle_types.h"
 #include "DNA_scene_types.h"
 #include "DNA_texture_types.h"
@@ -5590,110 +5589,6 @@ static void calculate_speedvectors(Render *re, ObjectInstanceRen *obi, float *ve
 	}
 }
 
-static int load_fluidsimspeedvectors(Render *re, ObjectInstanceRen *obi, float *vectors, int step)
-{
-	ObjectRen *obr= obi->obr;
-	Object *fsob= obr->ob;
-	VertRen *ver= NULL;
-	float *speed, div, zco[2], avgvel[4] = {0.0, 0.0, 0.0, 0.0};
-	float zmulx= re->winx/2, zmuly= re->winy/2, len;
-	float winsq = (float)re->winx * (float)re->winy, winroot= sqrtf(winsq); /* int's can wrap on large images */
-	int a, j;
-	float hoco[4], ho[4], fsvec[4], camco[4];
-	float mat[4][4], winmat[4][4];
-	float imat[4][4];
-	FluidsimModifierData *fluidmd = (FluidsimModifierData *)modifiers_findByType(fsob, eModifierType_Fluidsim);
-	FluidsimSettings *fss;
-	FluidVertexVelocity *velarray = NULL;
-	
-	/* only one step needed */
-	if (step) return 1;
-	
-	if (fluidmd)
-		fss = fluidmd->fss;
-	else
-		return 0;
-	
-	copy_m4_m4(mat, re->viewmat);
-	invert_m4_m4(imat, mat);
-
-	/* set first vertex OK */
-	if (!fss->meshVelocities) return 0;
-	
-	if ( obr->totvert != fss->totvert) {
-		//fprintf(stderr, "load_fluidsimspeedvectors - modified fluidsim mesh, not using speed vectors (%d,%d)...\n", obr->totvert, fsob->fluidsimSettings->meshSurface->totvert); // DEBUG
-		return 0;
-	}
-	
-	velarray = fss->meshVelocities;
-
-	if (obi->flag & R_TRANSFORMED)
-		mul_m4_m4m4(winmat, re->winmat, obi->mat);
-	else
-		copy_m4_m4(winmat, re->winmat);
-	
-	/* (bad) HACK calculate average velocity */
-	/* better solution would be fixing getVelocityAt() in intern/elbeem/intern/solver_util.cpp
-	 * so that also small drops/little water volumes return a velocity != 0.
-	 * But I had no luck in fixing that function - DG */
-	for (a=0; a<obr->totvert; a++) {
-		for (j=0;j<3;j++) avgvel[j] += velarray[a].vel[j];
-		
-	}
-	for (j=0;j<3;j++) avgvel[j] /= (float)(obr->totvert);
-	
-	
-	for (a=0; a<obr->totvert; a++, vectors+=2) {
-		if ((a & 255)==0)
-			ver= obr->vertnodes[a>>8].vert;
-		else
-			ver++;
-
-		/* get fluid velocity */
-		fsvec[3] = 0.0f;
-		//fsvec[0] = fsvec[1] = fsvec[2] = fsvec[3] = 0.0; fsvec[2] = 2.0f; // NT fixed test
-		for (j=0;j<3;j++) fsvec[j] = velarray[a].vel[j];
-		
-		/* (bad) HACK insert average velocity if none is there (see previous comment) */
-		if ((fsvec[0] == 0.0f) && (fsvec[1] == 0.0f) && (fsvec[2] == 0.0f)) {
-			fsvec[0] = avgvel[0];
-			fsvec[1] = avgvel[1];
-			fsvec[2] = avgvel[2];
-		}
-		
-		/* transform (=rotate) to cam space */
-		camco[0] = dot_v3v3(imat[0], fsvec);
-		camco[1] = dot_v3v3(imat[1], fsvec);
-		camco[2] = dot_v3v3(imat[2], fsvec);
-
-		/* get homogeneous coordinates */
-		projectvert(camco, winmat, hoco);
-		projectvert(ver->co, winmat, ho);
-		
-		/* now map hocos to screenspace, uses very primitive clip still */
-		/* use ho[3] of original vertex, xy component of vel. direction */
-		if (ho[3]<0.1f) div= 10.0f;
-		else div= 1.0f/ho[3];
-		zco[0]= zmulx*hoco[0]*div;
-		zco[1]= zmuly*hoco[1]*div;
-		
-		/* maximize speed as usual */
-		len= zco[0]*zco[0] + zco[1]*zco[1];
-		if (len > winsq) {
-			len= winroot/sqrtf(len);
-			zco[0]*= len; zco[1]*= len;
-		}
-
-		speed= RE_vertren_get_winspeed(obi, ver, 1);
-		/* set both to the same value */
-		speed[0]= speed[2]= zco[0];
-		speed[1]= speed[3]= zco[1];
-		//if (a < 20) fprintf(stderr,"speed %d %f,%f | camco %f,%f,%f | hoco %f,%f,%f,%f\n", a, speed[0], speed[1], camco[0],camco[1], camco[2], hoco[0],hoco[1], hoco[2],hoco[3]); // NT DEBUG
-	}
-
-	return 1;
-}
-
 /* makes copy per object of all vectors */
 /* result should be that we can free entire database */
 static void copy_dbase_object_vectors(Render *re, ListBase *lb)
@@ -5803,7 +5698,6 @@ void RE_Database_FromScene_Vectors(Render *re, Main *bmain, Scene *sce, unsigned
 			oldobi= table->first;
 			for (obi= re->instancetable.first; obi && oldobi; obi= obi->next) {
 				int ok= 1;
-				FluidsimModifierData *fluidmd;
 
 				if (!(obi->lay & vectorlay))
 					continue;
@@ -5826,20 +5720,11 @@ void RE_Database_FromScene_Vectors(Render *re, Main *bmain, Scene *sce, unsigned
 					continue;
 				}
 
-				/* NT check for fluidsim special treatment */
-				fluidmd = (FluidsimModifierData *)modifiers_findByType(obi->ob, eModifierType_Fluidsim);
-				if (fluidmd && fluidmd->fss && (fluidmd->fss->type & OB_FLUIDSIM_DOMAIN)) {
-					/* use preloaded per vertex simulation data, only does calculation for step=1 */
-					/* NOTE/FIXME - velocities and meshes loaded unnecessarily often during the database_fromscene_vectors calls... */
-					load_fluidsimspeedvectors(re, obi, oldobi->vectors, step);
-				}
-				else {
-					/* check if both have same amounts of vertices */
-					if (obi->totvector==oldobi->totvector)
-						calculate_speedvectors(re, obi, oldobi->vectors, step);
-					else
-						printf("Warning: object %s has different amount of vertices or strands on other frame\n", obi->ob->id.name + 2);
-				}  /* not fluidsim */
+				/* check if both have same amounts of vertices */
+				if (obi->totvector==oldobi->totvector)
+					calculate_speedvectors(re, obi, oldobi->vectors, step);
+				else
+					printf("Warning: object %s has different amount of vertices or strands on other frame\n", obi->ob->id.name + 2);
 
 				oldobi= oldobi->next;
 			}

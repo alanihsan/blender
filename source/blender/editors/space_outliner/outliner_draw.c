@@ -1145,8 +1145,6 @@ static void tselem_draw_icon(uiBlock *block, int xmax, float x, float y, TreeSto
 					case eModifierType_Collision:
 					case eModifierType_Surface:
 						UI_icon_draw(x, y, ICON_MOD_PHYSICS); break;
-					case eModifierType_Fluidsim:
-						UI_icon_draw(x, y, ICON_MOD_FLUIDSIM); break;
 					case eModifierType_Multires:
 						UI_icon_draw(x, y, ICON_MOD_MULTIRES); break;
 					case eModifierType_Smoke:

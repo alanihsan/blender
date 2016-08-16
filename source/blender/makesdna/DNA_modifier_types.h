@@ -59,7 +59,7 @@ typedef enum ModifierType {
 	eModifierType_Collision         = 23,
 	eModifierType_Bevel             = 24,
 	eModifierType_Shrinkwrap        = 25,
-	eModifierType_Fluidsim          = 26,
+//	eModifierType_Fluidsim          = 26,
 	eModifierType_Mask              = 27,
 	eModifierType_SimpleDeform      = 28,
 	eModifierType_Multires          = 29,
@@ -775,13 +775,6 @@ typedef enum {
 	eMultiresModifierFlag_ControlEdges = (1 << 0),
 	eMultiresModifierFlag_PlainUv      = (1 << 1),
 } MultiresModifierFlag;
-
-typedef struct FluidsimModifierData {
-	ModifierData modifier;
-
-	struct FluidsimSettings *fss;   /* definition is in DNA_object_fluidsim.h */
-	struct PointCache *point_cache; /* definition is in DNA_object_force.h */
-} FluidsimModifierData;
 
 typedef struct ShrinkwrapModifierData {
 	ModifierData modifier;

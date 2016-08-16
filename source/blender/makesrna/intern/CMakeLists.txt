@@ -49,7 +49,6 @@ set(DEFSRC
 	rna_depsgraph.c
 	rna_dynamicpaint.c
 	rna_fcurve.c
-	rna_fluidsim.c
 	rna_gpencil.c
 	rna_group.c
 	rna_image.c
@@ -247,10 +246,6 @@ if(WITH_CODEC_FFMPEG)
 		${FFMPEG_INCLUDE_DIRS}
 	)
 	add_definitions(-DWITH_FFMPEG)
-endif()
-
-if(WITH_MOD_FLUID)
-	add_definitions(-DWITH_MOD_FLUID)
 endif()
 
 if(WITH_FFTW3)

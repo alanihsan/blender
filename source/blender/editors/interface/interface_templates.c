@@ -802,7 +802,7 @@ static int modifier_can_delete(ModifierData *md)
 static int modifier_is_simulation(ModifierData *md)
 {
 	/* Physic Tab */
-	if (ELEM(md->type, eModifierType_Cloth, eModifierType_Collision, eModifierType_Fluidsim, eModifierType_Smoke,
+	if (ELEM(md->type, eModifierType_Cloth, eModifierType_Collision, eModifierType_Smoke,
 	          eModifierType_Softbody, eModifierType_Surface, eModifierType_DynamicPaint))
 	{
 		return 1;
@@ -978,7 +978,7 @@ static uiLayout *draw_modifier(
 			UI_block_lock_clear(block);
 			UI_block_lock_set(block, ob && ID_IS_LINKED_DATABLOCK(ob), ERROR_LIBDATA_MESSAGE);
 			
-			if (!ELEM(md->type, eModifierType_Fluidsim, eModifierType_Softbody, eModifierType_ParticleSystem,
+			if (!ELEM(md->type, eModifierType_Softbody, eModifierType_ParticleSystem,
 			           eModifierType_Cloth, eModifierType_Smoke))
 			{
 				uiItemO(row, CTX_IFACE_(BLT_I18NCONTEXT_OPERATOR_DEFAULT, "Copy"), ICON_NONE,
@@ -3518,11 +3518,6 @@ void uiTemplateRunningJobs(uiLayout *layout, bContext *C)
 			else if (WM_jobs_test(wm, scene, WM_JOB_TYPE_POINTCACHE)) {
 				handle_event = B_STOPOTHER;
 				icon = ICON_PHYSICS;
-				break;
-			}
-			else if (WM_jobs_test(wm, scene, WM_JOB_TYPE_OBJECT_SIM_FLUID)) {
-				handle_event = B_STOPOTHER;
-				icon = ICON_MOD_FLUIDSIM;
 				break;
 			}
 			else if (WM_jobs_test(wm, scene, WM_JOB_TYPE_OBJECT_SIM_OCEAN)) {

@@ -1749,11 +1749,6 @@ static void write_modifiers(WriteData *wd, ListBase *modbase)
 				writestruct(wd, DATA, SmokeCollSettings, 1, smd->coll);
 			}
 		}
-		else if (md->type == eModifierType_Fluidsim) {
-			FluidsimModifierData *fluidmd = (FluidsimModifierData *)md;
-
-			writestruct(wd, DATA, FluidsimSettings, 1, fluidmd->fss);
-		}
 		else if (md->type == eModifierType_DynamicPaint) {
 			DynamicPaintModifierData *pmd = (DynamicPaintModifierData *)md;
 

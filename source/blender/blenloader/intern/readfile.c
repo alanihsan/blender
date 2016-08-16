@@ -80,7 +80,6 @@
 #include "DNA_meshdata_types.h"
 #include "DNA_nla_types.h"
 #include "DNA_node_types.h"
-#include "DNA_object_fluidsim.h" // NT
 #include "DNA_object_types.h"
 #include "DNA_packedFile_types.h"
 #include "DNA_particle_types.h"
@@ -4906,13 +4905,6 @@ static void lib_link_object(FileData *fd, Main *main)
 			}
 			
 			{
-				FluidsimModifierData *fluidmd = (FluidsimModifierData *)modifiers_findByType(ob, eModifierType_Fluidsim);
-				
-				if (fluidmd && fluidmd->fss)
-					fluidmd->fss->ipo = newlibadr_us(fd, ob->id.lib, fluidmd->fss->ipo);  // XXX deprecated - old animation system
-			}
-			
-			{
 				SmokeModifierData *smd = (SmokeModifierData *)modifiers_findByType(ob, eModifierType_Smoke);
 				
 				if (smd && (smd->type == MOD_SMOKE_TYPE_DOMAIN) && smd->domain) {
@@ -5047,15 +5039,6 @@ static void direct_link_modifiers(FileData *fd, ListBase *lb)
 			}
 			
 			clmd->solver_result = NULL;
-		}
-		else if (md->type == eModifierType_Fluidsim) {
-			FluidsimModifierData *fluidmd = (FluidsimModifierData *)md;
-			
-			fluidmd->fss = newdataadr(fd, fluidmd->fss);
-			if (fluidmd->fss) {
-				fluidmd->fss->fmd = fluidmd;
-				fluidmd->fss->meshVelocities = NULL;
-			}
 		}
 		else if (md->type == eModifierType_Smoke) {
 			SmokeModifierData *smd = (SmokeModifierData *)md;
