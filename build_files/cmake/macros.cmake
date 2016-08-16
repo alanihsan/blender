@@ -621,7 +621,6 @@ function(SETUP_BLENDER_SORTED_LIBS)
 		ge_converter
 		ge_phys_dummy
 		ge_phys_bullet
-		bf_intern_smoke
 		extern_lzma
 		extern_curve_fit_nd
 		ge_logic_ketsji

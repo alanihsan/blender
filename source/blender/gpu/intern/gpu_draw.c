@@ -85,11 +85,7 @@
 
 #include "PIL_time.h"
 
-#ifndef WITH_MANTA
-	#include "smoke_API.h"
-#else
-	#include "manta_smoke_API.h"
-#endif
+#include "manta_smoke_API.h"
 
 #ifdef WITH_OPENSUBDIV
 #  include "BKE_subsurf.h"

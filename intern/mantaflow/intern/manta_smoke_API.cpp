@@ -31,7 +31,6 @@
 
 #include "SMOKE.h"
 #include "manta_smoke_API.h"
-#include "spectrum.h"
 
 extern "C" SMOKE *smoke_init(int *res, struct SmokeModifierData *smd)
 {
@@ -416,11 +415,6 @@ extern "C" unsigned char *smoke_get_obstacle_anim(SMOKE *smoke)
 	return smoke->getObstaclesAnim();
 }
 #endif
-
-extern "C" void flame_get_spectrum(unsigned char *spec, int width, float t1, float t2)
-{
-	spectrum(t1, t2, width, spec);
-}
 
 extern "C" int smoke_has_heat(SMOKE *smoke)
 {

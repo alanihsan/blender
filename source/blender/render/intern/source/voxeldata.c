@@ -57,11 +57,8 @@
 #include "BKE_main.h"
 #include "BKE_modifier.h"
 
-#ifndef WITH_MANTA
-	#include "smoke_API.h"
-#else
-	#include "manta_smoke_API.h"
-#endif
+#include "manta_smoke_API.h"
+
 #include "BPH_mass_spring.h"
 
 #include "DNA_texture_types.h"

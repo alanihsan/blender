@@ -77,11 +77,7 @@
 
 /* both in intern */
 #ifdef WITH_SMOKE
-#ifndef WITH_MANTA
-	#include "smoke_API.h"
-#else
-	#include "manta_smoke_API.h"
-#endif
+#  include "manta_smoke_API.h"
 #endif
 
 #ifdef WITH_OPENVDB

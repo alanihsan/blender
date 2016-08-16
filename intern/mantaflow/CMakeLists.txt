@@ -44,12 +44,10 @@ set(SRC
 	intern/manta_python_API.cpp
 	intern/manta_smoke_API.cpp
 	intern/SMOKE.cpp
-	intern/spectrum.cpp
 
 	extern/manta_python_API.h
 	extern/manta_smoke_API.h
 	intern/SMOKE.h
-	intern/spectrum.h
 	intern/strings/shared_script.h
 	intern/strings/smoke_script.h
 	intern/strings/liquid_script.h

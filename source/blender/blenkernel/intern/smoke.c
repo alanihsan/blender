@@ -66,7 +66,6 @@
 #	include "PIL_time.h"
 #endif
 
-#include "smoke_API.h"
 #include "manta_smoke_API.h"
 
 #ifdef WITH_SMOKE

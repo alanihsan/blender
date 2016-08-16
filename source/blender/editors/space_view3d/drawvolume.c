@@ -42,8 +42,6 @@
 
 #include "BKE_particle.h"
 
-#include "smoke_API.h"
-
 #include "BIF_gl.h"
 
 #include "GPU_debug.h"

@@ -54,11 +54,7 @@
 #include "BKE_depsgraph.h"
 #include "BKE_particle.h"
 
-#ifndef WITH_MANTA
-	#include "smoke_API.h"
-#else
-	#include "manta_smoke_API.h"
-#endif
+#include "manta_smoke_API.h"
 
 static void rna_Smoke_update(Main *UNUSED(bmain), Scene *UNUSED(scene), PointerRNA *ptr)
 {

@@ -46,10 +46,6 @@ if(WITH_MOD_REMESH)
 	add_subdirectory(dualcon)
 endif()
 
-if(WITH_MOD_SMOKE)
-	add_subdirectory(smoke)
-endif()
-
 if(WITH_IK_SOLVER)
 	add_subdirectory(iksolver)
 endif()
