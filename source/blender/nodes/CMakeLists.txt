@@ -211,6 +211,7 @@ set(SRC
 	shader/node_shader_tree.c
 	shader/node_shader_util.c
 
+	smoke/nodes/node_smoke_output.c
 	smoke/node_smoke_tree.c
 	smoke/node_smoke_util.c
 

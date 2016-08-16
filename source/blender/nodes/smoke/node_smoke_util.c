@@ -38,3 +38,12 @@ int smoke_node_poll_default(bNodeType *ntype, bNodeTree *ntree)
 	UNUSED_VARS(ntype);
 	return STREQ(ntree->idname, "SmokeNodeTree");
 }
+
+void smoke_node_type_base(struct bNodeType *ntype, int type, const char *name, short nclass, short flag)
+{
+	node_type_base(ntype, type, name, nclass, flag);
+
+	ntype->poll = smoke_node_poll_default;
+	ntype->insert_link = node_insert_link_default;
+	ntype->update_internal_links = node_update_internal_links_default;
+}

@@ -6862,6 +6862,13 @@ static void def_tex_bricks(StructRNA *srna)
 	RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 }
 
+/* -- Smoke Nodes --------------------------------------------------------- */
+
+static void def_smoke_output(StructRNA *srna)
+{
+	RNA_def_struct_sdna_from(srna, "SmokeNodeOutput", "storage");
+}
+
 /* -------------------------------------------------------------------------- */
 
 static void rna_def_shader_node(BlenderRNA *brna)
@@ -8139,6 +8146,7 @@ static void rna_def_nodetree(BlenderRNA *brna)
 		{NTREE_SHADER,      "SHADER",       ICON_MATERIAL,      "Shader",       "Shader nodes"},
 		{NTREE_TEXTURE,     "TEXTURE",      ICON_TEXTURE,       "Texture",      "Texture nodes"},
 		{NTREE_COMPOSIT,    "COMPOSITING",  ICON_RENDERLAYERS,  "Compositing",  "Compositing nodes"},
+	    {NTREE_SMOKE,       "SMOKE",        ICON_MOD_SMOKE,     "Smoke",        "Smoke nodes"},
 		{0, NULL, 0, NULL, NULL}
 	};
 

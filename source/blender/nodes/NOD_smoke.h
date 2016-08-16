@@ -40,4 +40,6 @@ void register_node_tree_type_smoke(void);
 
 void register_node_type_smoke_group(void);
 
+void register_node_type_smoke_output(void);
+
 #endif  /* __NOD_SMOKE_H__ */

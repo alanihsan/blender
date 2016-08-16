@@ -3678,6 +3678,11 @@ static void registerTextureNodes(void)
 	register_node_type_tex_proc_distnoise();
 }
 
+static void registerSmokeNodes(void)
+{
+	register_node_type_smoke_output();
+}
+
 void init_nodesystem(void) 
 {
 	nodetreetypes_hash = BLI_ghash_str_new("nodetreetypes_hash gh");
@@ -3702,6 +3707,7 @@ void init_nodesystem(void)
 	registerCompositNodes();
 	registerShaderNodes();
 	registerTextureNodes();
+	registerSmokeNodes();
 }
 
 void free_nodesystem(void) 

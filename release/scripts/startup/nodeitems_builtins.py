@@ -59,6 +59,12 @@ class TextureNodeCategory(SortedNodeCategory):
         return context.space_data.tree_type == 'TextureNodeTree'
 
 
+class SmokeNodeCategory(SortedNodeCategory):
+    @classmethod
+    def poll(cls, context):
+        return context.space_data.tree_type == 'SmokeNodeTree'
+
+
 # menu entry for node group tools
 def group_tools_draw(self, layout, context):
     layout.operator("node.group_make")
@@ -462,17 +468,30 @@ texture_node_categories = [
         ]),
     ]
 
+smoke_node_categories = [
+    # Smoke Nodes
+    SmokeNodeCategory("SMK_LAYOUT", "Layout", items=[
+        NodeItem("NodeFrame"),
+        NodeItem("NodeReroute"),
+        ]),
+    SmokeNodeCategory("SMK_OUTPUT", "Output", items=[
+        NodeItem("SmokeNodeOutput"),
+        ]),
+    ]
+
 
 def register():
     nodeitems_utils.register_node_categories('SHADER', shader_node_categories)
     nodeitems_utils.register_node_categories('COMPOSITING', compositor_node_categories)
     nodeitems_utils.register_node_categories('TEXTURE', texture_node_categories)
+    nodeitems_utils.register_node_categories('SMOKE', smoke_node_categories)
 
 
 def unregister():
     nodeitems_utils.unregister_node_categories('SHADER')
     nodeitems_utils.unregister_node_categories('COMPOSITING')
     nodeitems_utils.unregister_node_categories('TEXTURE')
+    nodeitems_utils.unregister_node_categories('SMOKE')
 
 
 if __name__ == "__main__":

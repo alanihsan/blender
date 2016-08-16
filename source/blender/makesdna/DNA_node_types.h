@@ -1153,4 +1153,8 @@ enum {
 	SHD_POINTDENSITY_COLOR_VERTNOR      = 2,
 };
 
+typedef struct SmokeNodeOutput {
+	void *unused;
+} SmokeNodeOutput;
+
 #endif

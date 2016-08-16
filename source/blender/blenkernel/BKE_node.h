@@ -1036,6 +1036,12 @@ int ntreeTexExecTree(struct bNodeTree *ntree, struct TexResult *target,
                      struct Tex *tex, short which_output, int cfra, int preview, struct ShadeInput *shi, struct MTex *mtex);
 /** \} */
 
+/* -------------------------------------------------------------------- */
+/** \name Texture Nodes
+ */
+
+#define SMK_NODE_OUTPUT 701
+
 void init_nodesystem(void);
 void free_nodesystem(void);
 

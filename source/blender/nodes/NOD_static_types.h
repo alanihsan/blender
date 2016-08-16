@@ -249,6 +249,7 @@ DefNode( TextureNode,    TEX_NODE_PROC+TEX_NOISE, 0,                      "TEX_N
 DefNode( TextureNode,    TEX_NODE_PROC+TEX_STUCCI, 0,                     "TEX_STUCCI",     TexStucci,        "Stucci",            ""              )
 DefNode( TextureNode,    TEX_NODE_PROC+TEX_DISTNOISE, 0,                  "TEX_DISTNOISE",  TexDistNoise,     "Distorted Noise",   ""              )
 
+DefNode( SmokeNode, SMK_NODE_OUTPUT, def_smoke_output, "OUTPUT", Output, "Output", "" )
 
 /* undefine macros */
 #undef DefNode

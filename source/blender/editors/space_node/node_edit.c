@@ -563,6 +563,10 @@ void ED_node_smoke_default(const bContext *C, struct Object *ob)
 
 	domain->nodetree = ntree;
 
+	bNode *out = nodeAddStaticNode(C, ntree, SMK_NODE_OUTPUT);
+	out->locx = 300.0f;
+	out->locy = 300.0f;
+
 	ntreeUpdateTree(CTX_data_main(C), ntree);
 }
 
