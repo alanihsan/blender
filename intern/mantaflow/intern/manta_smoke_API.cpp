@@ -64,9 +64,9 @@ extern "C" void smoke_manta_export(SMOKE* smoke, SmokeModifierData *smd)
 extern "C" void smoke_step(SMOKE *smoke, SmokeModifierData *smd)
 {
 	smoke->step(smd);
-	smoke->updatePointers(smd);
+	smoke->updatePointers();
 	if (smoke->usingHighRes())
-		smoke->updatePointersHigh(smd);
+		smoke->updatePointersHigh();
 }
 
 static void data_dissolve(float *density, float *heat, float *r, float *g, float *b, int total_cells, int speed, int log)
@@ -445,20 +445,20 @@ extern "C" int smoke_turbulence_has_colors(SMOKE *smoke)
 extern "C" void smoke_ensure_heat(SMOKE *smoke, struct SmokeModifierData *smd)
 {
 	if (smoke) {
-		smoke->initHeat(smd);
-		smoke->updatePointers(smd);
+		smoke->initHeat();
+		smoke->updatePointers();
 	}
 }
 
 extern "C" void smoke_ensure_fire(SMOKE *smoke, struct SmokeModifierData *smd)
 {
 	if (smoke) {
-		smoke->initFire(smd);
-		smoke->updatePointers(smd);
+		smoke->initFire();
+		smoke->updatePointers();
 	}
 	if (smoke && smoke->usingHighRes()) {
-		smoke->initFireHigh(smd);
-		smoke->updatePointersHigh(smd);
+		smoke->initFireHigh();
+		smoke->updatePointersHigh();
 	}
 }
 
@@ -466,11 +466,11 @@ extern "C" void smoke_ensure_colors(SMOKE *smoke, struct SmokeModifierData *smd)
 {
 	if (smoke) {
 		smoke->initColors(smd);
-		smoke->updatePointers(smd);
+		smoke->updatePointers();
 	}
 	if (smoke && smoke->usingHighRes()) {
 		smoke->initColorsHigh(smd);
-		smoke->updatePointersHigh(smd);
+		smoke->updatePointersHigh();
 	}
 }
 
@@ -478,7 +478,7 @@ extern "C" void liquid_ensure_init(SMOKE *smoke, struct SmokeModifierData *smd)
 {
 	if (smoke) {
 		smoke->initLiquid(smd);
-		smoke->updatePointers(smd);
+		smoke->updatePointers();
 	}
 }
 

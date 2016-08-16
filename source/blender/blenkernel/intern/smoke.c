@@ -68,32 +68,10 @@
 
 #include "manta_smoke_API.h"
 
-#ifdef WITH_SMOKE
-
-static ThreadMutex object_update_lock = BLI_MUTEX_INITIALIZER;
-
-// timestep default value for nice appearance 0.1f
-#define DT_DEFAULT 0.1f
-
-#define ADD_IF_LOWER_POS(a, b) (min_ff((a) + (b), max_ff((a), (b))))
-#define ADD_IF_LOWER_NEG(a, b) (max_ff((a) + (b), min_ff((a), (b))))
-#define ADD_IF_LOWER(a, b) (((b) > 0) ? ADD_IF_LOWER_POS((a), (b)) : ADD_IF_LOWER_NEG((a), (b)))
-
-#else /* WITH_SMOKE */
-
+#ifndef WITH_SMOKE
 /* Stubs to use when smoke is disabled */
-struct WTURBULENCE *smoke_turbulence_init(int *UNUSED(res), int UNUSED(amplify), int UNUSED(noisetype), const char *UNUSED(noisefile_path), int UNUSED(use_fire), int UNUSED(use_colors)) { return NULL; }
-//struct FLUID_3D *smoke_init(int *UNUSED(res), float *UNUSED(dx), float *UNUSED(dtdef), int UNUSED(use_heat), int UNUSED(use_fire), int UNUSED(use_colors)) { return NULL; }
-void smoke_free(struct FLUID_3D *UNUSED(fluid)) {}
-float *smoke_get_density(struct FLUID_3D *UNUSED(fluid)) { return NULL; }
-void smoke_turbulence_free(struct WTURBULENCE *UNUSED(wt)) {}
-void smoke_initWaveletBlenderRNA(struct WTURBULENCE *UNUSED(wt), float *UNUSED(strength)) {}
-void smoke_initBlenderRNA(struct FLUID_3D *UNUSED(fluid), float *UNUSED(alpha), float *UNUSED(beta), float *UNUSED(dt_factor), float *UNUSED(vorticity),
-                          int *UNUSED(border_colli), float *UNUSED(burning_rate), float *UNUSED(flame_smoke), float *UNUSED(flame_smoke_color),
-                          float *UNUSED(flame_vorticity), float *UNUSED(flame_ignition_temp), float *UNUSED(flame_max_temp)) {}
 struct DerivedMesh *BKE_smoke_step(SmokeModifierData *UNUSED(smd), Scene *UNUSED(scene), Object *UNUSED(ob), DerivedMesh *UNUSED(dm)) { return NULL; }
 float BKE_smoke_get_velocity_at(struct Object *UNUSED(ob), float UNUSED(position[3]), float UNUSED(velocity[3])) { return 0.0f; }
-
 
 #endif /* WITH_SMOKE */
 
@@ -418,6 +396,15 @@ void BKE_smoke_copy(struct SmokeModifierData *smd, struct SmokeModifierData *tsm
 }
 
 #ifdef WITH_SMOKE
+
+static ThreadMutex object_update_lock = BLI_MUTEX_INITIALIZER;
+
+// timestep default value for nice appearance 0.1f
+#define DT_DEFAULT 0.1f
+
+#define ADD_IF_LOWER_POS(a, b) (min_ff((a) + (b), max_ff((a), (b))))
+#define ADD_IF_LOWER_NEG(a, b) (max_ff((a) + (b), min_ff((a), (b))))
+#define ADD_IF_LOWER(a, b) (((b) > 0) ? ADD_IF_LOWER_POS((a), (b)) : ADD_IF_LOWER_NEG((a), (b)))
 
 /* forward decleration */
 static void smoke_calc_transparency(SmokeDomainSettings *sds, Scene *scene);

@@ -45,17 +45,17 @@ public:
 	void step(struct SmokeModifierData *smd);
 	
 	// Grid initialization functions
-	void initHeat(struct SmokeModifierData *smd);
-	void initFire(struct SmokeModifierData *smd);
+	void initHeat();
+	void initFire();
 	void initColors(struct SmokeModifierData *smd);
-	void initFireHigh(struct SmokeModifierData *smd);
+	void initFireHigh();
 	void initColorsHigh(struct SmokeModifierData *smd);
 	void initLiquid(SmokeModifierData *smd);
 	void initLiquidHigh(SmokeModifierData *smd);
 	
 	// Pointer transfer Mantaflow -> Blender
-	void updatePointers(struct SmokeModifierData *smd);
-	void updatePointersHigh(struct SmokeModifierData *smd);
+	void updatePointers();
+	void updatePointersHigh();
 
 	// IO for Mantaflow scene script
 	void exportScript(struct SmokeModifierData *smd);

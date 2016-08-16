@@ -95,7 +95,6 @@ enum {
 
 typedef struct SmokeDomainSettings {
 	struct SmokeModifierData *smd; /* for fast RNA access */
-	struct FLUID_3D *fluid_old;
 	struct bNodeTree *nodetree;
 	void *fluid_mutex;
 	struct Group *fluid_group;

@@ -1845,7 +1845,6 @@ void blo_do_versions_250(FileData *fd, Library *lib, Main *main)
 
 	if (main->versionfile < 252 || (main->versionfile == 252 && main->subversionfile < 1)) {
 		Brush *brush;
-		Object *ob;
 		Scene *scene;
 		bNodeTree *ntree;
 

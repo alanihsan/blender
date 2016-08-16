@@ -133,7 +133,7 @@ SMOKE::SMOKE(int *res, SmokeModifierData *smd)
 		initDomain(smd);
 		initLiquid(smd);
 
-		updatePointers(smd);
+		updatePointers();
 		
 		if (mUsingHighRes) {
 			// Make sure that string vector does not contain any previous commands
@@ -150,7 +150,7 @@ SMOKE::SMOKE(int *res, SmokeModifierData *smd)
 			initDomainHigh(smd);
 			initLiquidHigh(smd);
 
-			updatePointersHigh(smd);
+			updatePointersHigh();
 		}
 
 		return;
@@ -160,11 +160,11 @@ SMOKE::SMOKE(int *res, SmokeModifierData *smd)
 	if (mUsingSmoke) {
 		initDomain(smd);
 		initSmoke(smd);
-		if (mUsingHeat)   initHeat(smd);
-		if (mUsingFire)   initFire(smd);
+		if (mUsingHeat)   initHeat();
+		if (mUsingFire)   initFire();
 		if (mUsingColors) initColors(smd);
 
-		updatePointers(smd); // Needs to be after heat, fire, color init
+		updatePointers(); // Needs to be after heat, fire, color init
 
 		if (mUsingHighRes) {
 			// Make sure that string vector does not contain any previous commands
@@ -180,10 +180,10 @@ SMOKE::SMOKE(int *res, SmokeModifierData *smd)
 			// Initialize Mantaflow variables in Python
 			initDomainHigh(smd);
 			initSmokeHigh(smd);
-			if (mUsingFire)   initFireHigh(smd);
+			if (mUsingFire)   initFireHigh();
 			if (mUsingColors) initColorsHigh(smd);
 
-			updatePointersHigh(smd); // Needs to be after fire, color init
+			updatePointersHigh(); // Needs to be after fire, color init
 		}
 	}
 }
@@ -241,7 +241,7 @@ void SMOKE::initSmokeHigh(SmokeModifierData *smd)
 	mUsingHighRes = true;
 }
 
-void SMOKE::initHeat(SmokeModifierData *smd)
+void SMOKE::initHeat()
 {
 	if (!mHeat) {
 		mCommands.clear();
@@ -253,7 +253,7 @@ void SMOKE::initHeat(SmokeModifierData *smd)
 	}
 }
 
-void SMOKE::initFire(SmokeModifierData *smd)
+void SMOKE::initFire()
 {
 	if (!mFuel) {
 		mCommands.clear();
@@ -265,7 +265,7 @@ void SMOKE::initFire(SmokeModifierData *smd)
 	}
 }
 
-void SMOKE::initFireHigh(SmokeModifierData *smd)
+void SMOKE::initFireHigh()
 {
 	if (!mFuelHigh) {
 		mCommands.clear();
@@ -835,7 +835,7 @@ void SMOKE::updateMeshData(const char* filename)
 	gzclose( gzf );
 }
 
-void SMOKE::updatePointers(SmokeModifierData *smd)
+void SMOKE::updatePointers()
 {
 	std::cout << "Updating pointers low res" << std::endl;
 
@@ -880,7 +880,7 @@ void SMOKE::updatePointers(SmokeModifierData *smd)
 	}
 }
 
-void SMOKE::updatePointersHigh(SmokeModifierData *smd)
+void SMOKE::updatePointersHigh()
 {
 	std::cout << "Updating pointers high res" << std::endl;
 
