@@ -373,6 +373,84 @@ void ABC_export(
 
 /* ********************** Import file ********************** */
 
+static AbcObjectReader *create_reader(const IObject &object, ImportSettings &settings)
+{
+	AbcObjectReader *reader = NULL;
+
+	const MetaData &md = object.getMetaData();
+
+	if (IXform::matches(md)) {
+		bool create_xform = false;
+
+		/* Check whether or not this object is a Maya locator, which is
+		 * similar to empties used as parent object in Blender. */
+		if (has_property(object.getProperties(), "locator")) {
+			create_xform = true;
+		}
+		else {
+			/* Avoid creating an empty object if the child of this transform
+			 * is not a transform (that is an empty). */
+			if (object.getNumChildren() == 1) {
+				if (IXform::matches(object.getChild(0).getMetaData())) {
+					create_xform = true;
+				}
+#if 0
+				else {
+					std::cerr << "Skipping " << child.getFullName() << '\n';
+				}
+#endif
+			}
+			else {
+				create_xform = true;
+			}
+		}
+
+		if (create_xform) {
+			reader = new AbcEmptyReader(object, settings);
+		}
+	}
+	else if (IPolyMesh::matches(md)) {
+		reader = new AbcMeshReader(object, settings);
+	}
+	else if (ISubD::matches(md)) {
+		reader = new AbcSubDReader(object, settings);
+	}
+	else if (INuPatch::matches(md)) {
+#ifdef USE_NURBS
+		/* TODO(kevin): importing cyclic NURBS from other software crashes
+		 * at the moment. This is due to the fact that NURBS in other
+		 * software have duplicated points which causes buffer overflows in
+		 * Blender. Need to figure out exactly how these points are
+		 * duplicated, in all cases (cyclic U, cyclic V, and cyclic UV).
+		 * Until this is fixed, disabling NURBS reading. */
+		reader = new AbcNurbsReader(child, settings);
+#endif
+	}
+	else if (ICamera::matches(md)) {
+		reader = new AbcCameraReader(object, settings);
+	}
+	else if (IPoints::matches(md)) {
+		reader = new AbcPointsReader(object, settings);
+	}
+	else if (IMaterial::matches(md)) {
+		/* Pass for now. */
+	}
+	else if (ILight::matches(md)) {
+		/* Pass for now. */
+	}
+	else if (IFaceSet::matches(md)) {
+		/* Pass, those are handled in the mesh reader. */
+	}
+	else if (ICurves::matches(md)) {
+		reader = new AbcCurveReader(object, settings);
+	}
+	else {
+		assert(false);
+	}
+
+	return reader;
+}
+
 static void visit_object(const IObject &object,
                          std::vector<AbcObjectReader *> &readers,
                          GHash *parent_map,
@@ -389,78 +467,7 @@ static void visit_object(const IObject &object,
 			continue;
 		}
 
-		AbcObjectReader *reader = NULL;
-
-		const MetaData &md = child.getMetaData();
-
-		if (IXform::matches(md)) {
-			bool create_xform = false;
-
-			/* Check whether or not this object is a Maya locator, which is
-			 * similar to empties used as parent object in Blender. */
-			if (has_property(child.getProperties(), "locator")) {
-				create_xform = true;
-			}
-			else {
-				/* Avoid creating an empty object if the child of this transform
-				 * is not a transform (that is an empty). */
-				if (child.getNumChildren() == 1) {
-					if (IXform::matches(child.getChild(0).getMetaData())) {
-						create_xform = true;
-					}
-#if 0
-					else {
-						std::cerr << "Skipping " << child.getFullName() << '\n';
-					}
-#endif
-				}
-				else {
-					create_xform = true;
-				}
-			}
-
-			if (create_xform) {
-				reader = new AbcEmptyReader(child, settings);
-			}
-		}
-		else if (IPolyMesh::matches(md)) {
-			reader = new AbcMeshReader(child, settings);
-		}
-		else if (ISubD::matches(md)) {
-			reader = new AbcSubDReader(child, settings);
-		}
-		else if (INuPatch::matches(md)) {
-#ifdef USE_NURBS
-			/* TODO(kevin): importing cyclic NURBS from other software crashes
-			 * at the moment. This is due to the fact that NURBS in other
-			 * software have duplicated points which causes buffer overflows in
-			 * Blender. Need to figure out exactly how these points are
-			 * duplicated, in all cases (cyclic U, cyclic V, and cyclic UV).
-			 * Until this is fixed, disabling NURBS reading. */
-			reader = new AbcNurbsReader(child, settings);
-#endif
-		}
-		else if (ICamera::matches(md)) {
-			reader = new AbcCameraReader(child, settings);
-		}
-		else if (IPoints::matches(md)) {
-			reader = new AbcPointsReader(child, settings);
-		}
-		else if (IMaterial::matches(md)) {
-			/* Pass for now. */
-		}
-		else if (ILight::matches(md)) {
-			/* Pass for now. */
-		}
-		else if (IFaceSet::matches(md)) {
-			/* Pass, those are handled in the mesh reader. */
-		}
-		else if (ICurves::matches(md)) {
-			reader = new AbcCurveReader(child, settings);
-		}
-		else {
-			assert(false);
-		}
+		AbcObjectReader *reader = create_reader(child, settings);
 
 		if (reader) {
 			readers.push_back(reader);
@@ -708,7 +715,11 @@ static void import_endjob(void *user_data)
 	}
 
 	for (iter = data->readers.begin(); iter != data->readers.end(); ++iter) {
-		delete *iter;
+		AbcObjectReader *reader = *iter;
+
+		if (reader->refcount() == 0) {
+			delete reader;
+		}
 	}
 
 	if (data->parent_map) {
@@ -771,16 +782,11 @@ void ABC_import(bContext *C, const char *filepath, float scale, bool is_sequence
 
 /* ******************************* */
 
-void ABC_get_transform(AbcArchiveHandle *handle, Object *ob, const char *object_path, float r_mat[4][4], float time, float scale)
+void ABC_get_transform(CacheReader *reader, Object *ob, float r_mat[4][4], float time, float scale)
 {
-	ArchiveReader *archive = archive_from_handle(handle);
+	AbcObjectReader *abc_reader = reinterpret_cast<AbcObjectReader *>(reader);
 
-	if (!archive || !archive->valid()) {
-		return;
-	}
-
-	IObject tmp;
-	find_iobject(archive->getTop(), tmp, object_path);
+	IObject tmp = abc_reader->iobject();
 
 	IXform ixform;
 
@@ -1041,23 +1047,16 @@ static DerivedMesh *read_curves_sample(Object *ob, const IObject &iobject, const
 	return CDDM_from_curve(ob);
 }
 
-DerivedMesh *ABC_read_mesh(AbcArchiveHandle *handle,
+DerivedMesh *ABC_read_mesh(CacheReader *reader,
                            Object *ob,
                            DerivedMesh *dm,
-                           const char *object_path,
                            const float time,
                            const char **err_str,
                            int read_flag)
 {
-	ArchiveReader *archive = archive_from_handle(handle);
+	AbcObjectReader *abc_reader = reinterpret_cast<AbcObjectReader *>(reader);
 
-	if (!archive || !archive->valid()) {
-		*err_str = "Invalid archive!";
-		return NULL;
-	}
-
-	IObject iobject;
-	find_iobject(archive->getTop(), iobject, object_path);
+	IObject iobject = abc_reader->iobject();
 
 	if (!iobject.valid()) {
 		*err_str = "Invalid object: verify object path";
@@ -1101,4 +1100,38 @@ DerivedMesh *ABC_read_mesh(AbcArchiveHandle *handle,
 
 	*err_str = "Unsupported object type: verify object path"; // or poke developer
 	return NULL;
+}
+
+/* ***************************************** */
+
+void CacheReader_free(CacheReader *reader)
+{
+	AbcObjectReader *abc_reader = reinterpret_cast<AbcObjectReader *>(reader);
+	abc_reader->decref();
+
+	if (abc_reader->refcount() == 0) {
+		delete abc_reader;
+	}
+}
+
+CacheReader *CacheReader_open_alembic_object(AbcArchiveHandle *handle, CacheReader *reader, const char *object_path)
+{
+	ArchiveReader *archive = archive_from_handle(handle);
+
+	if (!archive || !archive->valid()) {
+		return reader;
+	}
+
+	IObject iobject;
+	find_iobject(archive->getTop(), iobject, object_path);
+
+	if (reader) {
+		CacheReader_free(reader);
+	}
+
+	ImportSettings settings;
+	AbcObjectReader *abc_reader = create_reader(iobject, settings);
+	abc_reader->incref();
+
+	return reinterpret_cast<CacheReader *>(abc_reader);
 }

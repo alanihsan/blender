@@ -32,6 +32,10 @@
 #  define ABC_INLINE static inline
 #endif
 
+struct CacheReader {
+	int unused;
+};
+
 using Alembic::Abc::chrono_t;
 
 class ImportSettings;

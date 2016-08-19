@@ -142,6 +142,10 @@ protected:
 
 	ImportSettings *m_settings;
 
+	/* Use reference counting since the same reader may be used by multiple
+	 * modifiers and/or constraints. */
+	int m_refcount;
+
 	chrono_t m_min_time;
 	chrono_t m_max_time;
 
@@ -160,10 +164,14 @@ public:
 
 	void readObjectMatrix(const float time);
 
-	void addCacheModifier() const;
+	void addCacheModifier();
 
 	chrono_t minTime() const;
 	chrono_t maxTime() const;
+
+	int refcount() const;
+	void incref();
+	void decref();
 };
 
 #endif  /* __ABC_OBJECT_H__ */

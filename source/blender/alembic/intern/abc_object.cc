@@ -124,6 +124,7 @@ AbcObjectReader::AbcObjectReader(const IObject &object, ImportSettings &settings
     , m_object(NULL)
     , m_iobject(object)
     , m_settings(&settings)
+    , m_refcount(0)
     , m_min_time(std::numeric_limits<chrono_t>::max())
     , m_max_time(std::numeric_limits<chrono_t>::min())
 {
@@ -211,10 +212,13 @@ void AbcObjectReader::readObjectMatrix(const float time)
 
 		data->cache_file = m_settings->cache_file;
 		id_us_plus(&data->cache_file->id);
+
+		data->reader = reinterpret_cast<CacheReader *>(this);
+		this->incref();
 	}
 }
 
-void AbcObjectReader::addCacheModifier() const
+void AbcObjectReader::addCacheModifier()
 {
 	ModifierData *md = modifier_new(eModifierType_MeshSequenceCache);
 	BLI_addtail(&m_object->modifiers, md);
@@ -225,6 +229,9 @@ void AbcObjectReader::addCacheModifier() const
 	id_us_plus(&mcmd->cache_file->id);
 
 	BLI_strncpy(mcmd->object_path, m_iobject.getFullName().c_str(), FILE_MAX);
+
+	mcmd->reader = reinterpret_cast<CacheReader *>(this);
+	this->incref();
 }
 
 chrono_t AbcObjectReader::minTime() const
@@ -235,4 +242,19 @@ chrono_t AbcObjectReader::minTime() const
 chrono_t AbcObjectReader::maxTime() const
 {
 	return m_max_time;
+}
+
+int AbcObjectReader::refcount() const
+{
+	return m_refcount;
+}
+
+void AbcObjectReader::incref()
+{
+	++m_refcount;
+}
+
+void AbcObjectReader::decref()
+{
+	--m_refcount;
 }
