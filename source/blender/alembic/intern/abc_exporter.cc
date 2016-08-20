@@ -87,6 +87,7 @@ ExportSettings::ExportSettings()
     , export_child_hairs(true)
     , export_ogawa(true)
     , pack_uv(false)
+    , triangulate(false)
     , do_convert_axis(false)
 {}
 

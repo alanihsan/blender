@@ -65,6 +65,7 @@ struct AlembicExportParams {
 	unsigned int face_sets : 1;
 	unsigned int use_subdiv_schema : 1;
 	unsigned int packuv : 1;
+	unsigned int triangulate : 1;
 
 	unsigned int compression_type : 1;
 	float global_scale;
