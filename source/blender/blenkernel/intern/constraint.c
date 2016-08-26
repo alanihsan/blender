@@ -4361,7 +4361,7 @@ static void transformcache_evaluate(bConstraint *con, bConstraintOb *cob, ListBa
 	BKE_cachefile_ensure_handle(G.main, cache_file);
 
 	if (!data->reader) {
-		CacheReader_open_alembic_object(cache_file->handle, data->reader, data->object_path);
+		data->reader = CacheReader_open_alembic_object(cache_file->handle, data->reader, data->object_path);
 	}
 
 	ABC_get_transform(data->reader, cob->ob,

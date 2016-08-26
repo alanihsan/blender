@@ -481,7 +481,7 @@ static void rna_Constraint_transformCache_object_path_update(Main *bmain, Scene 
 	bConstraint *con = (bConstraint *)ptr->data;
 	bTransformCacheConstraint *data = (bTransformCacheConstraint *)con->data;
 
-	CacheReader_open_alembic_object(data->cache_file->handle, data->reader, data->object_path);
+	data->reader = CacheReader_open_alembic_object(data->cache_file->handle, data->reader, data->object_path);
 
 	rna_Constraint_update(bmain, scene, ptr);
 }

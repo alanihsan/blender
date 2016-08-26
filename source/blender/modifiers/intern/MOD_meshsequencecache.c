@@ -107,7 +107,7 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 	BKE_cachefile_ensure_handle(G.main, cache_file);
 
 	if (!mcmd->reader) {
-		CacheReader_open_alembic_object(cache_file->handle, mcmd->reader, mcmd->object_path);
+		mcmd->reader = CacheReader_open_alembic_object(cache_file->handle, mcmd->reader, mcmd->object_path);
 	}
 
 	DerivedMesh *result = ABC_read_mesh(mcmd->reader,
