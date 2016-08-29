@@ -94,6 +94,8 @@ void BOID_OT_state_move_down(struct wmOperatorType *ot);
 
 /* physics_fluid.c */
 void FLUID_OT_bake(struct wmOperatorType *ot);
+void SMOKE_OT_add_flow(struct wmOperatorType *ot);
+void SMOKE_OT_remove_flow(struct wmOperatorType *ot);
 
 /* dynamicpaint.c */
 void DPAINT_OT_bake(struct wmOperatorType *ot);

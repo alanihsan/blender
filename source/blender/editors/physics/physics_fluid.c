@@ -1127,3 +1127,109 @@ void FLUID_OT_bake(wmOperatorType *ot)
 	ot->poll = ED_operator_object_active_editable;
 }
 
+/***************************** SMOKE_OT_add_flow ******************************/
+
+#include "DNA_smoke_types.h"
+
+#include "BKE_smoke.h"
+
+static int smoke_add_flow_exec(bContext *C, wmOperator *op)
+{
+	Object *ob = CTX_data_active_object(C);
+
+	if (ob == NULL) {
+		BKE_report(op->reports, RPT_ERROR, "No object selected!");
+		return OPERATOR_CANCELLED;
+	}
+
+	ModifierData *md = modifiers_findByType(ob, eModifierType_Smoke);
+
+	if (md == NULL) {
+		BKE_report(op->reports, RPT_ERROR, "No smoke modifier on object!");
+		return OPERATOR_CANCELLED;
+	}
+
+	SmokeModifierData *smd = (SmokeModifierData *)md;
+
+	if (smd->type != MOD_SMOKE_TYPE_DOMAIN) {
+		BKE_report(op->reports, RPT_ERROR, "Smoke modifier is not on a domain!");
+		return OPERATOR_CANCELLED;
+	}
+
+	SmokeDomainSettings *sds = smd->domain;
+
+	SmokeFlowSettings *flow = sds->sources.first;
+
+	for (; flow; flow = flow->next) {
+		flow->flags &= ~MOD_SMOKE_FLOW_CURRENT;
+	}
+
+	SmokeFlowSettings *settings = BKE_smoke_flow_alloc();
+	BLI_addtail(&sds->sources, settings);
+
+	return OPERATOR_FINISHED;
+}
+
+void SMOKE_OT_add_flow(wmOperatorType *ot)
+{
+	/* identifiers */
+	ot->name = "Add smoke flow";
+	ot->description = "Add a source to the smoke simulation";
+	ot->idname = "SMOKE_OT_add_flow";
+
+	/* api callbacks */
+	ot->exec = smoke_add_flow_exec;
+}
+
+/***************************** SMOKE_OT_remove_flow ******************************/
+
+static int smoke_remove_flow_exec(bContext *C, wmOperator *op)
+{
+	Object *ob = CTX_data_active_object(C);
+
+	if (ob == NULL) {
+		BKE_report(op->reports, RPT_ERROR, "No object selected!");
+		return OPERATOR_CANCELLED;
+	}
+
+	ModifierData *md = modifiers_findByType(ob, eModifierType_Smoke);
+
+	if (md == NULL) {
+		BKE_report(op->reports, RPT_ERROR, "No smoke modifier on object!");
+		return OPERATOR_CANCELLED;
+	}
+
+	SmokeModifierData *smd = (SmokeModifierData *)md;
+
+	if (smd->type != MOD_SMOKE_TYPE_DOMAIN) {
+		BKE_report(op->reports, RPT_ERROR, "Smoke modifier is not on a domain!");
+		return OPERATOR_CANCELLED;
+	}
+
+	SmokeDomainSettings *sds = smd->domain;
+
+	SmokeFlowSettings *flow = sds->sources.first;
+
+	for (; flow; flow = flow->next) {
+		if ((flow->flags & MOD_SMOKE_FLOW_CURRENT) != 0) {
+			break;
+		}
+	}
+
+	BLI_remlink(&sds->sources, flow);
+
+	BKE_smoke_flow_free(flow);
+
+	return OPERATOR_FINISHED;
+}
+
+void SMOKE_OT_remove_flow(wmOperatorType *ot)
+{
+	/* identifiers */
+	ot->name = "Remove smoke flow";
+	ot->description = "Remove the current smoke source from the simulation";
+	ot->idname = "SMOKE_OT_remove_flow";
+
+	/* api callbacks */
+	ot->exec = smoke_remove_flow_exec;
+}

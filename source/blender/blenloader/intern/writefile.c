@@ -1740,6 +1740,7 @@ static void write_modifiers(WriteData *wd, ListBase *modbase)
 					smd->domain->point_cache[1] = NULL;
 
 					writestruct(wd, DATA, EffectorWeights, 1, smd->domain->effector_weights);
+					writelist(wd, DATA, SmokeFlowSettings, &smd->domain->sources);
 				}
 			}
 			else if (smd->type & MOD_SMOKE_TYPE_FLOW) {

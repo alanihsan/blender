@@ -178,6 +178,8 @@ static void operatortypes_boids(void)
 static void operatortypes_fluid(void)
 {
 	WM_operatortype_append(FLUID_OT_bake);
+	WM_operatortype_append(SMOKE_OT_add_flow);
+	WM_operatortype_append(SMOKE_OT_remove_flow);
 }
 
 /**************************** point cache **********************************/

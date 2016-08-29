@@ -349,5 +349,77 @@ class PHYSICS_PT_smoke_field_weights(PhysicButtonsPanel, Panel):
         domain = context.smoke.domain_settings
         effector_weights_ui(self, context, domain.effector_weights, 'SMOKE')
 
+
+class PHYSICS_PT_smoke_sources(PhysicButtonsPanel, Panel):
+    bl_label = "Smoke Sources"
+    bl_options = {'DEFAULT_CLOSED'}
+    COMPAT_ENGINES = {'BLENDER_RENDER'}
+
+    @classmethod
+    def poll(cls, context):
+        md = context.smoke
+        rd = context.scene.render
+        return md and (md.smoke_type == 'DOMAIN') and (rd.engine in cls.COMPAT_ENGINES)
+
+    def draw(self, context):
+        domain = context.smoke.domain_settings
+        layout = self.layout
+        row = layout.row()
+
+        row.template_list("UI_UL_list", "smoke_flow_sources", domain, "sources", domain, "active_source_index", rows=1)
+        col = row.column()
+        sub = col.row()
+        subsub = sub.column(align=True)
+        subsub.operator("smoke.add_flow", icon='ZOOMIN', text="")
+        subsub.operator("smoke.remove_flow", icon='ZOOMOUT', text="")
+
+        source = domain.active_source
+
+        if source is not None:
+            layout.prop(source, "object")
+
+            if source.object is None:
+                return
+
+            layout.prop(source, "smoke_flow_type", expand=False)
+
+            if source.smoke_flow_type != 'OUTFLOW':
+                split = layout.split()
+                col = split.column()
+                col.label(text="Flow Source:")
+                col.prop(source, "smoke_flow_source", expand=False, text="")
+                if source.smoke_flow_source == 'PARTICLES':
+                    col.label(text="Particle System:")
+                    col.prop_search(source, "particle_system", ob, "particle_systems", text="")
+                    col.prop(source, "use_particle_size", text="Set Size")
+                    sub = col.column()
+                    sub.active = source.use_particle_size
+                    sub.prop(source, "particle_size")
+                else:
+                    col.prop(source, "surface_distance")
+                    col.prop(source, "volume_density")
+
+                sub = col.column(align=True)
+                sub.prop(source, "use_initial_velocity")
+
+                sub = sub.column()
+                sub.active = source.use_initial_velocity
+                sub.prop(source, "velocity_factor")
+                if source.smoke_flow_source == 'MESH':
+                    sub.prop(source, "velocity_normal")
+                    #sub.prop(flow, "velocity_random")
+
+                sub = split.column()
+                sub.label(text="Initial Values:")
+                sub.prop(source, "use_absolute")
+                if source.smoke_flow_type in {'SMOKE', 'BOTH'}:
+                    sub.prop(source, "density")
+                    sub.prop(source, "temperature")
+                    sub.prop(source, "smoke_color")
+                if source.smoke_flow_type in {'FIRE', 'BOTH'}:
+                    sub.prop(source, "fuel_amount")
+                sub.label(text="Sampling:")
+                sub.prop(source, "subframes")
+
 if __name__ == "__main__":  # only for live edit.
     bpy.utils.register_module(__name__)

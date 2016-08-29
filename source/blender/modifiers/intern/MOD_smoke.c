@@ -117,12 +117,6 @@ static bool dependsOnTime(ModifierData *UNUSED(md))
 	return true;
 }
 
-static bool is_flow_cb(Object *UNUSED(ob), ModifierData *md)
-{
-	SmokeModifierData *smd = (SmokeModifierData *) md;
-	return (smd->type & MOD_SMOKE_TYPE_FLOW) && smd->flow;
-}
-
 static bool is_coll_cb(Object *UNUSED(ob), ModifierData *md)
 {
 	SmokeModifierData *smd = (SmokeModifierData *) md;
@@ -137,8 +131,15 @@ static void updateDepgraph(ModifierData *md, DagForest *forest,
 	SmokeModifierData *smd = (SmokeModifierData *) md;
 
 	if (smd && (smd->type & MOD_SMOKE_TYPE_DOMAIN) && smd->domain) {
-		/* Actual code uses get_collisionobjects */
-		dag_add_collision_relations(forest, scene, ob, obNode, smd->domain->fluid_group, ob->lay|scene->lay, eModifierType_Smoke, is_flow_cb, true, "Smoke Flow");
+		for (SmokeFlowSettings *sfs = smd->domain->sources.first; sfs; sfs = sfs->next) {
+			if (!sfs->object) {
+				continue;
+			}
+
+			DagNode *node2 = dag_get_node(forest, sfs->object);
+			dag_add_relation(forest, node2, obNode, DAG_RL_DATA_DATA | DAG_RL_OB_DATA, "Smoke Flow");
+		}
+
 		dag_add_collision_relations(forest, scene, ob, obNode, smd->domain->coll_group, ob->lay|scene->lay, eModifierType_Smoke, is_coll_cb, true, "Smoke Coll");
 
 		dag_add_forcefield_relations(forest, scene, ob, obNode, smd->domain->effector_weights, true, PFIELD_SMOKEFLOW, "Smoke Force Field");
@@ -154,8 +155,15 @@ static void updateDepsgraph(ModifierData *md,
 	SmokeModifierData *smd = (SmokeModifierData *)md;
 
 	if (smd && (smd->type & MOD_SMOKE_TYPE_DOMAIN) && smd->domain) {
-		/* Actual code uses get_collisionobjects */
-		DEG_add_collision_relations(node, scene, ob, smd->domain->fluid_group, ob->lay|scene->lay, eModifierType_Smoke, is_flow_cb, true, "Smoke Flow");
+		for (SmokeFlowSettings *sfs = smd->domain->sources.first; sfs; sfs = sfs->next) {
+			if (!sfs->object) {
+				continue;
+			}
+
+			DEG_add_object_relation(node, sfs->object, DEG_OB_COMP_TRANSFORM, "Smoke Flow");
+			DEG_add_object_relation(node, sfs->object, DEG_OB_COMP_GEOMETRY, "Smoke Flow");
+		}
+
 		DEG_add_collision_relations(node, scene, ob, smd->domain->coll_group, ob->lay|scene->lay, eModifierType_Smoke, is_coll_cb, true, "Smoke Coll");
 
 		DEG_add_forcefield_relations(node, scene, ob, smd->domain->effector_weights, true, PFIELD_SMOKEFLOW, "Smoke Force Field");
@@ -168,8 +176,16 @@ static void foreachIDLink(ModifierData *md, Object *ob,
 	SmokeModifierData *smd = (SmokeModifierData *) md;
 
 	if (smd->type == MOD_SMOKE_TYPE_DOMAIN && smd->domain) {
+		for (SmokeFlowSettings *sfs = smd->domain->sources.first; sfs; sfs = sfs->next) {
+			if (!sfs->object) {
+				continue;
+			}
+
+			walk(userData, ob, (ID **)&sfs->object, IDWALK_NOP);
+			walk(userData, ob, (ID **)&sfs->noise_texture, IDWALK_USER);
+		}
+
 		walk(userData, ob, (ID **)&smd->domain->coll_group, IDWALK_NOP);
-		walk(userData, ob, (ID **)&smd->domain->fluid_group, IDWALK_NOP);
 		walk(userData, ob, (ID **)&smd->domain->eff_group, IDWALK_NOP);
 
 		if (smd->domain->effector_weights) {

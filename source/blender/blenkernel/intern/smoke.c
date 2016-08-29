@@ -313,12 +313,6 @@ static int smokeModifier_init(SmokeModifierData *smd, Object *ob, Scene *scene, 
 
 		return 1;
 	}
-	else if ((smd->type & MOD_SMOKE_TYPE_FLOW) && smd->flow)
-	{
-		smd->time = scene->r.cfra;
-
-		return 1;
-	}
 	else if ((smd->type & MOD_SMOKE_TYPE_COLL))
 	{
 		if (!smd->coll)
@@ -360,6 +354,8 @@ static void smokeModifier_freeDomain(SmokeModifierData *smd)
 		BKE_ptcache_free_list(&(smd->domain->ptcaches[0]));
 		smd->domain->point_cache[0] = NULL;
 
+		BLI_freelistN(&smd->domain->sources);
+
 		MEM_freeN(smd->domain);
 		smd->domain = NULL;
 	}
@@ -369,11 +365,41 @@ static void smokeModifier_freeFlow(SmokeModifierData *smd)
 {
 	if (smd->flow)
 	{
-		if (smd->flow->dm) smd->flow->dm->release(smd->flow->dm);
-		if (smd->flow->verts_old) MEM_freeN(smd->flow->verts_old);
-		MEM_freeN(smd->flow);
+		BKE_smoke_flow_free(smd->flow);
 		smd->flow = NULL;
 	}
+}
+
+SmokeFlowSettings *BKE_smoke_flow_alloc(void)
+{
+	SmokeFlowSettings *sfs = MEM_callocN(sizeof(SmokeFlowSettings), __func__);
+	BLI_strncpy(sfs->name, "Source", sizeof(sfs->name));
+
+	sfs->density = 1.0f;
+	sfs->fuel_amount = 1.0f;
+	sfs->temp = 1.0f;
+	sfs->flags = MOD_SMOKE_FLOW_ABSOLUTE | MOD_SMOKE_FLOW_USE_PART_SIZE;
+	sfs->vel_multi = 1.0f;
+	sfs->surface_distance = 1.5f;
+	sfs->source = MOD_SMOKE_FLOW_SOURCE_MESH;
+	sfs->texture_size = 1.0f;
+	sfs->particle_size = 1.0f;
+
+	copy_v3_fl(sfs->color, 0.7f);
+
+	sfs->flags |= MOD_SMOKE_FLOW_CURRENT;
+
+	return sfs;
+}
+
+void BKE_smoke_flow_free(SmokeFlowSettings *sfs)
+{
+	if (sfs->dm) {
+		sfs->dm->release(sfs->dm);
+	}
+
+	MEM_SAFE_FREE(sfs->verts_old);
+	MEM_freeN(sfs);
 }
 
 static void smokeModifier_freeCollision(SmokeModifierData *smd)
@@ -496,7 +522,6 @@ void smokeModifier_createType(struct SmokeModifierData *smd)
 			smd->domain->fluid_mutex = BLI_rw_mutex_alloc();
 			smd->domain->wt = NULL;
 			smd->domain->eff_group = NULL;
-			smd->domain->fluid_group = NULL;
 			smd->domain->coll_group = NULL;
 			smd->domain->maxres = 32;
 			smd->domain->amplify = 1;
@@ -542,30 +567,8 @@ void smokeModifier_createType(struct SmokeModifierData *smd)
 			if (smd->flow)
 				smokeModifier_freeFlow(smd);
 
-			smd->flow = MEM_callocN(sizeof(SmokeFlowSettings), "SmokeFlow");
-
+			smd->flow = BKE_smoke_flow_alloc();
 			smd->flow->smd = smd;
-
-			/* set some standard values */
-			smd->flow->density = 1.0f;
-			smd->flow->fuel_amount = 1.0f;
-			smd->flow->temp = 1.0f;
-			smd->flow->flags = MOD_SMOKE_FLOW_ABSOLUTE | MOD_SMOKE_FLOW_USE_PART_SIZE;
-			smd->flow->vel_multi = 1.0f;
-			smd->flow->volume_density = 0.0f;
-			smd->flow->surface_distance = 1.5f;
-			smd->flow->source = MOD_SMOKE_FLOW_SOURCE_MESH;
-			smd->flow->texture_size = 1.0f;
-			smd->flow->particle_size = 1.0f;
-			smd->flow->subframes = 0;
-
-			smd->flow->color[0] = 0.7f;
-			smd->flow->color[1] = 0.7f;
-			smd->flow->color[2] = 0.7f;
-
-			smd->flow->dm = NULL;
-			smd->flow->psys = NULL;
-
 		}
 		else if (smd->type & MOD_SMOKE_TYPE_COLL)
 		{
@@ -579,10 +582,6 @@ void smokeModifier_createType(struct SmokeModifierData *smd)
 			smd->coll->numverts = 0;
 			smd->coll->type = 0; // static obstacle
 			smd->coll->dm = NULL;
-
-#ifdef USE_SMOKE_COLLISION_DM
-			smd->coll->dm = NULL;
-#endif
 		}
 	}
 }
@@ -595,7 +594,6 @@ void smokeModifier_copy(struct SmokeModifierData *smd, struct SmokeModifierData 
 	smokeModifier_createType(tsmd);
 
 	if (tsmd->domain) {
-		tsmd->domain->fluid_group = smd->domain->fluid_group;
 		tsmd->domain->coll_group = smd->domain->coll_group;
 
 		tsmd->domain->adapt_margin = smd->domain->adapt_margin;
@@ -1590,126 +1588,126 @@ static void emit_from_derivedmesh_task_cb(void *userdata, const int z)
 
 static void emit_from_derivedmesh(Object *flow_ob, SmokeDomainSettings *sds, SmokeFlowSettings *sfs, EmissionMap *em, float dt)
 {
-	if (sfs->dm) {
-		DerivedMesh *dm;
-		int defgrp_index = sfs->vgroup_density - 1;
-		MDeformVert *dvert = NULL;
-		MVert *mvert = NULL;
-		MVert *mvert_orig = NULL;
-		const MLoopTri *mlooptri = NULL;
-		const MLoopUV *mloopuv = NULL;
-		const MLoop *mloop = NULL;
-		BVHTreeFromMesh treeData = {NULL};
-		int numOfVerts, i;
-		float flow_center[3] = {0};
+	sfs->dm = sfs->object->derivedDeform;
 
-		float *vert_vel = NULL;
-		int has_velocity = 0;
-		int min[3], max[3], res[3];
-		int hires_multiplier = 1;
+	DerivedMesh *dm;
+	int defgrp_index = sfs->vgroup_density - 1;
+	MDeformVert *dvert = NULL;
+	MVert *mvert = NULL;
+	MVert *mvert_orig = NULL;
+	const MLoopTri *mlooptri = NULL;
+	const MLoopUV *mloopuv = NULL;
+	const MLoop *mloop = NULL;
+	BVHTreeFromMesh treeData = {NULL};
+	int numOfVerts, i;
+	float flow_center[3] = {0};
 
-		/* copy derivedmesh for thread safety because we modify it,
-		 * main issue is its VertArray being modified, then replaced and freed
-		 */
-		dm = CDDM_copy(sfs->dm);
+	float *vert_vel = NULL;
+	int has_velocity = 0;
+	int min[3], max[3], res[3];
+	int hires_multiplier = 1;
 
-		CDDM_calc_normals(dm);
-		mvert = dm->getVertArray(dm);
-		mvert_orig = dm->dupVertArray(dm);  /* copy original mvert and restore when done */
-		numOfVerts = dm->getNumVerts(dm);
-		dvert = dm->getVertDataArray(dm, CD_MDEFORMVERT);
-		mloopuv = CustomData_get_layer_named(&dm->loopData, CD_MLOOPUV, sfs->uvlayer_name);
-		mloop = dm->getLoopArray(dm);
-		mlooptri = dm->getLoopTriArray(dm);
+	/* copy derivedmesh for thread safety because we modify it,
+	 * main issue is its VertArray being modified, then replaced and freed
+	 */
+	dm = CDDM_copy(sfs->dm);
 
-		if (sfs->flags & MOD_SMOKE_FLOW_INITVELOCITY) {
-			vert_vel = MEM_callocN(sizeof(float) * numOfVerts * 3, "smoke_flow_velocity");
+	CDDM_calc_normals(dm);
+	mvert = dm->getVertArray(dm);
+	mvert_orig = dm->dupVertArray(dm);  /* copy original mvert and restore when done */
+	numOfVerts = dm->getNumVerts(dm);
+	dvert = dm->getVertDataArray(dm, CD_MDEFORMVERT);
+	mloopuv = CustomData_get_layer_named(&dm->loopData, CD_MLOOPUV, sfs->uvlayer_name);
+	mloop = dm->getLoopArray(dm);
+	mlooptri = dm->getLoopTriArray(dm);
 
-			if (sfs->numverts != numOfVerts || !sfs->verts_old) {
-				if (sfs->verts_old) MEM_freeN(sfs->verts_old);
-				sfs->verts_old = MEM_callocN(sizeof(float) * numOfVerts * 3, "smoke_flow_verts_old");
-				sfs->numverts = numOfVerts;
-			}
-			else {
-				has_velocity = 1;
-			}
+	if (sfs->flags & MOD_SMOKE_FLOW_INITVELOCITY) {
+		vert_vel = MEM_callocN(sizeof(float) * numOfVerts * 3, "smoke_flow_velocity");
+
+		if (sfs->numverts != numOfVerts || !sfs->verts_old) {
+			if (sfs->verts_old) MEM_freeN(sfs->verts_old);
+			sfs->verts_old = MEM_callocN(sizeof(float) * numOfVerts * 3, "smoke_flow_verts_old");
+			sfs->numverts = numOfVerts;
 		}
-
-		/*	Transform dm vertices to
-		 *   domain grid space for fast lookups */
-		for (i = 0; i < numOfVerts; i++) {
-			float n[3];
-			/* vert pos */
-			mul_m4_v3(flow_ob->obmat, mvert[i].co);
-			smoke_pos_to_cell(sds, mvert[i].co);
-			/* vert normal */
-			normal_short_to_float_v3(n, mvert[i].no);
-			mul_mat3_m4_v3(flow_ob->obmat, n);
-			mul_mat3_m4_v3(sds->imat, n);
-			normalize_v3(n);
-			normal_float_to_short_v3(mvert[i].no, n);
-			/* vert velocity */
-			if (sfs->flags & MOD_SMOKE_FLOW_INITVELOCITY) {
-				float co[3];
-				VECADD(co, mvert[i].co, sds->shift);
-				if (has_velocity) {
-					sub_v3_v3v3(&vert_vel[i * 3], co, &sfs->verts_old[i * 3]);
-					mul_v3_fl(&vert_vel[i * 3], sds->dx / dt);
-				}
-				copy_v3_v3(&sfs->verts_old[i * 3], co);
-			}
-
-			/* calculate emission map bounds */
-			em_boundInsert(em, mvert[i].co);
+		else {
+			has_velocity = 1;
 		}
-		mul_m4_v3(flow_ob->obmat, flow_center);
-		smoke_pos_to_cell(sds, flow_center);
-
-		/* check need for high resolution map */
-		if ((sds->flags & MOD_SMOKE_HIGHRES) && (sds->highres_sampling == SM_HRES_FULLSAMPLE)) {
-			hires_multiplier = sds->amplify + 1;
-		}
-
-		/* set emission map */
-		clampBoundsInDomain(sds, em->min, em->max, NULL, NULL, (int)ceil(sfs->surface_distance), dt);
-		em_allocateData(em, sfs->flags & MOD_SMOKE_FLOW_INITVELOCITY, hires_multiplier);
-
-		/* setup loop bounds */
-		for (i = 0; i < 3; i++) {
-			min[i] = em->min[i] * hires_multiplier;
-			max[i] = em->max[i] * hires_multiplier;
-			res[i] = em->res[i] * hires_multiplier;
-		}
-
-		if (bvhtree_from_mesh_looptri(&treeData, dm, 0.0f, 4, 6)) {
-			const float hr = 1.0f / ((float)hires_multiplier);
-
-			EmitFromDMData data = {
-				.sds = sds, .sfs = sfs,
-			    .mvert = mvert, .mloop = mloop, .mlooptri = mlooptri, .mloopuv = mloopuv,
-			    .dvert = dvert, .defgrp_index = defgrp_index,
-			    .tree = &treeData, .hires_multiplier = hires_multiplier, .hr = hr,
-			    .em = em, .has_velocity = has_velocity, .vert_vel = vert_vel,
-			    .flow_center = flow_center, .min = min, .max = max, .res = res,
-			};
-
-			BLI_task_parallel_range(min[2], max[2], &data, emit_from_derivedmesh_task_cb, true);
-		}
-		/* free bvh tree */
-		free_bvhtree_from_mesh(&treeData);
-		/* restore original mverts */
-		CustomData_set_layer(&dm->vertData, CD_MVERT, mvert_orig);
-
-		if (mvert) {
-			MEM_freeN(mvert);
-		}
-		if (vert_vel) {
-			MEM_freeN(vert_vel);
-		}
-
-		dm->needsFree = 1;
-		dm->release(dm);
 	}
+
+	/*	Transform dm vertices to
+		 *   domain grid space for fast lookups */
+	for (i = 0; i < numOfVerts; i++) {
+		float n[3];
+		/* vert pos */
+		mul_m4_v3(flow_ob->obmat, mvert[i].co);
+		smoke_pos_to_cell(sds, mvert[i].co);
+		/* vert normal */
+		normal_short_to_float_v3(n, mvert[i].no);
+		mul_mat3_m4_v3(flow_ob->obmat, n);
+		mul_mat3_m4_v3(sds->imat, n);
+		normalize_v3(n);
+		normal_float_to_short_v3(mvert[i].no, n);
+		/* vert velocity */
+		if (sfs->flags & MOD_SMOKE_FLOW_INITVELOCITY) {
+			float co[3];
+			VECADD(co, mvert[i].co, sds->shift);
+			if (has_velocity) {
+				sub_v3_v3v3(&vert_vel[i * 3], co, &sfs->verts_old[i * 3]);
+				mul_v3_fl(&vert_vel[i * 3], sds->dx / dt);
+			}
+			copy_v3_v3(&sfs->verts_old[i * 3], co);
+		}
+
+		/* calculate emission map bounds */
+		em_boundInsert(em, mvert[i].co);
+	}
+	mul_m4_v3(flow_ob->obmat, flow_center);
+	smoke_pos_to_cell(sds, flow_center);
+
+	/* check need for high resolution map */
+	if ((sds->flags & MOD_SMOKE_HIGHRES) && (sds->highres_sampling == SM_HRES_FULLSAMPLE)) {
+		hires_multiplier = sds->amplify + 1;
+	}
+
+	/* set emission map */
+	clampBoundsInDomain(sds, em->min, em->max, NULL, NULL, (int)ceil(sfs->surface_distance), dt);
+	em_allocateData(em, sfs->flags & MOD_SMOKE_FLOW_INITVELOCITY, hires_multiplier);
+
+	/* setup loop bounds */
+	for (i = 0; i < 3; i++) {
+		min[i] = em->min[i] * hires_multiplier;
+		max[i] = em->max[i] * hires_multiplier;
+		res[i] = em->res[i] * hires_multiplier;
+	}
+
+	if (bvhtree_from_mesh_looptri(&treeData, dm, 0.0f, 4, 6)) {
+		const float hr = 1.0f / ((float)hires_multiplier);
+
+		EmitFromDMData data = {
+		    .sds = sds, .sfs = sfs,
+		    .mvert = mvert, .mloop = mloop, .mlooptri = mlooptri, .mloopuv = mloopuv,
+		    .dvert = dvert, .defgrp_index = defgrp_index,
+		    .tree = &treeData, .hires_multiplier = hires_multiplier, .hr = hr,
+		    .em = em, .has_velocity = has_velocity, .vert_vel = vert_vel,
+		    .flow_center = flow_center, .min = min, .max = max, .res = res,
+		};
+
+		BLI_task_parallel_range(min[2], max[2], &data, emit_from_derivedmesh_task_cb, true);
+	}
+	/* free bvh tree */
+	free_bvhtree_from_mesh(&treeData);
+	/* restore original mverts */
+	CustomData_set_layer(&dm->vertData, CD_MVERT, mvert_orig);
+
+	if (mvert) {
+		MEM_freeN(mvert);
+	}
+	if (vert_vel) {
+		MEM_freeN(vert_vel);
+	}
+
+	dm->needsFree = 1;
+	dm->release(dm);
 }
 
 /**********************************************************
@@ -2046,10 +2044,6 @@ BLI_INLINE void apply_inflow_fields(SmokeFlowSettings *sfs, float emission_value
 
 static void update_flowsfluids(Scene *scene, Object *ob, SmokeDomainSettings *sds, float dt)
 {
-	Object **flowobjs = NULL;
-	EmissionMap *emaps = NULL;
-	unsigned int numflowobj = 0;
-	unsigned int flowIndex;
 	int new_shift[3] = {0};
 	int active_fields = sds->active_fields;
 
@@ -2086,104 +2080,102 @@ static void update_flowsfluids(Scene *scene, Object *ob, SmokeDomainSettings *sd
 		sds->p1[2] = sds->p0[2] + sds->cell_size[2] * sds->base_res[2];
 	}
 
-	flowobjs = get_collisionobjects(scene, ob, sds->fluid_group, &numflowobj, eModifierType_Smoke);
+	unsigned int numflowobj = BLI_listbase_count(&sds->sources);
+	unsigned int flowIndex = 0;
 
 	/* init emission maps for each flow */
-	emaps = MEM_callocN(sizeof(struct EmissionMap) * numflowobj, "smoke_flow_maps");
+	EmissionMap *emaps = MEM_callocN(sizeof(struct EmissionMap) * numflowobj, "smoke_flow_maps");
 
 	/* Prepare flow emission maps */
-	for (flowIndex = 0; flowIndex < numflowobj; flowIndex++)
-	{
-		Object *collob = flowobjs[flowIndex];
-		SmokeModifierData *smd2 = (SmokeModifierData *)modifiers_findByType(collob, eModifierType_Smoke);
+	for (SmokeFlowSettings *sfs = sds->sources.first; sfs; sfs = sfs->next, flowIndex++) {
+		Object *collob = sfs->object;
 
-		// check for initialized smoke object
-		if ((smd2->type & MOD_SMOKE_TYPE_FLOW) && smd2->flow)
-		{
-			// we got nice flow object
-			SmokeFlowSettings *sfs = smd2->flow;
-			int subframes = sfs->subframes;
-			EmissionMap *em = &emaps[flowIndex];
+		if (!collob) {
+			continue;
+		}
 
-			/* just sample flow directly to emission map if no subframes */
-			if (!subframes) {
-				if (sfs->source == MOD_SMOKE_FLOW_SOURCE_PARTICLES) {
-					emit_from_particles(collob, sds, sfs, em, scene, dt);
+		// we got nice flow object
+		int subframes = sfs->subframes;
+		EmissionMap *em = &emaps[flowIndex];
+
+		/* just sample flow directly to emission map if no subframes */
+		if (!subframes) {
+			if (sfs->source == MOD_SMOKE_FLOW_SOURCE_PARTICLES) {
+				emit_from_particles(collob, sds, sfs, em, scene, dt);
+			}
+			else {
+				emit_from_derivedmesh(collob, sds, sfs, em, dt);
+			}
+		}
+		/* sample subframes */
+		else {
+			int scene_frame = scene->r.cfra;
+			// float scene_subframe = scene->r.subframe;  // UNUSED
+			int subframe;
+			for (subframe = 0; subframe <= subframes; subframe++) {
+				EmissionMap em_temp = {NULL};
+				float sample_size = 1.0f / (float)(subframes+1);
+				float prev_frame_pos = sample_size * (float)(subframe+1);
+				float sdt = dt * sample_size;
+				int hires_multiplier = 1;
+
+				if ((sds->flags & MOD_SMOKE_HIGHRES) && (sds->highres_sampling == SM_HRES_FULLSAMPLE)) {
+					hires_multiplier = sds->amplify + 1;
+				}
+
+				/* set scene frame to match previous frame + subframe
+				 * or use current frame for last sample */
+				if (subframe < subframes) {
+					scene->r.cfra = scene_frame - 1;
+					scene->r.subframe = prev_frame_pos;
 				}
 				else {
-					emit_from_derivedmesh(collob, sds, sfs, em, dt);
+					scene->r.cfra = scene_frame;
+					scene->r.subframe = 0.0f;
 				}
+
+				if (sfs->source == MOD_SMOKE_FLOW_SOURCE_PARTICLES) {
+					/* emit_from_particles() updates timestep internally */
+					emit_from_particles(collob, sds, sfs, &em_temp, scene, sdt);
+					if (!(sfs->flags & MOD_SMOKE_FLOW_USE_PART_SIZE)) {
+						hires_multiplier = 1;
+					}
+				}
+				else { /* MOD_SMOKE_FLOW_SOURCE_MESH */
+					/* update flow object frame */
+					BLI_mutex_lock(&object_update_lock);
+					BKE_object_modifier_update_subframe(scene, collob, true, 5, BKE_scene_frame_get(scene), eModifierType_Smoke);
+					BLI_mutex_unlock(&object_update_lock);
+
+					/* apply flow */
+					emit_from_derivedmesh(collob, sds, sfs, &em_temp, sdt);
+				}
+
+				/* combine emission maps */
+				em_combineMaps(em, &em_temp, hires_multiplier, !(sfs->flags & MOD_SMOKE_FLOW_ABSOLUTE), sample_size);
+				em_freeData(&em_temp);
 			}
-			/* sample subframes */
-			else {
-				int scene_frame = scene->r.cfra;
-				// float scene_subframe = scene->r.subframe;  // UNUSED
-				int subframe;
-				for (subframe = 0; subframe <= subframes; subframe++) {
-					EmissionMap em_temp = {NULL};
-					float sample_size = 1.0f / (float)(subframes+1);
-					float prev_frame_pos = sample_size * (float)(subframe+1);
-					float sdt = dt * sample_size;
-					int hires_multiplier = 1;
+		}
 
-					if ((sds->flags & MOD_SMOKE_HIGHRES) && (sds->highres_sampling == SM_HRES_FULLSAMPLE)) {
-						hires_multiplier = sds->amplify + 1;
-					}
-
-					/* set scene frame to match previous frame + subframe
-					 * or use current frame for last sample */
-					if (subframe < subframes) {
-						scene->r.cfra = scene_frame - 1;
-						scene->r.subframe = prev_frame_pos;
-					}
-					else {
-						scene->r.cfra = scene_frame;
-						scene->r.subframe = 0.0f;
-					}
-
-					if (sfs->source == MOD_SMOKE_FLOW_SOURCE_PARTICLES) {
-						/* emit_from_particles() updates timestep internally */
-						emit_from_particles(collob, sds, sfs, &em_temp, scene, sdt);
-						if (!(sfs->flags & MOD_SMOKE_FLOW_USE_PART_SIZE)) {
-							hires_multiplier = 1;
-						}
-					}
-					else { /* MOD_SMOKE_FLOW_SOURCE_MESH */
-						/* update flow object frame */
-						BLI_mutex_lock(&object_update_lock);
-						BKE_object_modifier_update_subframe(scene, collob, true, 5, BKE_scene_frame_get(scene), eModifierType_Smoke);
-						BLI_mutex_unlock(&object_update_lock);
-
-						/* apply flow */
-						emit_from_derivedmesh(collob, sds, sfs, &em_temp, sdt);
-					}
-
-					/* combine emission maps */
-					em_combineMaps(em, &em_temp, hires_multiplier, !(sfs->flags & MOD_SMOKE_FLOW_ABSOLUTE), sample_size);
-					em_freeData(&em_temp);
-				}
+		/* update required data fields */
+		if (em->total_cells && sfs->type != MOD_SMOKE_FLOW_TYPE_OUTFLOW) {
+			/* activate heat field if flow produces any heat */
+			if (sfs->temp) {
+				active_fields |= SM_ACTIVE_HEAT;
 			}
-
-			/* update required data fields */
-			if (em->total_cells && sfs->type != MOD_SMOKE_FLOW_TYPE_OUTFLOW) {
-				/* activate heat field if flow produces any heat */
-				if (sfs->temp) {
-					active_fields |= SM_ACTIVE_HEAT;
+			/* activate fuel field if flow adds any fuel */
+			if (sfs->type != MOD_SMOKE_FLOW_TYPE_SMOKE && sfs->fuel_amount) {
+				active_fields |= SM_ACTIVE_FIRE;
+			}
+			/* activate color field if flows add smoke with varying colors */
+			if (sfs->type != MOD_SMOKE_FLOW_TYPE_FIRE && sfs->density) {
+				if (!(active_fields & SM_ACTIVE_COLOR_SET)) {
+					copy_v3_v3(sds->active_color, sfs->color);
+					active_fields |= SM_ACTIVE_COLOR_SET;
 				}
-				/* activate fuel field if flow adds any fuel */
-				if (sfs->type != MOD_SMOKE_FLOW_TYPE_SMOKE && sfs->fuel_amount) {
-					active_fields |= SM_ACTIVE_FIRE;
-				}
-				/* activate color field if flows add smoke with varying colors */
-				if (sfs->type != MOD_SMOKE_FLOW_TYPE_FIRE && sfs->density) {
-					if (!(active_fields & SM_ACTIVE_COLOR_SET)) {
-						copy_v3_v3(sds->active_color, sfs->color);
-						active_fields |= SM_ACTIVE_COLOR_SET;
-					}
-					else if (!equals_v3v3(sds->active_color, sfs->color)) {
-						copy_v3_v3(sds->active_color, sfs->color);
-						active_fields |= SM_ACTIVE_COLORS;
-					}
+				else if (!equals_v3v3(sds->active_color, sfs->color)) {
+					copy_v3_v3(sds->active_color, sfs->color);
+					active_fields |= SM_ACTIVE_COLORS;
 				}
 			}
 		}
@@ -2225,172 +2217,167 @@ static void update_flowsfluids(Scene *scene, Object *ob, SmokeDomainSettings *sd
 
 	/* Apply emission data */
 	if (sds->fluid) {
-		for (flowIndex = 0; flowIndex < numflowobj; flowIndex++)
-		{
-			Object *collob = flowobjs[flowIndex];
-			SmokeModifierData *smd2 = (SmokeModifierData *)modifiers_findByType(collob, eModifierType_Smoke);
+		flowIndex = 0;
+		for (SmokeFlowSettings *sfs = sds->sources.first; sfs; sfs = sfs->next, flowIndex++) {
+			Object *collob = sfs->object;
 
-			// check for initialized smoke object
-			if ((smd2->type & MOD_SMOKE_TYPE_FLOW) && smd2->flow)
-			{
-				// we got nice flow object
-				SmokeFlowSettings *sfs = smd2->flow;
-				EmissionMap *em = &emaps[flowIndex];
+			if (!collob) {
+				continue;
+			}
 
-				float *density = smoke_get_density(sds->fluid);
-				float *color_r = smoke_get_color_r(sds->fluid);
-				float *color_g = smoke_get_color_g(sds->fluid);
-				float *color_b = smoke_get_color_b(sds->fluid);
-				float *fuel = smoke_get_fuel(sds->fluid);
-				float *react = smoke_get_react(sds->fluid);
-				float *bigdensity = smoke_turbulence_get_density(sds->wt);
-				float *bigfuel = smoke_turbulence_get_fuel(sds->wt);
-				float *bigreact = smoke_turbulence_get_react(sds->wt);
-				float *bigcolor_r = smoke_turbulence_get_color_r(sds->wt);
-				float *bigcolor_g = smoke_turbulence_get_color_g(sds->wt);
-				float *bigcolor_b = smoke_turbulence_get_color_b(sds->wt);
-				float *heat = smoke_get_heat(sds->fluid);
-				float *velocity_x = smoke_get_velocity_x(sds->fluid);
-				float *velocity_y = smoke_get_velocity_y(sds->fluid);
-				float *velocity_z = smoke_get_velocity_z(sds->fluid);
-				//unsigned char *obstacle = smoke_get_obstacle(sds->fluid);
-				// DG TODO UNUSED unsigned char *obstacleAnim = smoke_get_obstacle_anim(sds->fluid);
-				int bigres[3];
-				float *velocity_map = em->velocity;
-				float *emission_map = em->influence;
-				float *emission_map_high = em->influence_high;
+			// we got nice flow object
+			EmissionMap *em = &emaps[flowIndex];
 
-				int ii, jj, kk, gx, gy, gz, ex, ey, ez, dx, dy, dz, block_size;
-				size_t e_index, d_index, index_big;
+			float *density = smoke_get_density(sds->fluid);
+			float *color_r = smoke_get_color_r(sds->fluid);
+			float *color_g = smoke_get_color_g(sds->fluid);
+			float *color_b = smoke_get_color_b(sds->fluid);
+			float *fuel = smoke_get_fuel(sds->fluid);
+			float *react = smoke_get_react(sds->fluid);
+			float *bigdensity = smoke_turbulence_get_density(sds->wt);
+			float *bigfuel = smoke_turbulence_get_fuel(sds->wt);
+			float *bigreact = smoke_turbulence_get_react(sds->wt);
+			float *bigcolor_r = smoke_turbulence_get_color_r(sds->wt);
+			float *bigcolor_g = smoke_turbulence_get_color_g(sds->wt);
+			float *bigcolor_b = smoke_turbulence_get_color_b(sds->wt);
+			float *heat = smoke_get_heat(sds->fluid);
+			float *velocity_x = smoke_get_velocity_x(sds->fluid);
+			float *velocity_y = smoke_get_velocity_y(sds->fluid);
+			float *velocity_z = smoke_get_velocity_z(sds->fluid);
+			//unsigned char *obstacle = smoke_get_obstacle(sds->fluid);
+			// DG TODO UNUSED unsigned char *obstacleAnim = smoke_get_obstacle_anim(sds->fluid);
+			int bigres[3];
+			float *velocity_map = em->velocity;
+			float *emission_map = em->influence;
+			float *emission_map_high = em->influence_high;
 
-				// loop through every emission map cell
-				for (gx = em->min[0]; gx < em->max[0]; gx++)
-					for (gy = em->min[1]; gy < em->max[1]; gy++)
-						for (gz = em->min[2]; gz < em->max[2]; gz++)
-						{
-							/* get emission map index */
-							ex = gx - em->min[0];
-							ey = gy - em->min[1];
-							ez = gz - em->min[2];
-							e_index = smoke_get_index(ex, em->res[0], ey, em->res[1], ez);
+			int ii, jj, kk, gx, gy, gz, ex, ey, ez, dx, dy, dz, block_size;
+			size_t e_index, d_index, index_big;
 
-							/* get domain index */
-							dx = gx - sds->res_min[0];
-							dy = gy - sds->res_min[1];
-							dz = gz - sds->res_min[2];
-							d_index = smoke_get_index(dx, sds->res[0], dy, sds->res[1], dz);
-							/* make sure emission cell is inside the new domain boundary */
-							if (dx < 0 || dy < 0 || dz < 0 || dx >= sds->res[0] || dy >= sds->res[1] || dz >= sds->res[2]) continue;
+			// loop through every emission map cell
+			for (gx = em->min[0]; gx < em->max[0]; gx++)
+				for (gy = em->min[1]; gy < em->max[1]; gy++)
+					for (gz = em->min[2]; gz < em->max[2]; gz++)
+					{
+						/* get emission map index */
+						ex = gx - em->min[0];
+						ey = gy - em->min[1];
+						ez = gz - em->min[2];
+						e_index = smoke_get_index(ex, em->res[0], ey, em->res[1], ez);
 
-							if (sfs->type == MOD_SMOKE_FLOW_TYPE_OUTFLOW) { // outflow
-								apply_outflow_fields(d_index, density, heat, fuel, react, color_r, color_g, color_b);
+						/* get domain index */
+						dx = gx - sds->res_min[0];
+						dy = gy - sds->res_min[1];
+						dz = gz - sds->res_min[2];
+						d_index = smoke_get_index(dx, sds->res[0], dy, sds->res[1], dz);
+						/* make sure emission cell is inside the new domain boundary */
+						if (dx < 0 || dy < 0 || dz < 0 || dx >= sds->res[0] || dy >= sds->res[1] || dz >= sds->res[2]) continue;
+
+						if (sfs->type == MOD_SMOKE_FLOW_TYPE_OUTFLOW) { // outflow
+							apply_outflow_fields(d_index, density, heat, fuel, react, color_r, color_g, color_b);
+						}
+						else { // inflow
+							apply_inflow_fields(sfs, emission_map[e_index], d_index, density, heat, fuel, react, color_r, color_g, color_b);
+
+							/* initial velocity */
+							if (sfs->flags & MOD_SMOKE_FLOW_INITVELOCITY) {
+								velocity_x[d_index] = ADD_IF_LOWER(velocity_x[d_index], velocity_map[e_index * 3]);
+								velocity_y[d_index] = ADD_IF_LOWER(velocity_y[d_index], velocity_map[e_index * 3 + 1]);
+								velocity_z[d_index] = ADD_IF_LOWER(velocity_z[d_index], velocity_map[e_index * 3 + 2]);
 							}
-							else { // inflow
-								apply_inflow_fields(sfs, emission_map[e_index], d_index, density, heat, fuel, react, color_r, color_g, color_b);
+						}
 
-								/* initial velocity */
-								if (sfs->flags & MOD_SMOKE_FLOW_INITVELOCITY) {
-									velocity_x[d_index] = ADD_IF_LOWER(velocity_x[d_index], velocity_map[e_index * 3]);
-									velocity_y[d_index] = ADD_IF_LOWER(velocity_y[d_index], velocity_map[e_index * 3 + 1]);
-									velocity_z[d_index] = ADD_IF_LOWER(velocity_z[d_index], velocity_map[e_index * 3 + 2]);
-								}
-							}
+						/* loop through high res blocks if high res enabled */
+						if (bigdensity) {
+							// neighbor cell emission densities (for high resolution smoke smooth interpolation)
+							float c000, c001, c010, c011,  c100, c101, c110, c111;
 
-							/* loop through high res blocks if high res enabled */
-							if (bigdensity) {
-								// neighbor cell emission densities (for high resolution smoke smooth interpolation)
-								float c000, c001, c010, c011,  c100, c101, c110, c111;
+							smoke_turbulence_get_res(sds->wt, bigres);
+							block_size = sds->amplify + 1;  // high res block size
 
-								smoke_turbulence_get_res(sds->wt, bigres);
-								block_size = sds->amplify + 1;  // high res block size
+							c000 = (ex > 0 && ey > 0 && ez > 0) ? emission_map[smoke_get_index(ex - 1, em->res[0], ey - 1, em->res[1], ez - 1)] : 0;
+							c001 = (ex > 0 && ey > 0) ? emission_map[smoke_get_index(ex - 1, em->res[0], ey - 1, em->res[1], ez)] : 0;
+							c010 = (ex > 0 && ez > 0) ? emission_map[smoke_get_index(ex - 1, em->res[0], ey, em->res[1], ez - 1)] : 0;
+							c011 = (ex > 0) ? emission_map[smoke_get_index(ex - 1, em->res[0], ey, em->res[1], ez)] : 0;
 
-								c000 = (ex > 0 && ey > 0 && ez > 0) ? emission_map[smoke_get_index(ex - 1, em->res[0], ey - 1, em->res[1], ez - 1)] : 0;
-								c001 = (ex > 0 && ey > 0) ? emission_map[smoke_get_index(ex - 1, em->res[0], ey - 1, em->res[1], ez)] : 0;
-								c010 = (ex > 0 && ez > 0) ? emission_map[smoke_get_index(ex - 1, em->res[0], ey, em->res[1], ez - 1)] : 0;
-								c011 = (ex > 0) ? emission_map[smoke_get_index(ex - 1, em->res[0], ey, em->res[1], ez)] : 0;
+							c100 = (ey > 0 && ez > 0) ? emission_map[smoke_get_index(ex, em->res[0], ey - 1, em->res[1], ez - 1)] : 0;
+							c101 = (ey > 0) ? emission_map[smoke_get_index(ex, em->res[0], ey - 1, em->res[1], ez)] : 0;
+							c110 = (ez > 0) ? emission_map[smoke_get_index(ex, em->res[0], ey, em->res[1], ez - 1)] : 0;
+							c111 = emission_map[smoke_get_index(ex, em->res[0], ey, em->res[1], ez)]; // this cell
 
-								c100 = (ey > 0 && ez > 0) ? emission_map[smoke_get_index(ex, em->res[0], ey - 1, em->res[1], ez - 1)] : 0;
-								c101 = (ey > 0) ? emission_map[smoke_get_index(ex, em->res[0], ey - 1, em->res[1], ez)] : 0;
-								c110 = (ez > 0) ? emission_map[smoke_get_index(ex, em->res[0], ey, em->res[1], ez - 1)] : 0;
-								c111 = emission_map[smoke_get_index(ex, em->res[0], ey, em->res[1], ez)]; // this cell
+							for (ii = 0; ii < block_size; ii++)
+								for (jj = 0; jj < block_size; jj++)
+									for (kk = 0; kk < block_size; kk++)
+									{
 
-								for (ii = 0; ii < block_size; ii++)
-									for (jj = 0; jj < block_size; jj++)
-										for (kk = 0; kk < block_size; kk++)
-										{
-
-											float fx, fy, fz, interpolated_value;
-											int shift_x = 0, shift_y = 0, shift_z = 0;
+										float fx, fy, fz, interpolated_value;
+										int shift_x = 0, shift_y = 0, shift_z = 0;
 
 
-											/* Use full sample emission map if enabled and available */
-											if ((sds->highres_sampling == SM_HRES_FULLSAMPLE) && emission_map_high) {
-												interpolated_value = emission_map_high[smoke_get_index(ex * block_size + ii, em->res[0] * block_size, ey * block_size + jj, em->res[1] * block_size, ez * block_size + kk)]; // this cell
-											}
-											else if (sds->highres_sampling == SM_HRES_NEAREST) {
-												/* without interpolation use same low resolution
+										/* Use full sample emission map if enabled and available */
+										if ((sds->highres_sampling == SM_HRES_FULLSAMPLE) && emission_map_high) {
+											interpolated_value = emission_map_high[smoke_get_index(ex * block_size + ii, em->res[0] * block_size, ey * block_size + jj, em->res[1] * block_size, ez * block_size + kk)]; // this cell
+										}
+										else if (sds->highres_sampling == SM_HRES_NEAREST) {
+											/* without interpolation use same low resolution
 												 * block value for all hi-res blocks */
-												interpolated_value = c111;
-											}
-											/* Fall back to interpolated */
-											else
-											{
-												/* get relative block position
+											interpolated_value = c111;
+										}
+										/* Fall back to interpolated */
+										else
+										{
+											/* get relative block position
 												 * for interpolation smoothing */
-												fx = (float)ii / block_size + 0.5f / block_size;
-												fy = (float)jj / block_size + 0.5f / block_size;
-												fz = (float)kk / block_size + 0.5f / block_size;
+											fx = (float)ii / block_size + 0.5f / block_size;
+											fy = (float)jj / block_size + 0.5f / block_size;
+											fz = (float)kk / block_size + 0.5f / block_size;
 
-												/* calculate trilinear interpolation */
-												interpolated_value = c000 * (1 - fx) * (1 - fy) * (1 - fz) +
-												                     c100 * fx * (1 - fy) * (1 - fz) +
-												                     c010 * (1 - fx) * fy * (1 - fz) +
-												                     c001 * (1 - fx) * (1 - fy) * fz +
-												                     c101 * fx * (1 - fy) * fz +
-												                     c011 * (1 - fx) * fy * fz +
-												                     c110 * fx * fy * (1 - fz) +
-												                     c111 * fx * fy * fz;
+											/* calculate trilinear interpolation */
+											interpolated_value = c000 * (1 - fx) * (1 - fy) * (1 - fz) +
+											                     c100 * fx * (1 - fy) * (1 - fz) +
+											                     c010 * (1 - fx) * fy * (1 - fz) +
+											                     c001 * (1 - fx) * (1 - fy) * fz +
+											                     c101 * fx * (1 - fy) * fz +
+											                     c011 * (1 - fx) * fy * fz +
+											                     c110 * fx * fy * (1 - fz) +
+											                     c111 * fx * fy * fz;
 
 
-												/* add some contrast / sharpness
+											/* add some contrast / sharpness
 												 * depending on hi-res block size */
-												interpolated_value = (interpolated_value - 0.4f) * (block_size / 2) + 0.4f;
-												CLAMP(interpolated_value, 0.0f, 1.0f);
+											interpolated_value = (interpolated_value - 0.4f) * (block_size / 2) + 0.4f;
+											CLAMP(interpolated_value, 0.0f, 1.0f);
 
-												/* shift smoke block index
+											/* shift smoke block index
 												 * (because pixel center is actually
 												 * in halfway of the low res block) */
-												shift_x = (dx < 1) ? 0 : block_size / 2;
-												shift_y = (dy < 1) ? 0 : block_size / 2;
-												shift_z = (dz < 1) ? 0 : block_size / 2;
+											shift_x = (dx < 1) ? 0 : block_size / 2;
+											shift_y = (dy < 1) ? 0 : block_size / 2;
+											shift_z = (dz < 1) ? 0 : block_size / 2;
+										}
+
+										/* get shifted index for current high resolution block */
+										index_big = smoke_get_index(block_size * dx + ii - shift_x, bigres[0], block_size * dy + jj - shift_y, bigres[1], block_size * dz + kk - shift_z);
+
+										if (sfs->type == MOD_SMOKE_FLOW_TYPE_OUTFLOW) { // outflow
+											if (interpolated_value) {
+												apply_outflow_fields(index_big, bigdensity, NULL, bigfuel, bigreact, bigcolor_r, bigcolor_g, bigcolor_b);
 											}
+										}
+										else { // inflow
+											apply_inflow_fields(sfs, interpolated_value, index_big, bigdensity, NULL, bigfuel, bigreact, bigcolor_r, bigcolor_g, bigcolor_b);
+										}
+									} // hires loop
+						}  // bigdensity
+					} // low res loop
 
-											/* get shifted index for current high resolution block */
-											index_big = smoke_get_index(block_size * dx + ii - shift_x, bigres[0], block_size * dy + jj - shift_y, bigres[1], block_size * dz + kk - shift_z);
+			// free emission maps
+			em_freeData(em);
 
-											if (sfs->type == MOD_SMOKE_FLOW_TYPE_OUTFLOW) { // outflow
-												if (interpolated_value) {
-													apply_outflow_fields(index_big, bigdensity, NULL, bigfuel, bigreact, bigcolor_r, bigcolor_g, bigcolor_b);
-												}
-											}
-											else { // inflow
-												apply_inflow_fields(sfs, interpolated_value, index_big, bigdensity, NULL, bigfuel, bigreact, bigcolor_r, bigcolor_g, bigcolor_b);
-											}
-										} // hires loop
-							}  // bigdensity
-						} // low res loop
-
-				// free emission maps
-				em_freeData(em);
-
-			} // end emission
-		}
+		} // end emission
 	}
 
-	if (flowobjs)
-		MEM_freeN(flowobjs);
-	if (emaps)
-		MEM_freeN(emaps);
+	MEM_SAFE_FREE(emaps);
 }
 
 typedef struct UpdateEffectorsData {

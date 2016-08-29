@@ -33,6 +33,8 @@
  *  \author Daniel Genrich
  */
 
+struct SmokeFlowSettings;
+
 typedef float (*bresenham_callback)(float *result, float *input, int res[3], int *pixel, float *tRay, float correct);
 
 struct DerivedMesh *smokeModifier_do(struct SmokeModifierData *smd, struct Scene *scene, struct Object *ob, struct DerivedMesh *dm);
@@ -47,5 +49,8 @@ void smokeModifier_copy(struct SmokeModifierData *smd, struct SmokeModifierData 
 
 float smoke_get_velocity_at(struct Object *ob, float position[3], float velocity[3]);
 int smoke_get_data_flags(struct SmokeDomainSettings *sds);
+
+struct SmokeFlowSettings *BKE_smoke_flow_alloc(void);
+void BKE_smoke_flow_free(struct SmokeFlowSettings *sfs);
 
 #endif /* __BKE_SMOKE_H__ */

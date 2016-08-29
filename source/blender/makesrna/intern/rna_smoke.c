@@ -54,6 +54,8 @@
 #include "BKE_depsgraph.h"
 #include "BKE_particle.h"
 
+#include "BLI_math.h"
+
 #include "smoke_API.h"
 
 
@@ -126,11 +128,11 @@ static char *rna_SmokeDomainSettings_path(PointerRNA *ptr)
 static char *rna_SmokeFlowSettings_path(PointerRNA *ptr)
 {
 	SmokeFlowSettings *settings = (SmokeFlowSettings *)ptr->data;
-	ModifierData *md = (ModifierData *)settings->smd;
-	char name_esc[sizeof(md->name) * 2];
+	char name_esc[sizeof(settings->name) * 2];
 
-	BLI_strescape(name_esc, md->name, sizeof(name_esc));
-	return BLI_sprintfN("modifiers[\"%s\"].flow_settings", name_esc);
+	BLI_strescape(name_esc, settings->name, sizeof(name_esc));
+
+	return BLI_sprintfN("flow_settings[\"%s\"]", name_esc);  /* XXX not unique */
 }
 
 static char *rna_SmokeCollSettings_path(PointerRNA *ptr)
@@ -383,6 +385,61 @@ static void rna_SmokeFlow_uvlayer_set(PointerRNA *ptr, const char *value)
 	rna_object_uvlayer_name_set(ptr, value, flow->uvlayer_name, sizeof(flow->uvlayer_name));
 }
 
+static PointerRNA rna_SmokeFlow_active_source_get(PointerRNA *ptr)
+{
+	SmokeDomainSettings *sds = (SmokeDomainSettings *)ptr->data;
+	SmokeFlowSettings *flow = (SmokeFlowSettings *)sds->sources.first;
+
+	for (; flow; flow = flow->next) {
+		if ((flow->flags & MOD_SMOKE_FLOW_CURRENT) != 0) {
+			return rna_pointer_inherit_refine(ptr, &RNA_SmokeFlowSettings, flow);
+		}
+	}
+
+	return rna_pointer_inherit_refine(ptr, &RNA_SmokeFlowSettings, NULL);
+}
+
+static void rna_SmokeFlow_active_source_index_range(PointerRNA *ptr, int *min, int *max,
+                                                       int *UNUSED(softmin), int *UNUSED(softmax))
+{
+	SmokeDomainSettings *sds = (SmokeDomainSettings *)ptr->data;
+	*min = 0;
+	*max = max_ii(0, BLI_listbase_count(&sds->sources) - 1);
+}
+
+static int rna_SmokeFlow_active_source_index_get(PointerRNA *ptr)
+{
+	SmokeDomainSettings *sds = (SmokeDomainSettings *)ptr->data;
+	SmokeFlowSettings *flow = (SmokeFlowSettings *)sds->sources.first;
+	int i = 0;
+
+	for (; flow; flow = flow->next, i++) {
+		if ((flow->flags & MOD_SMOKE_FLOW_CURRENT) != 0) {
+			return i;
+		}
+	}
+
+	return 0;
+}
+
+static void rna_SmokeFlow_active_source_index_set(struct PointerRNA *ptr, int value)
+{
+	SmokeDomainSettings *sds = (SmokeDomainSettings *)ptr->data;
+	SmokeFlowSettings *flow = (SmokeFlowSettings *)sds->sources.first;
+	int i = 0;
+
+	for (; flow; flow = flow->next) {
+		if (i == value) {
+			flow->flags |= MOD_SMOKE_FLOW_CURRENT;
+		}
+		else {
+			flow->flags &= ~MOD_SMOKE_FLOW_CURRENT;
+		}
+
+		i++;
+	}
+}
+
 #else
 
 static void rna_def_smoke_domain_settings(BlenderRNA *brna)
@@ -503,13 +560,6 @@ static void rna_def_smoke_domain_settings(BlenderRNA *brna)
 	RNA_def_property_struct_type(prop, "Group");
 	RNA_def_property_flag(prop, PROP_EDITABLE);
 	RNA_def_property_ui_text(prop, "Collision Group", "Limit collisions to this group");
-	RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, "rna_Smoke_reset_dependency");
-
-	prop = RNA_def_property(srna, "fluid_group", PROP_POINTER, PROP_NONE);
-	RNA_def_property_pointer_sdna(prop, NULL, "fluid_group");
-	RNA_def_property_struct_type(prop, "Group");
-	RNA_def_property_flag(prop, PROP_EDITABLE);
-	RNA_def_property_ui_text(prop, "Fluid Group", "Limit fluid objects to this group");
 	RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, "rna_Smoke_reset_dependency");
 
 	prop = RNA_def_property(srna, "effector_group", PROP_POINTER, PROP_NONE);
@@ -719,6 +769,21 @@ static void rna_def_smoke_domain_settings(BlenderRNA *brna)
 	RNA_def_property_enum_funcs(prop, NULL, "rna_Smoke_cachetype_set", NULL);
 	RNA_def_property_ui_text(prop, "File Format", "Select the file format to be used for caching");
 	RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, "rna_Smoke_resetCache");
+
+	prop = RNA_def_property(srna, "sources", PROP_COLLECTION, PROP_NONE);
+	RNA_def_property_struct_type(prop, "SmokeFlowSettings");
+	RNA_def_property_ui_text(prop, "Smoke Source", "");
+
+	prop = RNA_def_property(srna, "active_source", PROP_POINTER, PROP_NONE);
+	RNA_def_property_struct_type(prop, "SmokeFlowSettings");
+	RNA_def_property_pointer_funcs(prop, "rna_SmokeFlow_active_source_get", NULL, NULL, NULL);
+	RNA_def_property_ui_text(prop, "Active Smoke Source", "");
+
+	prop = RNA_def_property(srna, "active_source_index", PROP_INT, PROP_UNSIGNED);
+	RNA_def_property_int_funcs(prop, "rna_SmokeFlow_active_source_index_get",
+	                           "rna_SmokeFlow_active_source_index_set",
+	                           "rna_SmokeFlow_active_source_index_range");
+	RNA_def_property_ui_text(prop, "Active Smoke Source Index", "");
 }
 
 static void rna_def_smoke_flow_settings(BlenderRNA *brna)
@@ -897,6 +962,15 @@ static void rna_def_smoke_flow_settings(BlenderRNA *brna)
 	RNA_def_property_ui_range(prop, 0.0, 100.0, 0.05, 5);
 	RNA_def_property_ui_text(prop, "Offset", "Z-offset of texture mapping");
 	RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, "rna_Smoke_reset");
+
+	prop = RNA_def_property(srna, "name", PROP_STRING, PROP_NONE);
+	RNA_def_property_ui_text(prop, "Name", "Source name");
+	RNA_def_struct_name_property(srna, prop);
+
+	prop = RNA_def_property(srna, "object", PROP_POINTER, PROP_NONE);
+	RNA_def_property_flag(prop, PROP_EDITABLE | PROP_ID_SELF_CHECK);
+	RNA_def_property_ui_text(prop, "Object", "Source object");
+	RNA_def_property_update(prop, 0, "rna_Smoke_reset");
 }
 
 static void rna_def_smoke_coll_settings(BlenderRNA *brna)

@@ -87,7 +87,6 @@ typedef struct SmokeDomainSettings {
 	struct SmokeModifierData *smd; /* for fast RNA access */
 	struct FLUID_3D *fluid;
 	void *fluid_mutex;
-	struct Group *fluid_group;
 	struct Group *eff_group; // UNUSED
 	struct Group *coll_group; // collision objects group
 	struct WTURBULENCE *wt; // WTURBULENCE object, if active
@@ -96,6 +95,8 @@ typedef struct SmokeDomainSettings {
 	struct GPUTexture *tex_shadow;
 	struct GPUTexture *tex_flame;
 	float *shadow;
+
+	struct ListBase sources;
 
 	/* simulation data */
 	float p0[3]; /* start point of BB in local space (includes sub-cell shift for adaptive domain)*/
@@ -185,12 +186,17 @@ typedef struct SmokeDomainSettings {
 #define MOD_SMOKE_FLOW_INITVELOCITY (1<<2) /* passes particles speed to the smoke */
 #define MOD_SMOKE_FLOW_TEXTUREEMIT (1<<3) /* use texture to control emission speed */
 #define MOD_SMOKE_FLOW_USE_PART_SIZE (1<<4) /* use specific size for particles instead of closest cell */
+#define MOD_SMOKE_FLOW_CURRENT (1<<5) /* use specific size for particles instead of closest cell */
 
 typedef struct SmokeFlowSettings {
+	struct SmokeFlowSettings *next, *prev;
+
 	struct SmokeModifierData *smd; /* for fast RNA access */
 	struct DerivedMesh *dm;
 	struct ParticleSystem *psys;
 	struct Tex *noise_texture;
+	struct Object *object;
+	char name[32];
 
 	/* initial velocity */
 	float *verts_old; /* previous vertex positions in domain space */
