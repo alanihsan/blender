@@ -188,6 +188,14 @@ typedef struct SmokeDomainSettings {
 #define MOD_SMOKE_FLOW_USE_PART_SIZE (1<<4) /* use specific size for particles instead of closest cell */
 #define MOD_SMOKE_FLOW_CURRENT (1<<5) /* use specific size for particles instead of closest cell */
 
+enum {
+	SMOKE_FLOW_BLEND_NONE = 0,
+	SMOKE_FLOW_BLEND_ADD,
+	SMOKE_FLOW_BLEND_SUB,
+	SMOKE_FLOW_BLEND_MUL,
+	SMOKE_FLOW_BLEND_DIV,
+};
+
 typedef struct SmokeFlowSettings {
 	struct SmokeFlowSettings *next, *prev;
 
@@ -212,11 +220,12 @@ typedef struct SmokeFlowSettings {
 	float volume_density; /* density emitted within mesh volume */
 	float surface_distance; /* maximum emission distance from mesh surface */
 	float particle_size;
-	int subframes;
+	short subframes;
+	short blend_type;
 	/* texture control */
 	float texture_size;
 	float texture_offset;
-	int pad;
+	float blend_factor;
 	char uvlayer_name[64];	/* MAX_CUSTOMDATA_LAYER_NAME */
 	short vgroup_density;
 

@@ -412,6 +412,8 @@ class PHYSICS_PT_smoke_sources(PhysicButtonsPanel, Panel):
                 sub = split.column()
                 sub.label(text="Initial Values:")
                 sub.prop(source, "use_absolute")
+                sub.prop(source, "blend_type")
+                sub.prop(source, "blend_factor")
                 if source.smoke_flow_type in {'SMOKE', 'BOTH'}:
                     sub.prop(source, "density")
                     sub.prop(source, "temperature")

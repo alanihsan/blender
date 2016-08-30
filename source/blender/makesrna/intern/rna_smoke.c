@@ -64,6 +64,21 @@ static void rna_Smoke_update(Main *UNUSED(bmain), Scene *UNUSED(scene), PointerR
 	DAG_id_tag_update(ptr->id.data, OB_RECALC_DATA);
 }
 
+static void rna_SmokeFlow_update(Main *bmain, Scene *scene, PointerRNA *ptr)
+{
+	UNUSED_VARS(bmain, scene);
+
+	SmokeFlowSettings *settings = (SmokeFlowSettings *)ptr->data;
+
+	if (!settings->object) {
+		return;
+	}
+
+	/* Tag the object to be updated, so that the domain that depends on it is
+	 * updated as well. */
+	DAG_id_tag_update((ID *)settings->object, OB_RECALC_DATA);
+}
+
 static void rna_Smoke_dependency_update(Main *bmain, Scene *scene, PointerRNA *ptr)
 {
 	rna_Smoke_update(bmain, scene, ptr);
@@ -821,33 +836,33 @@ static void rna_def_smoke_flow_settings(BlenderRNA *brna)
 	RNA_def_property_range(prop, 0.0, 1);
 	RNA_def_property_ui_range(prop, 0.0, 1.0, 1.0, 4);
 	RNA_def_property_ui_text(prop, "Density", "");
-	RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, "rna_Smoke_reset");
+	RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, "rna_SmokeFlow_update");
 
 	prop = RNA_def_property(srna, "smoke_color", PROP_FLOAT, PROP_COLOR_GAMMA);
 	RNA_def_property_float_sdna(prop, NULL, "color");
 	RNA_def_property_array(prop, 3);
 	RNA_def_property_ui_text(prop, "Smoke Color", "Color of smoke");
-	RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, "rna_Smoke_reset");
+	RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, "rna_SmokeFlow_update");
 
 	prop = RNA_def_property(srna, "fuel_amount", PROP_FLOAT, PROP_NONE);
 	RNA_def_property_range(prop, 0.0, 10);
 	RNA_def_property_ui_range(prop, 0.0, 5.0, 1.0, 4);
 	RNA_def_property_ui_text(prop, "Flame Rate", "");
-	RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, "rna_Smoke_reset");
+	RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, "rna_SmokeFlow_update");
 
 	prop = RNA_def_property(srna, "temperature", PROP_FLOAT, PROP_NONE);
 	RNA_def_property_float_sdna(prop, NULL, "temp");
 	RNA_def_property_range(prop, -10, 10);
 	RNA_def_property_ui_range(prop, -10, 10, 1, 1);
 	RNA_def_property_ui_text(prop, "Temp. Diff.", "Temperature difference to ambient temperature");
-	RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, "rna_Smoke_reset");
+	RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, "rna_SmokeFlow_update");
 	
 	prop = RNA_def_property(srna, "particle_system", PROP_POINTER, PROP_NONE);
 	RNA_def_property_pointer_sdna(prop, NULL, "psys");
 	RNA_def_property_struct_type(prop, "ParticleSystem");
 	RNA_def_property_flag(prop, PROP_EDITABLE);
 	RNA_def_property_ui_text(prop, "Particle Systems", "Particle systems emitted from the object");
-	RNA_def_property_update(prop, 0, "rna_Smoke_reset_dependency");
+	RNA_def_property_update(prop, 0, "rna_SmokeFlow_update");
 
 	prop = RNA_def_property(srna, "smoke_flow_type", PROP_ENUM, PROP_NONE);
 	RNA_def_property_enum_sdna(prop, NULL, "type");
@@ -970,7 +985,26 @@ static void rna_def_smoke_flow_settings(BlenderRNA *brna)
 	prop = RNA_def_property(srna, "object", PROP_POINTER, PROP_NONE);
 	RNA_def_property_flag(prop, PROP_EDITABLE | PROP_ID_SELF_CHECK);
 	RNA_def_property_ui_text(prop, "Object", "Source object");
-	RNA_def_property_update(prop, 0, "rna_Smoke_reset");
+	RNA_def_property_update(prop, 0, "rna_SmokeFlow_update");
+
+	static EnumPropertyItem smoke_blend_types[] = {
+		{SMOKE_FLOW_BLEND_NONE, "NONE", 0, "None", "Do not perform any blend"},
+		{SMOKE_FLOW_BLEND_ADD, "ADD", 0, "Add", ""},
+	    {SMOKE_FLOW_BLEND_SUB, "SUBTRACT", 0, "Subtract", ""},
+	    {SMOKE_FLOW_BLEND_MUL, "MULTIPLY", 0, "Multiply", ""},
+	    {SMOKE_FLOW_BLEND_DIV, "DIVIDE", 0, "Divide", ""},
+		{0, NULL, 0, NULL, NULL}
+	};
+
+	prop = RNA_def_property(srna, "blend_type", PROP_ENUM, PROP_NONE);
+	RNA_def_property_enum_items(prop, smoke_blend_types);
+	RNA_def_property_ui_text(prop, "Blend Type", "How this object affects the simulation");
+	RNA_def_property_update(prop, 0, "rna_SmokeFlow_update");
+
+	prop = RNA_def_property(srna, "blend_factor", PROP_FLOAT, PROP_NONE);
+	RNA_def_property_range(prop, 0.0, 1.0);
+	RNA_def_property_ui_text(prop, "Blend Factor", "How much this object affects the simulation");
+	RNA_def_property_update(prop, 0, "rna_SmokeFlow_update");
 }
 
 static void rna_def_smoke_coll_settings(BlenderRNA *brna)

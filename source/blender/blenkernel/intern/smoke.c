@@ -384,6 +384,7 @@ SmokeFlowSettings *BKE_smoke_flow_alloc(void)
 	sfs->source = MOD_SMOKE_FLOW_SOURCE_MESH;
 	sfs->texture_size = 1.0f;
 	sfs->particle_size = 1.0f;
+	sfs->blend_factor = 1.0f;
 
 	copy_v3_fl(sfs->color, 0.7f);
 
@@ -1980,35 +1981,93 @@ BLI_INLINE void apply_outflow_fields(int index, float *density, float *heat, flo
 
 BLI_INLINE void apply_inflow_fields(SmokeFlowSettings *sfs, float emission_value, int index, float *density, float *heat, float *fuel, float *react, float *color_r, float *color_g, float *color_b)
 {
-	int absolute_flow = (sfs->flags & MOD_SMOKE_FLOW_ABSOLUTE);
 	float dens_old = density[index];
 	// float fuel_old = (fuel) ? fuel[index] : 0.0f;  /* UNUSED */
 	float dens_flow = (sfs->type == MOD_SMOKE_FLOW_TYPE_FIRE) ? 0.0f : emission_value * sfs->density;
 	float fuel_flow = emission_value * sfs->fuel_amount;
+
 	/* add heat */
 	if (heat && emission_value > 0.0f) {
 		heat[index] = ADD_IF_LOWER(heat[index], sfs->temp);
 	}
+
 	/* absolute */
-	if (absolute_flow) {
-		if (sfs->type != MOD_SMOKE_FLOW_TYPE_FIRE) {
-			if (dens_flow > density[index])
-				density[index] = dens_flow;
+	switch (sfs->blend_type) {
+		case SMOKE_FLOW_BLEND_NONE:
+		{
+			if (sfs->type != MOD_SMOKE_FLOW_TYPE_FIRE) {
+				if (dens_flow > density[index]) {
+					density[index] = dens_flow;
+				}
+			}
+
+			if (sfs->type != MOD_SMOKE_FLOW_TYPE_SMOKE && fuel && fuel_flow) {
+				if (fuel_flow > fuel[index]) {
+					fuel[index] = fuel_flow;
+				}
+			}
+
+			break;
 		}
-		if (sfs->type != MOD_SMOKE_FLOW_TYPE_SMOKE && fuel && fuel_flow) {
-			if (fuel_flow > fuel[index])
-				fuel[index] = fuel_flow;
+		case SMOKE_FLOW_BLEND_ADD:
+		{
+			if (sfs->type != MOD_SMOKE_FLOW_TYPE_FIRE) {
+				density[index] += dens_flow * sfs->blend_factor;
+				CLAMP(density[index], 0.0f, 1.0f);
+			}
+
+			if (sfs->type != MOD_SMOKE_FLOW_TYPE_SMOKE && fuel && sfs->fuel_amount) {
+				fuel[index] += fuel_flow * sfs->blend_factor;
+				CLAMP(fuel[index], 0.0f, 10.0f);
+			}
+
+			break;
 		}
-	}
-	/* additive */
-	else {
-		if (sfs->type != MOD_SMOKE_FLOW_TYPE_FIRE) {
-			density[index] += dens_flow;
-			CLAMP(density[index], 0.0f, 1.0f);
+		case SMOKE_FLOW_BLEND_SUB:
+		{
+			if (sfs->type != MOD_SMOKE_FLOW_TYPE_FIRE) {
+				density[index] -= dens_flow * sfs->blend_factor;
+				CLAMP(density[index], 0.0f, 1.0f);
+			}
+
+			if (sfs->type != MOD_SMOKE_FLOW_TYPE_SMOKE && fuel && sfs->fuel_amount) {
+				fuel[index] -= fuel_flow * sfs->blend_factor;
+				CLAMP(fuel[index], 0.0f, 10.0f);
+			}
+
+			break;
 		}
-		if (sfs->type != MOD_SMOKE_FLOW_TYPE_SMOKE && fuel && sfs->fuel_amount) {
-			fuel[index] += fuel_flow;
-			CLAMP(fuel[index], 0.0f, 10.0f);
+		case SMOKE_FLOW_BLEND_MUL:
+		{
+			if (sfs->type != MOD_SMOKE_FLOW_TYPE_FIRE) {
+				density[index] *= dens_flow * sfs->blend_factor;
+				CLAMP(density[index], 0.0f, 1.0f);
+			}
+
+			if (sfs->type != MOD_SMOKE_FLOW_TYPE_SMOKE && fuel && sfs->fuel_amount) {
+				fuel[index] *= fuel_flow * sfs->blend_factor;
+				CLAMP(fuel[index], 0.0f, 10.0f);
+			}
+
+			break;
+		}
+		case SMOKE_FLOW_BLEND_DIV:
+		{
+			if (sfs->type != MOD_SMOKE_FLOW_TYPE_FIRE) {
+				if (dens_flow != 0.0f && sfs->blend_factor != 0.0f) {
+					density[index] /= dens_flow * sfs->blend_factor;
+					CLAMP(density[index], 0.0f, 1.0f);
+				}
+			}
+
+			if (sfs->type != MOD_SMOKE_FLOW_TYPE_SMOKE && fuel && sfs->fuel_amount) {
+				if  (fuel_flow != 0.0f && sfs->blend_factor != 0.0f) {
+					fuel[index] /= fuel_flow * sfs->blend_factor;
+					CLAMP(fuel[index], 0.0f, 10.0f);
+				}
+			}
+
+			break;
 		}
 	}
 
@@ -2144,7 +2203,7 @@ static void update_flowsfluids(Scene *scene, Object *ob, SmokeDomainSettings *sd
 				}
 
 				/* combine emission maps */
-				em_combineMaps(em, &em_temp, hires_multiplier, !(sfs->flags & MOD_SMOKE_FLOW_ABSOLUTE), sample_size);
+				em_combineMaps(em, &em_temp, hires_multiplier, sfs->blend_factor != SMOKE_FLOW_BLEND_NONE, sample_size);
 				em_freeData(&em_temp);
 			}
 		}
