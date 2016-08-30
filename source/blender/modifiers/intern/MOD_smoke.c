@@ -61,7 +61,6 @@ static void initData(ModifierData *md)
 	SmokeModifierData *smd = (SmokeModifierData *) md;
 	
 	smd->domain = NULL;
-	smd->flow = NULL;
 	smd->coll = NULL;
 	smd->type = 0;
 	smd->time = -1;

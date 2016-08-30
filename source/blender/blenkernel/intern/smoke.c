@@ -361,15 +361,6 @@ static void smokeModifier_freeDomain(SmokeModifierData *smd)
 	}
 }
 
-static void smokeModifier_freeFlow(SmokeModifierData *smd)
-{
-	if (smd->flow)
-	{
-		BKE_smoke_flow_free(smd->flow);
-		smd->flow = NULL;
-	}
-}
-
 SmokeFlowSettings *BKE_smoke_flow_alloc(void)
 {
 	SmokeFlowSettings *sfs = MEM_callocN(sizeof(SmokeFlowSettings), __func__);
@@ -464,12 +455,6 @@ static void smokeModifier_reset_ex(struct SmokeModifierData *smd, bool need_lock
 			smd->domain->total_cells = 0;
 			smd->domain->active_fields = 0;
 		}
-		else if (smd->flow)
-		{
-			if (smd->flow->verts_old) MEM_freeN(smd->flow->verts_old);
-			smd->flow->verts_old = NULL;
-			smd->flow->numverts = 0;
-		}
 		else if (smd->coll)
 		{
 			SmokeCollSettings *scs = smd->coll;
@@ -493,7 +478,6 @@ void smokeModifier_free(SmokeModifierData *smd)
 	if (smd)
 	{
 		smokeModifier_freeDomain(smd);
-		smokeModifier_freeFlow(smd);
 		smokeModifier_freeCollision(smd);
 	}
 }
@@ -620,33 +604,6 @@ void smokeModifier_copy(struct SmokeModifierData *smd, struct SmokeModifierData 
 		tsmd->domain->openvdb_comp = smd->domain->openvdb_comp;
 		tsmd->domain->data_depth = smd->domain->data_depth;
 		tsmd->domain->cache_file_format = smd->domain->cache_file_format;
-	}
-	else if (tsmd->flow) {
-		tsmd->flow->psys = smd->flow->psys;
-		tsmd->flow->noise_texture = smd->flow->noise_texture;
-
-		tsmd->flow->vel_multi = smd->flow->vel_multi;
-		tsmd->flow->vel_normal = smd->flow->vel_normal;
-		tsmd->flow->vel_random = smd->flow->vel_random;
-
-		tsmd->flow->density = smd->flow->density;
-		copy_v3_v3(tsmd->flow->color, smd->flow->color);
-		tsmd->flow->fuel_amount = smd->flow->fuel_amount;
-		tsmd->flow->temp = smd->flow->temp;
-		tsmd->flow->volume_density = smd->flow->volume_density;
-		tsmd->flow->surface_distance = smd->flow->surface_distance;
-		tsmd->flow->particle_size = smd->flow->particle_size;
-		tsmd->flow->subframes = smd->flow->subframes;
-
-		tsmd->flow->texture_size = smd->flow->texture_size;
-		tsmd->flow->texture_offset = smd->flow->texture_offset;
-		BLI_strncpy(tsmd->flow->uvlayer_name, tsmd->flow->uvlayer_name, sizeof(tsmd->flow->uvlayer_name));
-		tsmd->flow->vgroup_density = smd->flow->vgroup_density;
-
-		tsmd->flow->type = smd->flow->type;
-		tsmd->flow->source = smd->flow->source;
-		tsmd->flow->texture_type = smd->flow->texture_type;
-		tsmd->flow->flags = smd->flow->flags;
 	}
 	else if (tsmd->coll) {
 		/* leave it as initialized, collision settings is mostly caches */

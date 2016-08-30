@@ -5063,7 +5063,6 @@ static void direct_link_modifiers(FileData *fd, ListBase *lb)
 			SmokeModifierData *smd = (SmokeModifierData *)md;
 			
 			if (smd->type == MOD_SMOKE_TYPE_DOMAIN) {
-				smd->flow = NULL;
 				smd->coll = NULL;
 				smd->domain = newdataadr(fd, smd->domain);
 				smd->domain->smd = smd;
@@ -5101,7 +5100,6 @@ static void direct_link_modifiers(FileData *fd, ListBase *lb)
 				link_list(fd, &smd->domain->sources);
 			}
 			else if (smd->type == MOD_SMOKE_TYPE_COLL) {
-				smd->flow = NULL;
 				smd->domain = NULL;
 				smd->coll = newdataadr(fd, smd->coll);
 				if (smd->coll) {
@@ -5112,7 +5110,6 @@ static void direct_link_modifiers(FileData *fd, ListBase *lb)
 				}
 				else {
 					smd->type = 0;
-					smd->flow = NULL;
 					smd->domain = NULL;
 					smd->coll = NULL;
 				}
