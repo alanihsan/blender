@@ -40,11 +40,13 @@
 #include "DNA_action_types.h"
 #include "DNA_object_types.h"
 #include "DNA_object_fluidsim.h"	
+#include "DNA_smoke_types.h"
 
 #include "BLI_blenlib.h"
 #include "BLI_math.h"
 #include "BLI_utildefines.h"
 
+#include "BKE_smoke.h"
 #include "BKE_context.h"
 #include "BKE_customdata.h"
 #include "BKE_fluidsim.h"
@@ -1127,35 +1129,41 @@ void FLUID_OT_bake(wmOperatorType *ot)
 	ot->poll = ED_operator_object_active_editable;
 }
 
-/***************************** SMOKE_OT_add_flow ******************************/
+/* ************************************************************************** */
 
-#include "DNA_smoke_types.h"
-
-#include "BKE_smoke.h"
-
-static int smoke_add_flow_exec(bContext *C, wmOperator *op)
+static int smoke_ops_poll(bContext *C)
 {
 	Object *ob = CTX_data_active_object(C);
 
 	if (ob == NULL) {
-		BKE_report(op->reports, RPT_ERROR, "No object selected!");
-		return OPERATOR_CANCELLED;
+		WM_report(RPT_ERROR, "No object selected!");
+		return false;
 	}
 
 	ModifierData *md = modifiers_findByType(ob, eModifierType_Smoke);
 
 	if (md == NULL) {
-		BKE_report(op->reports, RPT_ERROR, "No smoke modifier on object!");
-		return OPERATOR_CANCELLED;
+		WM_report(RPT_ERROR, "No smoke modifier on object!");
+		return false;
 	}
 
 	SmokeModifierData *smd = (SmokeModifierData *)md;
 
 	if (smd->type != MOD_SMOKE_TYPE_DOMAIN) {
-		BKE_report(op->reports, RPT_ERROR, "Smoke modifier is not on a domain!");
-		return OPERATOR_CANCELLED;
+		WM_report(RPT_ERROR, "Smoke modifier is not on a domain!");
+		return false;
 	}
 
+	return true;
+}
+
+/* *************************** SMOKE_OT_add_flow **************************** */
+
+static int smoke_add_flow_exec(bContext *C, wmOperator *op)
+{
+	Object *ob = CTX_data_active_object(C);
+	ModifierData *md = modifiers_findByType(ob, eModifierType_Smoke);
+	SmokeModifierData *smd = (SmokeModifierData *)md;
 	SmokeDomainSettings *sds = smd->domain;
 
 	SmokeFlowSettings *flow = sds->sources.first;
@@ -1168,6 +1176,8 @@ static int smoke_add_flow_exec(bContext *C, wmOperator *op)
 	BLI_addtail(&sds->sources, settings);
 
 	return OPERATOR_FINISHED;
+
+	UNUSED_VARS(op);
 }
 
 void SMOKE_OT_add_flow(wmOperatorType *ot)
@@ -1178,34 +1188,17 @@ void SMOKE_OT_add_flow(wmOperatorType *ot)
 	ot->idname = "SMOKE_OT_add_flow";
 
 	/* api callbacks */
+	ot->poll = smoke_ops_poll;
 	ot->exec = smoke_add_flow_exec;
 }
 
-/***************************** SMOKE_OT_remove_flow ******************************/
+/* ************************** SMOKE_OT_remove_flow ************************** */
 
 static int smoke_remove_flow_exec(bContext *C, wmOperator *op)
 {
 	Object *ob = CTX_data_active_object(C);
-
-	if (ob == NULL) {
-		BKE_report(op->reports, RPT_ERROR, "No object selected!");
-		return OPERATOR_CANCELLED;
-	}
-
 	ModifierData *md = modifiers_findByType(ob, eModifierType_Smoke);
-
-	if (md == NULL) {
-		BKE_report(op->reports, RPT_ERROR, "No smoke modifier on object!");
-		return OPERATOR_CANCELLED;
-	}
-
 	SmokeModifierData *smd = (SmokeModifierData *)md;
-
-	if (smd->type != MOD_SMOKE_TYPE_DOMAIN) {
-		BKE_report(op->reports, RPT_ERROR, "Smoke modifier is not on a domain!");
-		return OPERATOR_CANCELLED;
-	}
-
 	SmokeDomainSettings *sds = smd->domain;
 
 	SmokeFlowSettings *flow = sds->sources.first;
@@ -1221,6 +1214,8 @@ static int smoke_remove_flow_exec(bContext *C, wmOperator *op)
 	BKE_smoke_flow_free(flow);
 
 	return OPERATOR_FINISHED;
+
+	UNUSED_VARS(op);
 }
 
 void SMOKE_OT_remove_flow(wmOperatorType *ot)
@@ -1231,5 +1226,6 @@ void SMOKE_OT_remove_flow(wmOperatorType *ot)
 	ot->idname = "SMOKE_OT_remove_flow";
 
 	/* api callbacks */
+	ot->poll = smoke_ops_poll;
 	ot->exec = smoke_remove_flow_exec;
 }
