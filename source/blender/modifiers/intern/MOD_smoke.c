@@ -82,24 +82,6 @@ static void freeData(ModifierData *md)
 	smokeModifier_free(smd);
 }
 
-static CustomDataMask requiredDataMask(Object *UNUSED(ob), ModifierData *md)
-{
-	SmokeModifierData *smd  = (SmokeModifierData *)md;
-	CustomDataMask dataMask = 0;
-
-	if (smd && (smd->type & MOD_SMOKE_TYPE_FLOW) && smd->flow) {
-		if (smd->flow->source == MOD_SMOKE_FLOW_SOURCE_MESH) {
-			/* vertex groups */
-			if (smd->flow->vgroup_density)
-				dataMask |= CD_MASK_MDEFORMVERT;
-			/* uv layer */
-			if (smd->flow->texture_type == MOD_SMOKE_FLOW_TEXTURE_MAP_UV)
-				dataMask |= CD_MASK_MTFACE;
-		}
-	}
-	return dataMask;
-}
-
 static DerivedMesh *applyModifier(ModifierData *md, Object *ob, 
                                   DerivedMesh *dm,
                                   ModifierApplyFlag flag)
@@ -192,10 +174,6 @@ static void foreachIDLink(ModifierData *md, Object *ob,
 			walk(userData, ob, (ID **)&smd->domain->effector_weights->group, IDWALK_NOP);
 		}
 	}
-
-	if (smd->type == MOD_SMOKE_TYPE_FLOW && smd->flow) {
-		walk(userData, ob, (ID **)&smd->flow->noise_texture, IDWALK_USER);
-	}
 }
 
 ModifierTypeInfo modifierType_Smoke = {
@@ -215,7 +193,7 @@ ModifierTypeInfo modifierType_Smoke = {
 	/* applyModifier */     applyModifier,
 	/* applyModifierEM */   NULL,
 	/* initData */          initData,
-	/* requiredDataMask */  requiredDataMask,
+	/* requiredDataMask */  NULL,
 	/* freeData */          freeData,
 	/* isDisabled */        NULL,
 	/* updateDepgraph */    updateDepgraph,

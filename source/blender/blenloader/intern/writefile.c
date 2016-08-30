@@ -1743,9 +1743,6 @@ static void write_modifiers(WriteData *wd, ListBase *modbase)
 					writelist(wd, DATA, SmokeFlowSettings, &smd->domain->sources);
 				}
 			}
-			else if (smd->type & MOD_SMOKE_TYPE_FLOW) {
-				writestruct(wd, DATA, SmokeFlowSettings, 1, smd->flow);
-			}
 			else if (smd->type & MOD_SMOKE_TYPE_COLL) {
 				writestruct(wd, DATA, SmokeCollSettings, 1, smd->coll);
 			}

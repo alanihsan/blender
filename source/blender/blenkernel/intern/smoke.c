@@ -562,14 +562,6 @@ void smokeModifier_createType(struct SmokeModifierData *smd)
 			smd->domain->data_depth = 0;
 			smd->domain->cache_file_format = PTCACHE_FILE_PTCACHE;
 		}
-		else if (smd->type & MOD_SMOKE_TYPE_FLOW)
-		{
-			if (smd->flow)
-				smokeModifier_freeFlow(smd);
-
-			smd->flow = BKE_smoke_flow_alloc();
-			smd->flow->smd = smd;
-		}
 		else if (smd->type & MOD_SMOKE_TYPE_COLL)
 		{
 			if (smd->coll)
@@ -2645,26 +2637,7 @@ static DerivedMesh *createDomainGeometry(SmokeDomainSettings *sds, Object *ob)
 
 static void smokeModifier_process(SmokeModifierData *smd, Scene *scene, Object *ob, DerivedMesh *dm)
 {
-	if ((smd->type & MOD_SMOKE_TYPE_FLOW))
-	{
-		if (scene->r.cfra >= smd->time)
-			smokeModifier_init(smd, ob, scene, dm);
-
-		if (smd->flow->dm) smd->flow->dm->release(smd->flow->dm);
-		smd->flow->dm = CDDM_copy(dm);
-		DM_ensure_looptri(smd->flow->dm);
-
-		if (scene->r.cfra > smd->time)
-		{
-			smd->time = scene->r.cfra;
-		}
-		else if (scene->r.cfra < smd->time)
-		{
-			smd->time = scene->r.cfra;
-			smokeModifier_reset_ex(smd, false);
-		}
-	}
-	else if (smd->type & MOD_SMOKE_TYPE_COLL)
+	if (smd->type & MOD_SMOKE_TYPE_COLL)
 	{
 		if (scene->r.cfra >= smd->time)
 			smokeModifier_init(smd, ob, scene, dm);

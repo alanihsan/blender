@@ -3150,13 +3150,7 @@ void object_remove_particle_system(Scene *UNUSED(scene), Object *ob)
 	if (!psys)
 		return;
 
-	/* clear all other appearances of this pointer (like on smoke flow modifier) */
-	if ((md = modifiers_findByType(ob, eModifierType_Smoke))) {
-		SmokeModifierData *smd = (SmokeModifierData *)md;
-		if ((smd->type == MOD_SMOKE_TYPE_FLOW) && smd->flow && smd->flow->psys)
-			if (smd->flow->psys == psys)
-				smd->flow->psys = NULL;
-	}
+	/* clear all other appearances of this pointer */
 
 	if ((md = modifiers_findByType(ob, eModifierType_DynamicPaint))) {
 		DynamicPaintModifierData *pmd = (DynamicPaintModifierData *)md;

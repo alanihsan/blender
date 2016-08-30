@@ -5097,16 +5097,8 @@ static void direct_link_modifiers(FileData *fd, ListBase *lb)
 					BLI_listbase_clear(&smd->domain->ptcaches[1]);
 					smd->domain->point_cache[1] = NULL;
 				}
-			}
-			else if (smd->type == MOD_SMOKE_TYPE_FLOW) {
-				smd->domain = NULL;
-				smd->coll = NULL;
-				smd->flow = newdataadr(fd, smd->flow);
-				smd->flow->smd = smd;
-				smd->flow->dm = NULL;
-				smd->flow->verts_old = NULL;
-				smd->flow->numverts = 0;
-				smd->flow->psys = newdataadr(fd, smd->flow->psys);
+
+				link_list(fd, &smd->domain->sources);
 			}
 			else if (smd->type == MOD_SMOKE_TYPE_COLL) {
 				smd->flow = NULL;

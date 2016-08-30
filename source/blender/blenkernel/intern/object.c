@@ -982,16 +982,6 @@ void BKE_object_copy_particlesystems(Object *ob_dst, const Object *ob_src)
 					}
 				}
 			}
-			else if (md->type == eModifierType_Smoke) {
-				SmokeModifierData *smd = (SmokeModifierData *) md;
-				
-				if (smd->type == MOD_SMOKE_TYPE_FLOW) {
-					if (smd->flow) {
-						if (smd->flow->psys == psys)
-							smd->flow->psys = npsys;
-					}
-				}
-			}
 		}
 	}
 }
