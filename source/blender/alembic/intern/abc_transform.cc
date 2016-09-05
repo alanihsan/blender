@@ -134,6 +134,10 @@ bool AbcTransformWriter::hasAnimation(Object */*ob*/) const
 AbcEmptyReader::AbcEmptyReader(const Alembic::Abc::IObject &object, ImportSettings &settings)
     : AbcObjectReader(object, settings)
 {
+	if (m_name == "/") {
+		return;
+	}
+
 	Alembic::AbcGeom::IXform xform(object, Alembic::AbcGeom::kWrapExisting);
 	m_schema = xform.getSchema();
 

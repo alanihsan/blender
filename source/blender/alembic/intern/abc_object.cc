@@ -37,6 +37,7 @@ extern "C" {
 #include "BKE_library.h"
 #include "BKE_modifier.h"
 #include "BKE_object.h"
+#include "BKE_scene.h"
 
 #include "BLI_listbase.h"
 #include "BLI_math.h"
@@ -117,31 +118,136 @@ void AbcObjectWriter::write()
 
 /* ************************************************************************** */
 
+#include "abc_camera.h"
+#include "abc_curves.h"
+#include "abc_hair.h"
+#include "abc_mesh.h"
+#include "abc_nurbs.h"
+#include "abc_points.h"
+#include "abc_transform.h"
+#include <Alembic/AbcMaterial/IMaterial.h>
+using Alembic::AbcMaterial::IMaterial;
+using Alembic::AbcGeom::MetaData;
+
+using Alembic::AbcGeom::ICamera;
+using Alembic::AbcGeom::ICurves;
+using Alembic::AbcGeom::IFaceSet;
+using Alembic::AbcGeom::ILight;
+using Alembic::AbcGeom::INuPatch;
+using Alembic::AbcGeom::IObject;
+using Alembic::AbcGeom::IPoints;
+using Alembic::AbcGeom::IPolyMesh;
+using Alembic::AbcGeom::ISubD;
+using Alembic::AbcGeom::IXform;
+
 AbcObjectReader::AbcObjectReader(const IObject &object, ImportSettings &settings)
     : m_name("")
     , m_object_name("")
     , m_data_name("")
     , m_object(NULL)
     , m_iobject(object)
+    , m_parent(NULL)
     , m_settings(&settings)
     , m_min_time(std::numeric_limits<chrono_t>::max())
     , m_max_time(std::numeric_limits<chrono_t>::min())
 {
-	m_name = object.getFullName();
-	std::vector<std::string> parts;
-	split(m_name, '/', parts);
-
-	if (parts.size() >= 2) {
-		m_object_name = parts[parts.size() - 2];
-		m_data_name = parts[parts.size() - 1];
+	if (!m_iobject) {
+		std::cerr << "Bailing\n";
+		return;
 	}
-	else {
-		m_object_name = m_data_name = parts[parts.size() - 1];
+
+	m_name = object.getFullName();
+
+	if (m_name != "/") {
+		std::vector<std::string> parts;
+		split(m_name, '/', parts);
+
+		if (parts.size() >= 2) {
+			m_object_name = parts[parts.size() - 2];
+			m_data_name = parts[parts.size() - 1];
+		}
+		else {
+			m_object_name = m_data_name = parts[parts.size() - 1];
+		}
+	}
+
+	size_t num_children = m_iobject.getNumChildren();
+    for (size_t i = 0; i < num_children; ++i) {
+		IObject child = object.getChild(i);
+
+		if (!child.valid()) {
+			continue;
+		}
+
+		AbcObjectReader *reader = NULL;
+		const MetaData &md = child.getMetaData();
+
+		if (IXform::matches(md)) {
+			reader = new AbcEmptyReader(child, settings);
+		}
+		else if (IPolyMesh::matches(md)) {
+			reader = new AbcMeshReader(child, settings);
+		}
+		else if (ISubD::matches(md)) {
+			reader = new AbcSubDReader(child, settings);
+		}
+		else if (INuPatch::matches(md)) {
+#ifdef USE_NURBS
+			/* TODO(kevin): importing cyclic NURBS from other software crashes
+			 * at the moment. This is due to the fact that NURBS in other
+			 * software have duplicated points which causes buffer overflows in
+			 * Blender. Need to figure out exactly how these points are
+			 * duplicated, in all cases (cyclic U, cyclic V, and cyclic UV).
+			 * Until this is fixed, disabling NURBS reading. */
+			reader = new AbcNurbsReader(child, settings);
+#endif
+		}
+		else if (ICamera::matches(md)) {
+			reader = new AbcCameraReader(child, settings);
+		}
+		else if (IPoints::matches(md)) {
+			reader = new AbcPointsReader(child, settings);
+		}
+		else if (IMaterial::matches(md)) {
+			/* Pass for now. */
+		}
+		else if (ILight::matches(md)) {
+			/* Pass for now. */
+		}
+		else if (IFaceSet::matches(md)) {
+			/* Pass, those are handled in the mesh reader. */
+		}
+		else if (ICurves::matches(md)) {
+			reader = new AbcCurveReader(child, settings);
+		}
+		else {
+			assert(false);
+		}
+
+		if (reader) {
+			std::cerr << "Adding child\n";
+			m_children.push_back(reader);
+			reader->parent(this);
+
+#if 0
+			AlembicObjectPath *abc_path = static_cast<AlembicObjectPath *>(
+			                                  MEM_callocN(sizeof(AlembicObjectPath), "AlembicObjectPath"));
+
+			BLI_strncpy(abc_path->path, child.getFullName().c_str(), PATH_MAX);
+
+			BLI_addtail(&settings.cache_file->object_paths, abc_path);
+#endif
+		}
 	}
 }
 
 AbcObjectReader::~AbcObjectReader()
-{}
+{
+	std::vector<AbcObjectReader *>::iterator child_iter;
+	for (child_iter = m_children.begin(); child_iter != m_children.end(); ++child_iter) {
+		delete (*child_iter);
+	}
+}
 
 const IObject &AbcObjectReader::iobject() const
 {
@@ -158,33 +264,21 @@ void AbcObjectReader::readObjectMatrix(const float time)
 	IXform ixform;
 	bool has_alembic_parent = false;
 
-	/* Check that we have an empty object (locator, bone head/tail...).  */
 	if (IXform::matches(m_iobject.getMetaData())) {
 		ixform = IXform(m_iobject, Alembic::AbcGeom::kWrapExisting);
-
-		/* See comment below. */
-		has_alembic_parent = m_iobject.getParent().getParent().valid();
 	}
-	/* Check that we have an object with actual data. */
-	else if (IXform::matches(m_iobject.getParent().getMetaData())) {
-		ixform = IXform(m_iobject.getParent(), Alembic::AbcGeom::kWrapExisting);
-
-		/* This is a bit hackish, but we need to make sure that extra
-		 * transformations added to the matrix (rotation/scale) are only applied
-		 * to root objects. The way objects and their hierarchy are created will
-		 * need to be revisited at some point but for now this seems to do the
-		 * trick.
-		 *
-		 * Explanation of the trick:
-		 * The first getParent() will return this object's transformation matrix.
-		 * The second getParent() will get the parent of the transform, but this
-		 * might be the archive root ('/') which is valid, so we go passed it to
-		 * make sure that there is no parent.
-		 */
-		has_alembic_parent = m_iobject.getParent().getParent().getParent().valid();
-	}
-	/* Should not happen. */
 	else {
+		unit_m4(m_object->obmat);
+
+		/* Cameras need to be rotated so redo the transform for its parent. */
+		if (m_object->type == OB_CAMERA) {
+			float cam_to_yup[4][4];
+			unit_m4(cam_to_yup);
+			rotate_m4(cam_to_yup, 'X', M_PI_2);
+			mul_m4_m4m4(m_object->obmat, m_object->obmat, cam_to_yup);
+		}
+
+		invert_m4_m4(m_object->imat, m_object->obmat);
 		return;
 	}
 
@@ -225,6 +319,61 @@ void AbcObjectReader::addCacheModifier() const
 	id_us_plus(&mcmd->cache_file->id);
 
 	BLI_strncpy(mcmd->object_path, m_iobject.getFullName().c_str(), FILE_MAX);
+}
+
+void AbcObjectReader::do_read(Main *bmain, float time)
+{
+	if (this->valid()) {
+		this->readObjectData(bmain, time);
+
+		if (m_parent && m_parent->object()) {
+			m_object->parent = m_parent->object();
+		}
+
+		this->readObjectMatrix(time);
+	}
+
+	std::vector<AbcObjectReader *>::iterator child_iter;
+	for (child_iter = m_children.begin(); child_iter != m_children.end(); ++child_iter) {
+		(*child_iter)->do_read(bmain, time);
+	}
+}
+
+void AbcObjectReader::free_all(Main *bmain)
+{
+	Object *ob = m_object;
+
+	if (ob) {
+		if (ob->data) {
+			BKE_libblock_free_us(bmain, ob->data);
+			ob->data = NULL;
+		}
+
+		BKE_libblock_free_us(bmain, ob);
+	}
+
+	std::vector<AbcObjectReader *>::iterator child_iter;
+	for (child_iter = m_children.begin(); child_iter != m_children.end(); ++child_iter) {
+		(*child_iter)->free_all(bmain);
+	}
+}
+
+void AbcObjectReader::add_to_scene(Main *bmain, Scene *scene)
+{
+	Object *ob = m_object;
+
+	if (ob) {
+		ob->lay = scene->lay;
+
+		BKE_scene_base_add(scene, ob);
+
+		DAG_id_tag_update_ex(bmain, &ob->id, OB_RECALC_OB | OB_RECALC_DATA | OB_RECALC_TIME);
+	}
+
+	std::vector<AbcObjectReader *>::iterator child_iter;
+	for (child_iter = m_children.begin(); child_iter != m_children.end(); ++child_iter) {
+		(*child_iter)->add_to_scene(bmain, scene);
+	}
 }
 
 chrono_t AbcObjectReader::minTime() const

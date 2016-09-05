@@ -140,6 +140,9 @@ protected:
 	Object *m_object;
 	Alembic::Abc::IObject m_iobject;
 
+	AbcObjectReader *m_parent;
+	std::vector<AbcObjectReader *> m_children;
+
 	ImportSettings *m_settings;
 
 	chrono_t m_min_time;
@@ -161,6 +164,15 @@ public:
 	void readObjectMatrix(const float time);
 
 	void addCacheModifier() const;
+
+	void parent(AbcObjectReader *reader)
+	{
+		m_parent = reader;
+	}
+
+	void free_all(Main *bmain);
+	void do_read(Main *bmain, float time);
+	void add_to_scene(Main *bmain, Scene *scene);
 
 	chrono_t minTime() const;
 	chrono_t maxTime() const;

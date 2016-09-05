@@ -217,20 +217,12 @@ void create_input_transform(const Alembic::AbcGeom::ISampleSelector &sample_sel,
 		}
 	}
 
-	if (ob->type == OB_CAMERA) {
-		float cam_to_yup[4][4];
-		unit_m4(cam_to_yup);
-		rotate_m4(cam_to_yup, 'X', M_PI_2);
-		mul_m4_m4m4(r_mat, r_mat, cam_to_yup);
-	}
-
 	create_transform_matrix(r_mat);
 
 	if (ob->parent) {
 		mul_m4_m4m4(r_mat, ob->parent->obmat, r_mat);
 	}
-	/* TODO(kevin) */
-	else if (!has_alembic_parent) {
+	else {
 		/* Only apply scaling to root objects, parenting will propagate it. */
 		float scale_mat[4][4];
 		scale_m4_fl(scale_mat, scale);

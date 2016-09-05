@@ -70,7 +70,6 @@ extern "C" {
 #undef new
 
 #include "BLI_fileops.h"
-#include "BLI_ghash.h"
 #include "BLI_listbase.h"
 #include "BLI_math.h"
 #include "BLI_path_util.h"
@@ -465,115 +464,6 @@ void ABC_export(
 
 /* ********************** Import file ********************** */
 
-static void visit_object(const IObject &object,
-                         std::vector<AbcObjectReader *> &readers,
-                         GHash *parent_map,
-                         ImportSettings &settings)
-{
-	if (!object.valid()) {
-		return;
-	}
-
-	for (int i = 0; i < object.getNumChildren(); ++i) {
-		IObject child = object.getChild(i);
-
-		if (!child.valid()) {
-			continue;
-		}
-
-		AbcObjectReader *reader = NULL;
-
-		const MetaData &md = child.getMetaData();
-
-		if (IXform::matches(md)) {
-			bool create_xform = false;
-
-			/* Check whether or not this object is a Maya locator, which is
-			 * similar to empties used as parent object in Blender. */
-			if (has_property(child.getProperties(), "locator")) {
-				create_xform = true;
-			}
-			else {
-				/* Avoid creating an empty object if the child of this transform
-				 * is not a transform (that is an empty). */
-				if (child.getNumChildren() == 1) {
-					if (IXform::matches(child.getChild(0).getMetaData())) {
-						create_xform = true;
-					}
-#if 0
-					else {
-						std::cerr << "Skipping " << child.getFullName() << '\n';
-					}
-#endif
-				}
-				else {
-					create_xform = true;
-				}
-			}
-
-			if (create_xform) {
-				reader = new AbcEmptyReader(child, settings);
-			}
-		}
-		else if (IPolyMesh::matches(md)) {
-			reader = new AbcMeshReader(child, settings);
-		}
-		else if (ISubD::matches(md)) {
-			reader = new AbcSubDReader(child, settings);
-		}
-		else if (INuPatch::matches(md)) {
-#ifdef USE_NURBS
-			/* TODO(kevin): importing cyclic NURBS from other software crashes
-			 * at the moment. This is due to the fact that NURBS in other
-			 * software have duplicated points which causes buffer overflows in
-			 * Blender. Need to figure out exactly how these points are
-			 * duplicated, in all cases (cyclic U, cyclic V, and cyclic UV).
-			 * Until this is fixed, disabling NURBS reading. */
-			reader = new AbcNurbsReader(child, settings);
-#endif
-		}
-		else if (ICamera::matches(md)) {
-			reader = new AbcCameraReader(child, settings);
-		}
-		else if (IPoints::matches(md)) {
-			reader = new AbcPointsReader(child, settings);
-		}
-		else if (IMaterial::matches(md)) {
-			/* Pass for now. */
-		}
-		else if (ILight::matches(md)) {
-			/* Pass for now. */
-		}
-		else if (IFaceSet::matches(md)) {
-			/* Pass, those are handled in the mesh reader. */
-		}
-		else if (ICurves::matches(md)) {
-			reader = new AbcCurveReader(child, settings);
-		}
-		else {
-			assert(false);
-		}
-
-		if (reader) {
-			readers.push_back(reader);
-
-			AlembicObjectPath *abc_path = static_cast<AlembicObjectPath *>(
-			                                  MEM_callocN(sizeof(AlembicObjectPath), "AlembicObjectPath"));
-
-			BLI_strncpy(abc_path->path, child.getFullName().c_str(), PATH_MAX);
-
-			BLI_addtail(&settings.cache_file->object_paths, abc_path);
-
-			/* Cast to `void *` explicitly to avoid compiler errors because it
-			 * is a `const char *` which the compiler cast to `const void *`
-			 * instead of the expected `void *`. */
-			BLI_ghash_insert(parent_map, (void *)child.getFullName().c_str(), reader);
-		}
-
-		visit_object(child, readers, parent_map, settings);
-	}
-}
-
 enum {
 	ABC_NO_ERROR = 0,
 	ABC_ARCHIVE_FAIL,
@@ -586,8 +476,7 @@ struct ImportJobData {
 	char filename[1024];
 	ImportSettings settings;
 
-	GHash *parent_map;
-	std::vector<AbcObjectReader *> readers;
+	AbcObjectReader *root;
 
 	short *stop;
 	short *do_update;
@@ -597,37 +486,10 @@ struct ImportJobData {
 	bool was_cancelled;
 };
 
-ABC_INLINE bool is_mesh_and_strands(const IObject &object)
-{
-	bool has_mesh = false;
-	bool has_curve = false;
-
-	for (int i = 0; i < object.getNumChildren(); ++i) {
-		const IObject &child = object.getChild(i);
-
-		if (!child.valid()) {
-			continue;
-		}
-
-		const MetaData &md = child.getMetaData();
-
-		if (IPolyMesh::matches(md)) {
-			has_mesh = true;
-		}
-		else if (ISubD::matches(md)) {
-			has_mesh = true;
-		}
-		else if (ICurves::matches(md)) {
-			has_curve = true;
-		}
-		else if (IPoints::matches(md)) {
-			has_curve = true;
-		}
-	}
-
-	return has_mesh && has_curve;
-}
-
+/* TODOs:
+ * - time
+ * - gather object paths
+ */
 static void import_startjob(void *user_data, short *stop, short *do_update, float *progress)
 {
 	ImportJobData *data = static_cast<ImportJobData *>(user_data);
@@ -661,11 +523,8 @@ static void import_startjob(void *user_data, short *stop, short *do_update, floa
 	*data->do_update = true;
 	*data->progress = 0.05f;
 
-	data->parent_map = BLI_ghash_str_new("alembic parent ghash");
-
 	/* Parse Alembic Archive. */
-
-	visit_object(archive->getTop(), data->readers, data->parent_map, data->settings);
+	data->root = new AbcEmptyReader(archive->getTop(), data->settings);
 
 	if (G.is_break) {
 		data->was_cancelled = true;
@@ -673,36 +532,14 @@ static void import_startjob(void *user_data, short *stop, short *do_update, floa
 	}
 
 	*data->do_update = true;
-	*data->progress = 0.1f;
+	*data->progress = 0.5f;
 
 	/* Create objects and set scene frame range. */
-
-	const float size = static_cast<float>(data->readers.size());
-	size_t i = 0;
 
 	chrono_t min_time = std::numeric_limits<chrono_t>::max();
 	chrono_t max_time = std::numeric_limits<chrono_t>::min();
 
-	std::vector<AbcObjectReader *>::iterator iter;
-	for (iter = data->readers.begin(); iter != data->readers.end(); ++iter) {
-		AbcObjectReader *reader = *iter;
-
-		if (reader->valid()) {
-			reader->readObjectData(data->bmain, 0.0f);
-			reader->readObjectMatrix(0.0f);
-
-			min_time = std::min(min_time, reader->minTime());
-			max_time = std::max(max_time, reader->maxTime());
-		}
-
-		*data->progress = 0.1f + 0.6f * (++i / size);
-		*data->do_update = true;
-
-		if (G.is_break) {
-			data->was_cancelled = true;
-			return;
-		}
-	}
+	data->root->do_read(data->bmain, 0.0f);
 
 	if (data->settings.set_frame_range) {
 		Scene *scene = data->scene;
@@ -718,93 +555,24 @@ static void import_startjob(void *user_data, short *stop, short *do_update, floa
 			CFRA = SFRA;
 		}
 	}
-
-	/* Setup parentship. */
-
-	i = 0;
-	for (iter = data->readers.begin(); iter != data->readers.end(); ++iter) {
-		const AbcObjectReader *reader = *iter;
-		const AbcObjectReader *parent_reader = NULL;
-		const IObject &iobject = reader->iobject();
-
-		IObject parent = iobject.getParent();
-
-		if (!IXform::matches(iobject.getHeader())) {
-			/* In the case of an non XForm node, the parent is the transform
-			 * matrix of the data itself, so we get the its grand parent.
-			 */
-
-			/* Special case with object only containing a mesh and some strands,
-			 * we want both objects to be parented to the same object. */
-			if (!is_mesh_and_strands(parent)) {
-				parent = parent.getParent();
-			}
-		}
-
-		parent_reader = reinterpret_cast<AbcObjectReader *>(
-		                    BLI_ghash_lookup(data->parent_map, parent.getFullName().c_str()));
-
-		if (parent_reader) {
-			Object *parent = parent_reader->object();
-
-			if (parent != NULL && reader->object() != parent) {
-				Object *ob = reader->object();
-				ob->parent = parent;
-			}
-		}
-
-		*data->progress = 0.7f + 0.3f * (++i / size);
-		*data->do_update = true;
-
-		if (G.is_break) {
-			data->was_cancelled = true;
-			return;
-		}
-	}
 }
 
 static void import_endjob(void *user_data)
 {
 	ImportJobData *data = static_cast<ImportJobData *>(user_data);
 
-	std::vector<AbcObjectReader *>::iterator iter;
-
 	/* Delete objects on cancelation. */
 	if (data->was_cancelled) {
-		for (iter = data->readers.begin(); iter != data->readers.end(); ++iter) {
-			Object *ob = (*iter)->object();
-
-			if (ob->data) {
-				BKE_libblock_free_us(data->bmain, ob->data);
-				ob->data = NULL;
-			}
-
-			BKE_libblock_free_us(data->bmain, ob);
-		}
+		data->root->free_all(data->bmain);
 	}
 	else {
 		/* Add object to scene. */
 		BKE_scene_base_deselect_all(data->scene);
-
-		for (iter = data->readers.begin(); iter != data->readers.end(); ++iter) {
-			Object *ob = (*iter)->object();
-			ob->lay = data->scene->lay;
-
-			BKE_scene_base_add(data->scene, ob);
-
-			DAG_id_tag_update_ex(data->bmain, &ob->id, OB_RECALC_OB | OB_RECALC_DATA | OB_RECALC_TIME);
-		}
-
+		data->root->add_to_scene(data->bmain, data->scene);
 		DAG_relations_tag_update(data->bmain);
 	}
 
-	for (iter = data->readers.begin(); iter != data->readers.end(); ++iter) {
-		delete *iter;
-	}
-
-	if (data->parent_map) {
-		BLI_ghash_free(data->parent_map, NULL, NULL);
-	}
+	delete data->root;
 
 	switch (data->error_code) {
 		default:
@@ -839,7 +607,6 @@ void ABC_import(bContext *C, const char *filepath, float scale, bool is_sequence
 	job->settings.sequence_len = sequence_len;
 	job->settings.offset = offset;
 	job->settings.validate_meshes = validate_meshes;
-	job->parent_map = NULL;
 	job->error_code = ABC_NO_ERROR;
 	job->was_cancelled = false;
 
