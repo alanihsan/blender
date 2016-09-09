@@ -203,7 +203,7 @@ void create_transform_matrix(float r_mat[4][4])
 
 void create_input_transform(const Alembic::AbcGeom::ISampleSelector &sample_sel,
                             const Alembic::AbcGeom::IXform &ixform, Object *ob,
-                            float r_mat[4][4], float scale, bool has_alembic_parent)
+                            float r_mat[4][4], float scale, bool is_camera)
 {
 
 	const Alembic::AbcGeom::IXformSchema &ixform_schema = ixform.getSchema();
@@ -215,6 +215,13 @@ void create_input_transform(const Alembic::AbcGeom::ISampleSelector &sample_sel,
 		for (int j = 0; j < 4; ++j) {
 			r_mat[i][j] = xform[i][j];
 		}
+	}
+
+	if (is_camera) {
+		float cam_to_yup[4][4];
+		unit_m4(cam_to_yup);
+		rotate_m4(cam_to_yup, 'X', M_PI_2);
+		mul_m4_m4m4(r_mat, r_mat, cam_to_yup);
 	}
 
 	create_transform_matrix(r_mat);

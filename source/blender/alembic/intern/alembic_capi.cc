@@ -536,7 +536,7 @@ void ABC_import(bContext *C, const char *filepath, float scale, bool is_sequence
 
 /* ******************************* */
 
-void ABC_get_transform(AbcArchiveHandle *handle, Object *ob, const char *object_path, float r_mat[4][4], float time, float scale)
+void ABC_get_transform(AbcArchiveHandle *handle, Object *ob, const char *object_path, float r_mat[4][4], float time, float scale, bool is_camera)
 {
 	ArchiveReader *archive = archive_from_handle(handle);
 
@@ -564,7 +564,8 @@ void ABC_get_transform(AbcArchiveHandle *handle, Object *ob, const char *object_
 
 	ISampleSelector sample_sel(time);
 
-	create_input_transform(sample_sel, ixform, ob, r_mat, scale);
+	create_input_transform(sample_sel, ixform, ob, r_mat, scale,
+	                       (is_camera) || (ob->type == OB_CAMERA));
 }
 
 /* ***************************************** */

@@ -4365,7 +4365,7 @@ static void transformcache_evaluate(bConstraint *con, bConstraintOb *cob, ListBa
 	BKE_cachefile_ensure_handle(G.main, cache_file);
 
 	ABC_get_transform(cache_file->handle, cob->ob, data->object_path,
-	                  cob->matrix, time, cache_file->scale);
+	                  cob->matrix, time, cache_file->scale, data->is_camera);
 #else
 	UNUSED_VARS(con, cob);
 #endif
@@ -4400,6 +4400,7 @@ static void transformcache_new_data(void *cdata)
 	bTransformCacheConstraint *data = (bTransformCacheConstraint *)cdata;
 
 	data->cache_file = NULL;
+	data->is_camera = false;
 }
 
 static bConstraintTypeInfo CTI_TRANSFORM_CACHE = {

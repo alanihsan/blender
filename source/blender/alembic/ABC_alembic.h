@@ -97,7 +97,7 @@ void ABC_get_transform(AbcArchiveHandle *handle,
                        const char *object_path,
                        float r_mat[4][4],
                        float time,
-                       float scale);
+                       float scale, bool is_camera);
 
 struct DerivedMesh *ABC_read_mesh(AbcArchiveHandle *handle,
                                   struct Object *ob,

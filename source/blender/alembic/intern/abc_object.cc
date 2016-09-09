@@ -265,24 +265,23 @@ Object *AbcObjectReader::object() const
 void AbcObjectReader::readObjectMatrix(const float time)
 {
 	IXform ixform;
-	bool has_alembic_parent = false;
+	bool is_camera = false;
 
 	if (IXform::matches(m_iobject.getMetaData())) {
 		ixform = IXform(m_iobject, Alembic::AbcGeom::kWrapExisting);
 	}
 	else {
 		unit_m4(m_object->obmat);
+		invert_m4_m4(m_object->imat, m_object->obmat);
 
 		/* Cameras need to be rotated so redo the transform for its parent. */
 		if (m_object->type == OB_CAMERA) {
-			float cam_to_yup[4][4];
-			unit_m4(cam_to_yup);
-			rotate_m4(cam_to_yup, 'X', M_PI_2);
-			mul_m4_m4m4(m_object->obmat, m_object->obmat, cam_to_yup);
+			is_camera = true;
+			ixform = IXform(m_parent->iobject(), Alembic::AbcGeom::kWrapExisting);
 		}
-
-		invert_m4_m4(m_object->imat, m_object->obmat);
-		return;
+		else {
+			return;
+		}
 	}
 
 	const IXformSchema &schema(ixform.getSchema());
@@ -295,19 +294,29 @@ void AbcObjectReader::readObjectMatrix(const float time)
 	Alembic::AbcGeom::XformSample xs;
 	schema.get(xs, sample_sel);
 
-	create_input_transform(sample_sel, ixform, m_object, m_object->obmat, m_settings->scale, has_alembic_parent);
+	Object *ob = (is_camera) ? m_parent->object() : m_object;
 
-	invert_m4_m4(m_object->imat, m_object->obmat);
+	create_input_transform(sample_sel, ixform, ob, ob->obmat, m_settings->scale, is_camera);
 
-	BKE_object_apply_mat4(m_object, m_object->obmat, false,  false);
+	invert_m4_m4(ob->imat, ob->obmat);
 
+	BKE_object_apply_mat4(ob, ob->obmat, false,  false);
+
+	/* Make sure the constraint is only added once, to the parent object. */
 	if (!schema.isConstant()) {
-		bConstraint *con = BKE_constraint_add_for_object(m_object, NULL, CONSTRAINT_TYPE_TRANSFORM_CACHE);
-		bTransformCacheConstraint *data = static_cast<bTransformCacheConstraint *>(con->data);
-		BLI_strncpy(data->object_path, m_iobject.getFullName().c_str(), FILE_MAX);
+		if (is_camera) {
+			bConstraint *con = BKE_constraints_find_name(&m_parent->object()->constraints, "Transform Cache");
+			bTransformCacheConstraint *data = static_cast<bTransformCacheConstraint *>(con->data);
+			data->is_camera = true;
+		}
+		else {
+			bConstraint *con = BKE_constraint_add_for_object(m_object, NULL, CONSTRAINT_TYPE_TRANSFORM_CACHE);
+			bTransformCacheConstraint *data = static_cast<bTransformCacheConstraint *>(con->data);
+			BLI_strncpy(data->object_path, m_iobject.getFullName().c_str(), FILE_MAX);
 
-		data->cache_file = m_settings->cache_file;
-		id_us_plus(&data->cache_file->id);
+			data->cache_file = m_settings->cache_file;
+			id_us_plus(&data->cache_file->id);
+		}
 	}
 }
 
