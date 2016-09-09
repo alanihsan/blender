@@ -425,6 +425,7 @@ RegularBVH::RegularBVH(const BVHParams& params_, const vector<Object*>& objects_
 void RegularBVH::pack_leaf(const BVHStackEntry& e,
                            const LeafNode *leaf)
 {
+	assert(e.idx + BVH_NODE_LEAF_SIZE <= pack.leaf_nodes.size());
 	float4 data[BVH_NODE_LEAF_SIZE];
 	memset(data, 0, sizeof(data));
 	if(leaf->num_triangles() == 1 && pack.prim_index[leaf->m_lo] == -1) {
@@ -472,13 +473,26 @@ void RegularBVH::pack_aligned_node(int idx,
                                    int c0, int c1,
                                    uint visibility0, uint visibility1)
 {
-	int4 data[BVH_NODE_SIZE] =
-	{
+	assert(idx + BVH_NODE_SIZE <= pack.nodes.size());
+	assert(c0 < 0 || c0 < pack.nodes.size());
+	assert(c1 < 0 || c1 < pack.nodes.size());
+
+	int4 data[BVH_NODE_SIZE] = {
 		make_int4(visibility0 & ~PATH_RAY_NODE_UNALIGNED,
-		          visibility1 & ~PATH_RAY_NODE_UNALIGNED, c0, c1),
-		make_int4(__float_as_int(b0.min.x), __float_as_int(b1.min.x), __float_as_int(b0.max.x), __float_as_int(b1.max.x)),
-		make_int4(__float_as_int(b0.min.y), __float_as_int(b1.min.y), __float_as_int(b0.max.y), __float_as_int(b1.max.y)),
-		make_int4(__float_as_int(b0.min.z), __float_as_int(b1.min.z), __float_as_int(b0.max.z), __float_as_int(b1.max.z)),
+		          visibility1 & ~PATH_RAY_NODE_UNALIGNED,
+		          c0, c1),
+		make_int4(__float_as_int(b0.min.x),
+		          __float_as_int(b1.min.x),
+		          __float_as_int(b0.max.x),
+		          __float_as_int(b1.max.x)),
+		make_int4(__float_as_int(b0.min.y),
+		          __float_as_int(b1.min.y),
+		          __float_as_int(b0.max.y),
+		          __float_as_int(b1.max.y)),
+		make_int4(__float_as_int(b0.min.z),
+		          __float_as_int(b1.min.z),
+		          __float_as_int(b0.max.z),
+		          __float_as_int(b1.max.z)),
 	};
 
 	memcpy(&pack.nodes[idx], data, sizeof(int4)*BVH_NODE_SIZE);
@@ -505,6 +519,10 @@ void RegularBVH::pack_unaligned_node(int idx,
                                      int c0, int c1,
                                      uint visibility0, uint visibility1)
 {
+	assert(idx + BVH_UNALIGNED_NODE_SIZE <= pack.nodes.size());
+	assert(c0 < 0 || c0 < pack.nodes.size());
+	assert(c1 < 0 || c1 < pack.nodes.size());
+
 	float4 data[BVH_UNALIGNED_NODE_SIZE];
 	Transform space0 = BVHUnaligned::compute_node_transform(bounds0,
 	                                                        aligned_space0);
@@ -614,9 +632,10 @@ void RegularBVH::refit_nodes()
 void RegularBVH::refit_node(int idx, bool leaf, BoundBox& bbox, uint& visibility)
 {
 	if(leaf) {
-		int4 *data = &pack.leaf_nodes[idx];
-		int c0 = data[0].x;
-		int c1 = data[0].y;
+		assert(idx + BVH_NODE_LEAF_SIZE <= pack.leaf_nodes.size());
+		const int4 *data = &pack.leaf_nodes[idx];
+		const int c0 = data[0].x;
+		const int c1 = data[0].y;
 		/* refit leaf node */
 		for(int prim = c0; prim < c1; prim++) {
 			int pidx = pack.prim_index[prim];
@@ -691,9 +710,12 @@ void RegularBVH::refit_node(int idx, bool leaf, BoundBox& bbox, uint& visibility
 		memcpy(&pack.leaf_nodes[idx], leaf_data, sizeof(float4)*BVH_NODE_LEAF_SIZE);
 	}
 	else {
-		int4 *data = &pack.nodes[idx];
-		int c0 = data[0].z;
-		int c1 = data[0].w;
+		assert(idx + BVH_NODE_SIZE <= pack.nodes.size());
+
+		const int4 *data = &pack.nodes[idx];
+		const bool is_unaligned = (data[0].x & PATH_RAY_NODE_UNALIGNED) != 0;
+		const int c0 = data[0].z;
+		const int c1 = data[0].w;
 		/* refit inner node, set bbox from children */
 		BoundBox bbox0 = BoundBox::empty, bbox1 = BoundBox::empty;
 		uint visibility0 = 0, visibility1 = 0;
@@ -701,7 +723,22 @@ void RegularBVH::refit_node(int idx, bool leaf, BoundBox& bbox, uint& visibility
 		refit_node((c0 < 0)? -c0-1: c0, (c0 < 0), bbox0, visibility0);
 		refit_node((c1 < 0)? -c1-1: c1, (c1 < 0), bbox1, visibility1);
 
-		pack_aligned_node(idx, bbox0, bbox1, c0, c1, visibility0, visibility1);
+		if(is_unaligned) {
+			Transform aligned_space = transform_identity();
+			pack_unaligned_node(idx,
+			                    aligned_space, aligned_space,
+			                    bbox0, bbox1,
+			                    c0, c1,
+			                    visibility0,
+			                    visibility1);
+		}
+		else {
+			pack_aligned_node(idx,
+			                  bbox0, bbox1,
+			                  c0, c1,
+			                  visibility0,
+			                  visibility1);
+		}
 
 		bbox.grow(bbox0);
 		bbox.grow(bbox1);
