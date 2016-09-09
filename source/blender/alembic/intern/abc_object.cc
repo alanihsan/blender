@@ -225,9 +225,11 @@ AbcObjectReader::AbcObjectReader(const IObject &object, ImportSettings &settings
 		}
 
 		if (reader) {
-			std::cerr << "Adding child\n";
 			m_children.push_back(reader);
 			reader->parent(this);
+
+			m_min_time = std::min(m_min_time, reader->minTime());
+			m_max_time = std::max(m_max_time, reader->maxTime());
 
 #if 0
 			AlembicObjectPath *abc_path = static_cast<AlembicObjectPath *>(

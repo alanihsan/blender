@@ -447,10 +447,10 @@ static void import_startjob(void *user_data, short *stop, short *do_update, floa
 
 	/* Create objects and set scene frame range. */
 
-	chrono_t min_time = std::numeric_limits<chrono_t>::max();
-	chrono_t max_time = std::numeric_limits<chrono_t>::min();
-
 	data->root->do_read(data->bmain, 0.0f);
+
+	const chrono_t min_time = data->root->minTime();
+	const chrono_t max_time = data->root->maxTime();
 
 	if (data->settings.set_frame_range) {
 		Scene *scene = data->scene;
