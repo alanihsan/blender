@@ -155,7 +155,6 @@ AbcObjectReader::AbcObjectReader(const IObject &object, ImportSettings &settings
     , m_max_time(std::numeric_limits<chrono_t>::min())
 {
 	if (!m_iobject) {
-		std::cerr << "Bailing\n";
 		return;
 	}
 
@@ -175,7 +174,7 @@ AbcObjectReader::AbcObjectReader(const IObject &object, ImportSettings &settings
 	}
 
 	size_t num_children = m_iobject.getNumChildren();
-    for (size_t i = 0; i < num_children; ++i) {
+	for (size_t i = 0; i < num_children; ++i) {
 		IObject child = object.getChild(i);
 
 		if (!child.valid()) {
@@ -331,6 +330,11 @@ void AbcObjectReader::addCacheModifier() const
 	id_us_plus(&mcmd->cache_file->id);
 
 	BLI_strncpy(mcmd->object_path, m_iobject.getFullName().c_str(), FILE_MAX);
+}
+
+void AbcObjectReader::parent(AbcObjectReader *reader)
+{
+	m_parent = reader;
 }
 
 void AbcObjectReader::do_read(Main *bmain, float time)
