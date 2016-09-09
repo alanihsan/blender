@@ -470,7 +470,7 @@ static void import_endjob(void *user_data)
 
 	/* Delete objects on cancelation. */
 	if (data->was_cancelled) {
-		data->root->free_all(data->bmain);
+		data->root->free_object(data->bmain);
 	}
 	else {
 		/* Add object to scene. */

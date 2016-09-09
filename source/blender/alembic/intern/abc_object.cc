@@ -355,7 +355,7 @@ void AbcObjectReader::do_read(Main *bmain, float time)
 	}
 }
 
-void AbcObjectReader::free_all(Main *bmain)
+void AbcObjectReader::free_object(Main *bmain)
 {
 	Object *ob = m_object;
 
@@ -370,7 +370,7 @@ void AbcObjectReader::free_all(Main *bmain)
 
 	std::vector<AbcObjectReader *>::iterator child_iter;
 	for (child_iter = m_children.begin(); child_iter != m_children.end(); ++child_iter) {
-		(*child_iter)->free_all(bmain);
+		(*child_iter)->free_object(bmain);
 	}
 }
 

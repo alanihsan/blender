@@ -165,12 +165,9 @@ public:
 
 	void addCacheModifier() const;
 
-	void parent(AbcObjectReader *reader)
-	{
-		m_parent = reader;
-	}
+	void parent(AbcObjectReader *reader);
 
-	void free_all(Main *bmain);
+	void free_object(Main *bmain);
 	void do_read(Main *bmain, float time);
 	void add_to_scene(Main *bmain, Scene *scene);
 
