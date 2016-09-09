@@ -397,10 +397,6 @@ struct ImportJobData {
 	bool was_cancelled;
 };
 
-/* TODOs:
- * - time
- * - gather object paths
- */
 static void import_startjob(void *user_data, short *stop, short *do_update, float *progress)
 {
 	ImportJobData *data = static_cast<ImportJobData *>(user_data);

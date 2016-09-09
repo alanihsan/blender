@@ -25,6 +25,8 @@
 #include "abc_util.h"
 
 extern "C" {
+#include "MEM_guardedalloc.h"
+
 #include "DNA_cachefile_types.h"
 #include "DNA_constraint_types.h"
 #include "DNA_modifier_types.h"
@@ -231,14 +233,12 @@ AbcObjectReader::AbcObjectReader(const IObject &object, ImportSettings &settings
 			m_min_time = std::min(m_min_time, reader->minTime());
 			m_max_time = std::max(m_max_time, reader->maxTime());
 
-#if 0
 			AlembicObjectPath *abc_path = static_cast<AlembicObjectPath *>(
 			                                  MEM_callocN(sizeof(AlembicObjectPath), "AlembicObjectPath"));
 
 			BLI_strncpy(abc_path->path, child.getFullName().c_str(), PATH_MAX);
 
-			BLI_addtail(&settings.cache_file->object_paths, abc_path);
-#endif
+			BLI_addtail(&m_settings->cache_file->object_paths, abc_path);
 		}
 	}
 }
