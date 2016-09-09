@@ -274,13 +274,12 @@ void AbcObjectReader::readObjectMatrix(const float time)
 		invert_m4_m4(m_object->imat, m_object->obmat);
 
 		/* Cameras need to be rotated so redo the transform for its parent. */
-		if (m_object->type == OB_CAMERA) {
-			is_camera = true;
-			ixform = IXform(m_parent->iobject(), Alembic::AbcGeom::kWrapExisting);
-		}
-		else {
+		if (m_object->type != OB_CAMERA) {
 			return;
 		}
+
+		is_camera = true;
+		ixform = IXform(m_parent->iobject(), Alembic::AbcGeom::kWrapExisting);
 	}
 
 	const IXformSchema &schema(ixform.getSchema());
