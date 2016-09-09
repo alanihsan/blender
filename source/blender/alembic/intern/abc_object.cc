@@ -284,7 +284,7 @@ void AbcObjectReader::readObjectMatrix(const float time)
 
 	const IXformSchema &schema(ixform.getSchema());
 
-	if (!schema.valid()) {
+	if (!schema.valid() || schema.isConstantIdentity()) {
 		return;
 	}
 

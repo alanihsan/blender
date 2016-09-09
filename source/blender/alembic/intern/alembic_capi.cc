@@ -554,7 +554,7 @@ void ABC_get_transform(AbcArchiveHandle *handle, Object *ob, const char *object_
 
 	IXformSchema schema = ixform.getSchema();
 
-	if (!schema.valid()) {
+	if (!schema.valid() || schema.isConstantIdentity()) {
 		return;
 	}
 
