@@ -58,6 +58,18 @@ extern "C" {
 using Alembic::AbcGeom::IObject;
 using Alembic::AbcGeom::IXform;
 using Alembic::AbcGeom::IXformSchema;
+using Alembic::AbcGeom::MetaData;
+
+using Alembic::AbcGeom::ICamera;
+using Alembic::AbcGeom::ICurves;
+using Alembic::AbcGeom::IFaceSet;
+using Alembic::AbcGeom::ILight;
+using Alembic::AbcGeom::INuPatch;
+using Alembic::AbcGeom::IObject;
+using Alembic::AbcGeom::IPoints;
+using Alembic::AbcGeom::IPolyMesh;
+using Alembic::AbcGeom::ISubD;
+using Alembic::AbcGeom::IXform;
 
 using Alembic::AbcGeom::OCompoundProperty;
 using Alembic::AbcGeom::ODoubleArrayProperty;
@@ -68,6 +80,8 @@ using Alembic::AbcGeom::OInt32ArrayProperty;
 using Alembic::AbcGeom::OInt32Property;
 using Alembic::AbcGeom::OStringArrayProperty;
 using Alembic::AbcGeom::OStringProperty;
+
+using Alembic::AbcMaterial::IMaterial;
 
 /* ************************************************************************** */
 
@@ -128,20 +142,6 @@ void AbcObjectWriter::write()
 }
 
 /* ************************************************************************** */
-
-using Alembic::AbcMaterial::IMaterial;
-using Alembic::AbcGeom::MetaData;
-
-using Alembic::AbcGeom::ICamera;
-using Alembic::AbcGeom::ICurves;
-using Alembic::AbcGeom::IFaceSet;
-using Alembic::AbcGeom::ILight;
-using Alembic::AbcGeom::INuPatch;
-using Alembic::AbcGeom::IObject;
-using Alembic::AbcGeom::IPoints;
-using Alembic::AbcGeom::IPolyMesh;
-using Alembic::AbcGeom::ISubD;
-using Alembic::AbcGeom::IXform;
 
 AbcObjectReader::AbcObjectReader(const IObject &object, ImportSettings &settings)
     : m_name("")
