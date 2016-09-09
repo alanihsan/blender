@@ -25,11 +25,8 @@
 #include <Alembic/AbcMaterial/IMaterial.h>
 
 #include "abc_archive.h"
-#include "abc_camera.h"
 #include "abc_curves.h"
-#include "abc_hair.h"
 #include "abc_mesh.h"
-#include "abc_nurbs.h"
 #include "abc_points.h"
 #include "abc_transform.h"
 #include "abc_util.h"
@@ -49,7 +46,6 @@ extern "C" {
 #include "BKE_curve.h"
 #include "BKE_depsgraph.h"
 #include "BKE_global.h"
-#include "BKE_library.h"
 #include "BKE_main.h"
 #include "BKE_scene.h"
 
