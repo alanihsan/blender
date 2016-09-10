@@ -22,16 +22,7 @@
 
 #include "abc_object.h"
 
-#include "abc_camera.h"
-#include "abc_curves.h"
-#include "abc_hair.h"
-#include "abc_mesh.h"
-#include "abc_nurbs.h"
-#include "abc_points.h"
-#include "abc_transform.h"
 #include "abc_util.h"
-
-#include <Alembic/AbcMaterial/IMaterial.h>
 
 extern "C" {
 #include "MEM_guardedalloc.h"
@@ -80,8 +71,6 @@ using Alembic::AbcGeom::OInt32ArrayProperty;
 using Alembic::AbcGeom::OInt32Property;
 using Alembic::AbcGeom::OStringArrayProperty;
 using Alembic::AbcGeom::OStringProperty;
-
-using Alembic::AbcMaterial::IMaterial;
 
 /* ************************************************************************** */
 
@@ -182,50 +171,7 @@ AbcObjectReader::AbcObjectReader(const IObject &object, ImportSettings &settings
 			continue;
 		}
 
-		AbcObjectReader *reader = NULL;
-		const MetaData &md = child.getMetaData();
-
-		if (IXform::matches(md)) {
-			reader = new AbcEmptyReader(child, settings);
-		}
-		else if (IPolyMesh::matches(md)) {
-			reader = new AbcMeshReader(child, settings);
-		}
-		else if (ISubD::matches(md)) {
-			reader = new AbcSubDReader(child, settings);
-		}
-		else if (INuPatch::matches(md)) {
-#ifdef USE_NURBS
-			/* TODO(kevin): importing cyclic NURBS from other software crashes
-			 * at the moment. This is due to the fact that NURBS in other
-			 * software have duplicated points which causes buffer overflows in
-			 * Blender. Need to figure out exactly how these points are
-			 * duplicated, in all cases (cyclic U, cyclic V, and cyclic UV).
-			 * Until this is fixed, disabling NURBS reading. */
-			reader = new AbcNurbsReader(child, settings);
-#endif
-		}
-		else if (ICamera::matches(md)) {
-			reader = new AbcCameraReader(child, settings);
-		}
-		else if (IPoints::matches(md)) {
-			reader = new AbcPointsReader(child, settings);
-		}
-		else if (IMaterial::matches(md)) {
-			/* Pass for now. */
-		}
-		else if (ILight::matches(md)) {
-			/* Pass for now. */
-		}
-		else if (IFaceSet::matches(md)) {
-			/* Pass, those are handled in the mesh reader. */
-		}
-		else if (ICurves::matches(md)) {
-			reader = new AbcCurveReader(child, settings);
-		}
-		else {
-			assert(false);
-		}
+		AbcObjectReader *reader = create_reader(child, *m_settings);
 
 		if (reader) {
 			m_children.push_back(reader);

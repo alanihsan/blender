@@ -38,6 +38,7 @@ struct CacheReader {
 
 using Alembic::Abc::chrono_t;
 
+class AbcObjectReader;
 class ImportSettings;
 
 struct ID;
@@ -98,6 +99,8 @@ void get_min_max_time(const Alembic::AbcGeom::IObject &object, const Schema &sch
 }
 
 bool has_property(const Alembic::Abc::ICompoundProperty &prop, const std::string &name);
+
+AbcObjectReader *create_reader(const Alembic::AbcGeom::IObject &object, ImportSettings &settings);
 
 /* ************************** */
 
