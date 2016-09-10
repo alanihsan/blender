@@ -45,6 +45,7 @@ enum {
 /* CacheFile::draw_flag */
 enum {
 	CACHEFILE_KEYFRAME_DRAWN = (1 << 0),
+	CACHEFILE_DIRTY          = (1 << 1),
 };
 
 typedef struct AlembicObjectPath {

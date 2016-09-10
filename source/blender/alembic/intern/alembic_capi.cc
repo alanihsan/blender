@@ -536,6 +536,10 @@ void ABC_import(bContext *C, const char *filepath, float scale, bool is_sequence
 
 void ABC_get_transform(CacheReader *reader, Object *ob, float r_mat[4][4], float time, float scale, bool is_camera)
 {
+	if (!reader) {
+		return;
+	}
+
 	AbcObjectReader *abc_reader = reinterpret_cast<AbcObjectReader *>(reader);
 
 	IObject tmp = abc_reader->iobject();
@@ -949,6 +953,10 @@ void CacheReader_free(CacheReader *reader)
 
 CacheReader *CacheReader_open_alembic_object(AbcArchiveHandle *handle, CacheReader *reader, const char *object_path)
 {
+	if (object_path[0] == '\0') {
+		return reader;
+	}
+
 	ArchiveReader *archive = archive_from_handle(handle);
 
 	if (!archive || !archive->valid()) {
