@@ -65,6 +65,10 @@ static void copyData(ModifierData *md, ModifierData *target)
 
 	if (tmcmd->cache_file) {
 		id_us_plus(&tmcmd->cache_file->id);
+
+		tmcmd->reader = CacheReader_open_alembic_object(tmcmd->cache_file->handle,
+		                                                NULL,
+		                                                tmcmd->object_path);
 	}
 }
 
