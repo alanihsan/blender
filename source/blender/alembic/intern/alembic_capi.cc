@@ -112,15 +112,13 @@ ABC_INLINE AbcArchiveHandle *handle_from_archive(ArchiveReader *archive)
 	return reinterpret_cast<AbcArchiveHandle *>(archive);
 }
 
-//#define USE_NURBS
-
-/* NOTE: this function is similar to visit_objects below, need to keep them in
- * sync. */
 static void gather_objects_paths(const IObject &object, ListBase *object_paths)
 {
 	if (!object.valid()) {
 		return;
 	}
+
+	AlembicObjectPath *abc_path;
 
 	for (int i = 0; i < object.getNumChildren(); ++i) {
 		IObject child = object.getChild(i);
@@ -129,75 +127,11 @@ static void gather_objects_paths(const IObject &object, ListBase *object_paths)
 			continue;
 		}
 
-		bool get_path = false;
+		abc_path = static_cast<AlembicObjectPath *>(
+		               MEM_callocN(sizeof(AlembicObjectPath), __func__));
 
-		const MetaData &md = child.getMetaData();
-
-		if (IXform::matches(md)) {
-			/* Check whether or not this object is a Maya locator, which is
-			 * similar to empties used as parent object in Blender. */
-			if (has_property(child.getProperties(), "locator")) {
-				get_path = true;
-			}
-			else {
-				/* Avoid creating an empty object if the child of this transform
-				 * is not a transform (that is an empty). */
-				if (child.getNumChildren() == 1) {
-					if (IXform::matches(child.getChild(0).getMetaData())) {
-						get_path = true;
-					}
-#if 0
-					else {
-						std::cerr << "Skipping " << child.getFullName() << '\n';
-					}
-#endif
-				}
-				else {
-					get_path = true;
-				}
-			}
-		}
-		else if (IPolyMesh::matches(md)) {
-			get_path = true;
-		}
-		else if (ISubD::matches(md)) {
-			get_path = true;
-		}
-		else if (INuPatch::matches(md)) {
-#ifdef USE_NURBS
-			get_path = true;
-#endif
-		}
-		else if (ICamera::matches(md)) {
-			get_path = true;
-		}
-		else if (IPoints::matches(md)) {
-			get_path = true;
-		}
-		else if (IMaterial::matches(md)) {
-			/* Pass for now. */
-		}
-		else if (ILight::matches(md)) {
-			/* Pass for now. */
-		}
-		else if (IFaceSet::matches(md)) {
-			/* Pass, those are handled in the mesh reader. */
-		}
-		else if (ICurves::matches(md)) {
-			get_path = true;
-		}
-		else {
-			assert(false);
-		}
-
-		if (get_path) {
-			AlembicObjectPath *abc_path = static_cast<AlembicObjectPath *>(
-			                                  MEM_callocN(sizeof(AlembicObjectPath), "AlembicObjectPath"));
-
-			BLI_strncpy(abc_path->path, child.getFullName().c_str(), PATH_MAX);
-
-			BLI_addtail(object_paths, abc_path);
-		}
+		BLI_strncpy(abc_path->path, child.getFullName().c_str(), PATH_MAX);
+		BLI_addtail(object_paths, abc_path);
 
 		gather_objects_paths(child, object_paths);
 	}

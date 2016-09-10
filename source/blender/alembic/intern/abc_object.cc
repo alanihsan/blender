@@ -132,6 +132,8 @@ void AbcObjectWriter::write()
 
 /* ************************************************************************** */
 
+//#define USE_NURBS
+
 AbcObjectReader::AbcObjectReader(const IObject &object, ImportSettings &settings)
     : m_name("")
     , m_object_name("")
