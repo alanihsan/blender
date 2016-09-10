@@ -4369,7 +4369,8 @@ static void transformcache_evaluate(bConstraint *con, bConstraintOb *cob, ListBa
 	}
 
 	ABC_get_transform(data->reader, cob->ob,
-	                  cob->matrix, time, cache_file->scale);
+	                  cob->matrix, time, cache_file->scale, data->is_camera);
+
 #else
 	UNUSED_VARS(con, cob);
 #endif
@@ -4408,6 +4409,7 @@ static void transformcache_new_data(void *cdata)
 	bTransformCacheConstraint *data = (bTransformCacheConstraint *)cdata;
 
 	data->cache_file = NULL;
+	data->is_camera = false;
 }
 
 static bConstraintTypeInfo CTI_TRANSFORM_CACHE = {

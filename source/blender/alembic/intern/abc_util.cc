@@ -203,7 +203,7 @@ void create_transform_matrix(float r_mat[4][4])
 
 void create_input_transform(const Alembic::AbcGeom::ISampleSelector &sample_sel,
                             const Alembic::AbcGeom::IXform &ixform, Object *ob,
-                            float r_mat[4][4], float scale, bool has_alembic_parent)
+                            float r_mat[4][4], float scale, bool is_camera)
 {
 
 	const Alembic::AbcGeom::IXformSchema &ixform_schema = ixform.getSchema();
@@ -217,7 +217,7 @@ void create_input_transform(const Alembic::AbcGeom::ISampleSelector &sample_sel,
 		}
 	}
 
-	if (ob->type == OB_CAMERA) {
+	if (is_camera) {
 		float cam_to_yup[4][4];
 		unit_m4(cam_to_yup);
 		rotate_m4(cam_to_yup, 'X', M_PI_2);
@@ -229,8 +229,7 @@ void create_input_transform(const Alembic::AbcGeom::ISampleSelector &sample_sel,
 	if (ob->parent) {
 		mul_m4_m4m4(r_mat, ob->parent->obmat, r_mat);
 	}
-	/* TODO(kevin) */
-	else if (!has_alembic_parent) {
+	else {
 		/* Only apply scaling to root objects, parenting will propagate it. */
 		float scale_mat[4][4];
 		scale_m4_fl(scale_mat, scale);

@@ -140,6 +140,9 @@ protected:
 	Object *m_object;
 	Alembic::Abc::IObject m_iobject;
 
+	AbcObjectReader *m_parent;
+	std::vector<AbcObjectReader *> m_children;
+
 	ImportSettings *m_settings;
 
 	/* Use reference counting since the same reader may be used by multiple
@@ -165,6 +168,13 @@ public:
 	void readObjectMatrix(const float time);
 
 	void addCacheModifier();
+
+	void parent(AbcObjectReader *reader);
+
+	void free_object(Main *bmain);
+	void do_read(Main *bmain, float time);
+	void add_to_scene(Main *bmain, Scene *scene);
+	void free_all();
 
 	chrono_t minTime() const;
 	chrono_t maxTime() const;

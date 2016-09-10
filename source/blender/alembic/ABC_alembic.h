@@ -97,7 +97,7 @@ void ABC_get_transform(struct CacheReader *reader,
                        struct Object *ob,
                        float r_mat[4][4],
                        float time,
-                       float scale);
+                       float scale, bool is_camera);
 
 struct DerivedMesh *ABC_read_mesh(struct CacheReader *reader,
                                   struct Object *ob,

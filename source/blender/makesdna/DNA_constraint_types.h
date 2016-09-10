@@ -463,6 +463,8 @@ typedef struct bTransformCacheConstraint {
 	struct CacheFile *cache_file;
 	struct CacheReader *reader;
 	char object_path[1024];  /* FILE_MAX */
+	char is_camera;
+	char pad[7];
 } bTransformCacheConstraint;
 
 /* ------------------------------------------ */

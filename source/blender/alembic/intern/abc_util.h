@@ -65,7 +65,7 @@ bool begins_with(const TContainer &input, const TContainer &match)
 
 void create_input_transform(const Alembic::AbcGeom::ISampleSelector &sample_sel,
                             const Alembic::AbcGeom::IXform &ixform, Object *ob,
-                            float r_mat[4][4], float scale, bool has_alembic_parent = false);
+                            float r_mat[4][4], float scale, bool is_camera = false);
 
 template <typename Schema>
 void get_min_max_time_ex(const Schema &schema, chrono_t &min, chrono_t &max)
