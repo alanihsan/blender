@@ -1882,6 +1882,10 @@ wmKeyMap *WM_keymap_guess_opname(const bContext *C, const char *opname)
 				break;
 		}
 	}
+	/* UVs/Texture Editor */
+	else if (STRPREFIX(opname, "UVS_OT")) {
+		km = WM_keymap_find_all(C, "UVs Editor", sl->spacetype, 0);
+	}
 	
 	return km;
 }

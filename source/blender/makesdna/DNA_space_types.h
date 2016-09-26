@@ -1333,6 +1333,26 @@ typedef enum eSpaceClip_GPencil_Source {
 	SC_GPENCIL_SRC_TRACK = 1,
 } eSpaceClip_GPencil_Source;
 
+/* UVs/Textures ======================================== */
+
+/* UVs/Textures Editor */
+typedef struct SpaceUVs {
+	SpaceLink *next, *prev;
+	ListBase regionbase;        /* storage of regions for inactive spaces */
+	int spacetype;
+	int flags;
+
+	short uspan_min;  /* Min coordinate of the tiles in the U direction. */
+	short vspan_min;  /* Min coordinate of the tiles in the V direction. */
+	short uspan_max;  /* Max coordinate of the tiles in the U direction. */
+	short vspan_max;  /* Max coordinate of the tiles in the V direction. */
+} SpaceUVs;
+
+/* SpaceUVs::flags */
+typedef enum eSpaceUVs_Flag {
+	SUV_SHOW_UDIM_NUMBERS      = (1 << 0),
+} eSpaceUVs_Flag;
+
 /* **************** SPACE DEFINES ********************* */
 
 /* space types, moved from DNA_screen_types.h */
@@ -1362,8 +1382,9 @@ typedef enum eSpace_Type {
 	SPACE_CONSOLE  = 18,
 	SPACE_USERPREF = 19,
 	SPACE_CLIP     = 20,
+	SPACE_UVS      = 21,
 	
-	SPACEICONMAX = SPACE_CLIP
+	SPACEICONMAX = SPACE_UVS
 } eSpace_Type;
 
 /* use for function args */

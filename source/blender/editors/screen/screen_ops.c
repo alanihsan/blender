@@ -305,6 +305,12 @@ int ED_operator_image_active(bContext *C)
 	return ed_spacetype_test(C, SPACE_IMAGE);
 }
 
+int ED_operator_uvs_active(bContext *C)
+{
+	fprintf(stderr, "%s\n", __func__);
+	return ed_spacetype_test(C, SPACE_UVS);
+}
+
 int ED_operator_nla_active(bContext *C)
 {
 	return ed_spacetype_test(C, SPACE_NLA);

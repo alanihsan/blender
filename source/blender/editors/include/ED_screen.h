@@ -155,6 +155,7 @@ int     ED_operator_graphedit_active(struct bContext *C);
 int     ED_operator_sequencer_active(struct bContext *C);
 int     ED_operator_sequencer_active_editable(struct bContext *C);
 int     ED_operator_image_active(struct bContext *C);
+int     ED_operator_uvs_active(struct bContext *C);
 int     ED_operator_nla_active(struct bContext *C);
 int     ED_operator_logic_active(struct bContext *C);
 int     ED_operator_info_active(struct bContext *C);

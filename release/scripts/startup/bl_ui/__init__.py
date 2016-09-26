@@ -78,6 +78,7 @@ _modules = [
     "space_text",
     "space_time",
     "space_userpref",
+    "space_uvs",
     "space_view3d",
     "space_view3d_toolbar",
     ]

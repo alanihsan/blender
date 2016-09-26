@@ -71,6 +71,7 @@ EnumPropertyItem rna_enum_space_type_items[] = {
 	{SPACE_NLA, "NLA_EDITOR", ICON_NLA, "NLA Editor", "Combine and layer Actions"},
 	{0, "", ICON_NONE, NULL, NULL},
 	{SPACE_IMAGE, "IMAGE_EDITOR", ICON_IMAGE_COL, "UV/Image Editor", "View and edit images and UV Maps"},
+    {SPACE_UVS, "UVS_EDITOR", ICON_IMAGE_COL, "UV/Texture Editor", "View and edit textures and UV Maps"},
 	{SPACE_SEQ, "SEQUENCE_EDITOR", ICON_SEQUENCE, "Video Sequence Editor", "Video editing tools"},
 	{SPACE_CLIP, "CLIP_EDITOR", ICON_CLIP, "Movie Clip Editor", "Motion tracking tools"},
 	{SPACE_TEXT, "TEXT_EDITOR", ICON_TEXT, "Text Editor", "Edit scripts and in-file documentation"},
@@ -315,6 +316,8 @@ static StructRNA *rna_Space_refine(struct PointerRNA *ptr)
 			return &RNA_SpaceUserPreferences;
 		case SPACE_CLIP:
 			return &RNA_SpaceClipEditor;
+		case SPACE_UVS:
+			return &RNA_SpaceUVsTextureEditor;
 		default:
 			return &RNA_Space;
 	}
@@ -4734,6 +4737,45 @@ static void rna_def_space_clip(BlenderRNA *brna)
 	RNA_def_property_update(prop, NC_SPACE | ND_SPACE_CLIP, NULL);
 }
 
+static void rna_def_space_uvs_textures(BlenderRNA *brna)
+{
+	StructRNA *srna = RNA_def_struct(brna, "SpaceUVsTextureEditor", "Space");
+	RNA_def_struct_sdna(srna, "SpaceUVs");
+	RNA_def_struct_ui_text(srna, "Space UVs/Texture Editor", "UVs/Texture editor space data");
+
+	PropertyRNA *prop;
+
+	/* udim numbers */
+	prop = RNA_def_property(srna, "show_udim_number", PROP_BOOLEAN, PROP_NONE);
+	RNA_def_property_boolean_sdna(prop, NULL, "flags", SUV_SHOW_UDIM_NUMBERS);
+	RNA_def_property_ui_text(prop, "Show UDIM Numbers", "Show UDIM numbers");
+	RNA_def_property_update(prop, NC_IMAGE | ND_DISPLAY, NULL);
+
+	/* spans */
+	prop = RNA_def_property(srna, "min_span_u", PROP_INT, PROP_NONE);
+	RNA_def_property_int_sdna(prop, NULL, "uspan_min");
+	RNA_def_property_range(prop, 0, 50);
+	RNA_def_property_ui_text(prop, "U Span Min", "Min coordinate of the tiles in the U direction.");
+	RNA_def_property_update(prop, NC_IMAGE | ND_DISPLAY, NULL);
+
+	prop = RNA_def_property(srna, "min_span_v", PROP_INT, PROP_NONE);
+	RNA_def_property_int_sdna(prop, NULL, "vspan_min");
+	RNA_def_property_range(prop, 0, 50);
+	RNA_def_property_ui_text(prop, "V Span Min", "Min coordinate of the tiles in the V direction.");
+	RNA_def_property_update(prop, NC_IMAGE | ND_DISPLAY, NULL);
+
+	prop = RNA_def_property(srna, "max_span_u", PROP_INT, PROP_NONE);
+	RNA_def_property_int_sdna(prop, NULL, "uspan_max");
+	RNA_def_property_range(prop, 0, 50);
+	RNA_def_property_ui_text(prop, "U Span Max", "Max coordinate of the tiles in the U direction.");
+	RNA_def_property_update(prop, NC_IMAGE | ND_DISPLAY, NULL);
+
+	prop = RNA_def_property(srna, "max_span_v", PROP_INT, PROP_NONE);
+	RNA_def_property_int_sdna(prop, NULL, "vspan_max");
+	RNA_def_property_range(prop, 0, 50);
+	RNA_def_property_ui_text(prop, "V Span Max", "Max coordinate of the tiles in the U direction.");
+	RNA_def_property_update(prop, NC_IMAGE | ND_DISPLAY, NULL);
+}
 
 void RNA_def_space(BlenderRNA *brna)
 {
@@ -4760,6 +4802,7 @@ void RNA_def_space(BlenderRNA *brna)
 	rna_def_space_node(brna);
 	rna_def_space_logic(brna);
 	rna_def_space_clip(brna);
+	rna_def_space_uvs_textures(brna);
 }
 
 #endif

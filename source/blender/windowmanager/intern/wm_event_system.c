@@ -1967,7 +1967,7 @@ static int wm_action_not_handled(int action)
 
 static int wm_handlers_do_intern(bContext *C, wmEvent *event, ListBase *handlers)
 {
-	const bool do_debug_handler = (G.debug & G_DEBUG_HANDLERS) &&
+	const bool do_debug_handler = (false || (G.debug & G_DEBUG_HANDLERS)) &&
 	        /* comment this out to flood the console! (if you really want to test) */
 	        !ELEM(event->type, MOUSEMOVE, INBETWEEN_MOUSEMOVE)
 	        ;
@@ -2007,6 +2007,10 @@ static int wm_handlers_do_intern(bContext *C, wmEvent *event, ListBase *handlers
 			if (handler->keymap) {
 				wmKeyMap *keymap = WM_keymap_active(wm, handler->keymap);
 				wmKeyMapItem *kmi;
+
+				if (STREQ(keymap->idname, "UVs Generic")) {
+					fprintf(stderr, "Dealing with keys from UVs Space");
+				}
 
 				PRINT("%s:   checking '%s' ...", __func__, keymap->idname);
 

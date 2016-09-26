@@ -581,6 +581,7 @@ extern StructRNA RNA_SpaceSequenceEditor;
 extern StructRNA RNA_SpaceTextEditor;
 extern StructRNA RNA_SpaceTimeline;
 extern StructRNA RNA_SpaceUVEditor;
+extern StructRNA RNA_SpaceUVsTextureEditor;
 extern StructRNA RNA_SpaceUserPreferences;
 extern StructRNA RNA_SpaceView3D;
 extern StructRNA RNA_SpaceClipEditor;

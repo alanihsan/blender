@@ -3157,6 +3157,9 @@ static void write_screens(WriteData *wd, ListBase *scrbase)
 				else if (sl->spacetype == SPACE_INFO) {
 					writestruct(wd, DATA, SpaceInfo, 1, sl);
 				}
+				else if (sl->spacetype == SPACE_UVS) {
+					writestruct(wd, DATA, SpaceUVs, 1, sl);
+				}
 
 				sl = sl->next;
 			}
