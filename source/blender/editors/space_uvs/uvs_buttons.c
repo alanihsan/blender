@@ -53,15 +53,8 @@
 
 static void ED_space_uvs_get_size(SpaceUVs *suvs, int *width, int *height)
 {
+	UNUSED_VARS(suvs);
 	*width = *height = IMG_SIZE_FALLBACK;
-}
-
-static void ED_space_clip_get_size_fl(SpaceUVs *suvs, float size[2])
-{
-	int size_i[2];
-	ED_space_uvs_get_size(suvs, &size_i[0], &size_i[1]);
-	size[0] = size_i[0];
-	size[1] = size_i[1];
 }
 
 static void ED_space_uvs_get_zoom(SpaceUVs *suvs, ARegion *ar, float *zoomx, float *zoomy)
@@ -195,11 +188,10 @@ static int view_pan_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 
 		return OPERATOR_FINISHED;
 	}
-	else {
-		view_pan_init(C, op, event);
 
-		return OPERATOR_RUNNING_MODAL;
-	}
+	view_pan_init(C, op, event);
+
+	return OPERATOR_RUNNING_MODAL;
 }
 
 static int view_pan_modal(bContext *C, wmOperator *op, const wmEvent *event)
@@ -308,24 +300,6 @@ static void suvs_zoom_set_factor(const bContext *C, float zoomfac, float locatio
 	SpaceUVs *suvs = CTX_wm_space_uvs(C);
 
 	suvs_zoom_set(C, suvs->zoom * zoomfac, location);
-}
-
-static void suvs_zoom_set_factor_exec(bContext *C, const wmEvent *event, float factor)
-{
-	ARegion *ar = CTX_wm_region(C);
-
-	float location[2], *mpos = NULL;
-
-	if (event) {
-		SpaceUVs *suvs = CTX_wm_space_uvs(C);
-
-		ED_uvs_mouse_pos(suvs, ar, event->mval, location);
-		mpos = location;
-	}
-
-	suvs_zoom_set_factor(C, factor, mpos);
-
-	ED_region_tag_redraw(ar);
 }
 
 /********************** view zoom in/out operator *********************/
