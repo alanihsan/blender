@@ -49,6 +49,8 @@
 #include "ED_screen.h"
 #include "ED_space_api.h"
 
+#include "RNA_access.h"
+
 #include "UI_resources.h"
 #include "UI_view2d.h"
 
@@ -153,6 +155,7 @@ static void uvs_operatortypes(void)
 	WM_operatortype_append(UVS_OT_view_pan);
 	WM_operatortype_append(UVS_OT_view_zoom_in);
 	WM_operatortype_append(UVS_OT_view_zoom_out);
+	WM_operatortype_append(UVS_OT_view_zoom_ratio);
 }
 
 static void uvs_keymap(wmKeyConfig *keyconf)
@@ -161,12 +164,27 @@ static void uvs_keymap(wmKeyConfig *keyconf)
 
 	WM_keymap_add_item(keymap, "UVS_OT_properties", NKEY, KM_PRESS, 0, 0);
 
+	keymap = WM_keymap_find(keyconf, "UVs Editor", SPACE_UVS, 0);
+
 	WM_keymap_add_item(keymap, "UVS_OT_view_pan", MIDDLEMOUSE, KM_PRESS, 0, 0);
 	WM_keymap_add_item(keymap, "UVS_OT_view_pan", MIDDLEMOUSE, KM_PRESS, KM_SHIFT, 0);
 	WM_keymap_add_item(keymap, "UVS_OT_view_pan", MOUSEPAN, 0, 0, 0);
 
 	WM_keymap_add_item(keymap, "UVS_OT_view_zoom_in", WHEELINMOUSE, KM_PRESS, 0, 0);
 	WM_keymap_add_item(keymap, "UVS_OT_view_zoom_out", WHEELOUTMOUSE, KM_PRESS, 0, 0);
+
+	/* ctrl now works as well, shift + numpad works as arrow keys on Windows */
+	RNA_float_set(WM_keymap_add_item(keymap, "UVS_OT_view_zoom_ratio", PAD8, KM_PRESS, KM_CTRL, 0)->ptr, "ratio", 8.0f);
+	RNA_float_set(WM_keymap_add_item(keymap, "UVS_OT_view_zoom_ratio", PAD4, KM_PRESS, KM_CTRL, 0)->ptr, "ratio", 4.0f);
+	RNA_float_set(WM_keymap_add_item(keymap, "UVS_OT_view_zoom_ratio", PAD2, KM_PRESS, KM_CTRL, 0)->ptr, "ratio", 2.0f);
+	RNA_float_set(WM_keymap_add_item(keymap, "UVS_OT_view_zoom_ratio", PAD8, KM_PRESS, KM_SHIFT, 0)->ptr, "ratio", 8.0f);
+	RNA_float_set(WM_keymap_add_item(keymap, "UVS_OT_view_zoom_ratio", PAD4, KM_PRESS, KM_SHIFT, 0)->ptr, "ratio", 4.0f);
+	RNA_float_set(WM_keymap_add_item(keymap, "UVS_OT_view_zoom_ratio", PAD2, KM_PRESS, KM_SHIFT, 0)->ptr, "ratio", 2.0f);
+
+	RNA_float_set(WM_keymap_add_item(keymap, "UVS_OT_view_zoom_ratio", PAD1, KM_PRESS, 0, 0)->ptr, "ratio", 1.0f);
+	RNA_float_set(WM_keymap_add_item(keymap, "UVS_OT_view_zoom_ratio", PAD2, KM_PRESS, 0, 0)->ptr, "ratio", 0.5f);
+	RNA_float_set(WM_keymap_add_item(keymap, "UVS_OT_view_zoom_ratio", PAD4, KM_PRESS, 0, 0)->ptr, "ratio", 0.25f);
+	RNA_float_set(WM_keymap_add_item(keymap, "UVS_OT_view_zoom_ratio", PAD8, KM_PRESS, 0, 0)->ptr, "ratio", 0.125f);
 }
 
 /* ************************* Main ************************* */
@@ -174,15 +192,13 @@ static void uvs_keymap(wmKeyConfig *keyconf)
 /* add handlers, stuff you only do once or on area/region changes */
 static void uvs_main_region_init(wmWindowManager *wm, ARegion *ar)
 {
-	/* do not use here, the properties changed in uvss do a system-wide refresh, then scroller jumps back */
-	/*	ar->v2d.flag &= ~V2D_IS_INITIALISED; */
-
-	ar->v2d.scroll = V2D_SCROLL_RIGHT | V2D_SCROLL_VERTICAL_HIDE;
-
 	UI_view2d_region_reinit(&ar->v2d, V2D_COMMONVIEW_STANDARD, ar->winx, ar->winy);
 
 	wmKeyMap *keymap = WM_keymap_find(wm->defaultconf, "UVs Generic", SPACE_UVS, 0);
 	WM_event_add_keymap_handler(&ar->handlers, keymap);
+
+	keymap = WM_keymap_find(wm->defaultconf, "UVs Editor", SPACE_UVS, 0);
+	WM_event_add_keymap_handler_bb(&ar->handlers, keymap, &ar->v2d.mask, &ar->winrct);
 }
 
 static void uvs_main_region_listener(bScreen *sc, ScrArea *sa, ARegion *ar, wmNotifier *wmn)
@@ -202,8 +218,6 @@ static void uvs_main_region_set_view2d(SpaceUVs *suvs, ARegion *ar)
 	const float suvs_zoom = suvs->zoom;
 	const float suvs_xof = suvs->xof;
 	const float suvs_yof = suvs->yof;
-
-	//fprintf(stderr, "SpaceUVs offset: %f, %f\n", suvs->xof, suvs->yof);
 
 	const float w = 256;
 	const float h = 256;
@@ -343,7 +357,7 @@ void ED_spacetype_uvs(void)
 	art->init = uvs_main_region_init;
 	art->draw = uvs_main_region_draw;
 	art->listener = uvs_main_region_listener;
-	art->keymapflag = ED_KEYMAP_FRAMES | ED_KEYMAP_UI | ED_KEYMAP_VIEW2D;
+	art->keymapflag = ED_KEYMAP_FRAMES | ED_KEYMAP_UI;
 
 	BLI_addhead(&st->regiontypes, art);
 

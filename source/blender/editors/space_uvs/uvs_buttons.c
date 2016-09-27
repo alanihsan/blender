@@ -167,7 +167,6 @@ static void view_pan_exit(bContext *C, wmOperator *op, bool cancel)
 
 static int view_pan_exec(bContext *C, wmOperator *op)
 {
-	fprintf(stderr, "%s\n", __func__);
 	SpaceUVs *suvs = CTX_wm_space_uvs(C);
 	float offset[2];
 
@@ -183,7 +182,6 @@ static int view_pan_exec(bContext *C, wmOperator *op)
 
 static int view_pan_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 {
-	fprintf(stderr, "%s\n", __func__);
 	if (event->type == MOUSEPAN) {
 		SpaceUVs *suvs = CTX_wm_space_uvs(C);
 		float offset[2];
@@ -206,7 +204,6 @@ static int view_pan_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 
 static int view_pan_modal(bContext *C, wmOperator *op, const wmEvent *event)
 {
-	fprintf(stderr, "%s\n", __func__);
 	SpaceUVs *suvs = CTX_wm_space_uvs(C);
 	ViewPanData *vpd = op->customdata;
 	float offset[2];
@@ -268,7 +265,7 @@ void UVS_OT_view_pan(wmOperatorType *ot)
 
 /******************** view navigation utilities *********************/
 
-static void sclip_zoom_set(const bContext *C, float zoom, float location[2])
+static void suvs_zoom_set(const bContext *C, float zoom, float location[2])
 {
 	SpaceUVs *suvs = CTX_wm_space_uvs(C);
 	ARegion *ar = CTX_wm_region(C);
@@ -306,14 +303,14 @@ static void sclip_zoom_set(const bContext *C, float zoom, float location[2])
 	}
 }
 
-static void sclip_zoom_set_factor(const bContext *C, float zoomfac, float location[2])
+static void suvs_zoom_set_factor(const bContext *C, float zoomfac, float location[2])
 {
 	SpaceUVs *suvs = CTX_wm_space_uvs(C);
 
-	sclip_zoom_set(C, suvs->zoom * zoomfac, location);
+	suvs_zoom_set(C, suvs->zoom * zoomfac, location);
 }
 
-static void sclip_zoom_set_factor_exec(bContext *C, const wmEvent *event, float factor)
+static void suvs_zoom_set_factor_exec(bContext *C, const wmEvent *event, float factor)
 {
 	ARegion *ar = CTX_wm_region(C);
 
@@ -326,7 +323,7 @@ static void sclip_zoom_set_factor_exec(bContext *C, const wmEvent *event, float 
 		mpos = location;
 	}
 
-	sclip_zoom_set_factor(C, factor, mpos);
+	suvs_zoom_set_factor(C, factor, mpos);
 
 	ED_region_tag_redraw(ar);
 }
@@ -335,12 +332,11 @@ static void sclip_zoom_set_factor_exec(bContext *C, const wmEvent *event, float 
 
 static int view_zoom_in_exec(bContext *C, wmOperator *op)
 {
-	fprintf(stderr, "%s\n", __func__);
 	float location[2];
 
 	RNA_float_get_array(op->ptr, "location", location);
 
-	sclip_zoom_set_factor(C, powf(2.0f, 1.0f / 3.0f), location);
+	suvs_zoom_set_factor(C, powf(2.0f, 1.0f / 3.0f), location);
 
 	ED_region_tag_redraw(CTX_wm_region(C));
 
@@ -349,7 +345,6 @@ static int view_zoom_in_exec(bContext *C, wmOperator *op)
 
 static int view_zoom_in_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 {
-	fprintf(stderr, "%s\n", __func__);
 	SpaceUVs *suvs = CTX_wm_space_uvs(C);
 	ARegion *ar = CTX_wm_region(C);
 
@@ -375,6 +370,9 @@ void UVS_OT_view_zoom_in(wmOperatorType *ot)
 	ot->invoke = view_zoom_in_invoke;
 	ot->poll = ED_operator_uvs_active;
 
+	/* flags */
+	ot->flag = OPTYPE_LOCK_BYPASS;
+
 	/* properties */
 	prop = RNA_def_float_vector(ot->srna, "location", 2, NULL, -FLT_MAX, FLT_MAX, "Location",
 	                            "Cursor location in screen coordinates", -10.0f, 10.0f);
@@ -383,12 +381,11 @@ void UVS_OT_view_zoom_in(wmOperatorType *ot)
 
 static int view_zoom_out_exec(bContext *C, wmOperator *op)
 {
-	fprintf(stderr, "%s\n", __func__);
 	float location[2];
 
 	RNA_float_get_array(op->ptr, "location", location);
 
-	sclip_zoom_set_factor(C, powf(0.5f, 1.0f / 3.0f), location);
+	suvs_zoom_set_factor(C, powf(0.5f, 1.0f / 3.0f), location);
 
 	ED_region_tag_redraw(CTX_wm_region(C));
 
@@ -397,7 +394,6 @@ static int view_zoom_out_exec(bContext *C, wmOperator *op)
 
 static int view_zoom_out_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 {
-	fprintf(stderr, "%s\n", __func__);
 	SpaceUVs *suvs = CTX_wm_space_uvs(C);
 	ARegion *ar = CTX_wm_region(C);
 
@@ -423,8 +419,48 @@ void UVS_OT_view_zoom_out(wmOperatorType *ot)
 	ot->invoke = view_zoom_out_invoke;
 	ot->poll = ED_operator_uvs_active;
 
+	/* flags */
+	ot->flag = OPTYPE_LOCK_BYPASS;
+
 	/* properties */
 	prop = RNA_def_float_vector(ot->srna, "location", 2, NULL, -FLT_MAX, FLT_MAX, "Location",
 	                            "Cursor location in normalized (0.0-1.0) coordinates", -10.0f, 10.0f);
 	RNA_def_property_flag(prop, PROP_HIDDEN);
+}
+
+/********************** view zoom ratio operator *********************/
+
+static int uvs_view_zoom_ratio_exec(bContext *C, wmOperator *op)
+{
+	SpaceUVs *suvs = CTX_wm_space_uvs(C);
+	ARegion *ar = CTX_wm_region(C);
+
+	suvs_zoom_set_factor(C, RNA_float_get(op->ptr, "ratio"), NULL);
+
+	/* ensure pixel exact locations for draw */
+	suvs->xof = (int)suvs->xof;
+	suvs->yof = (int)suvs->yof;
+
+	ED_region_tag_redraw(ar);
+
+	return OPERATOR_FINISHED;
+}
+
+void UVS_OT_view_zoom_ratio(wmOperatorType *ot)
+{
+	/* identifiers */
+	ot->name = "View Zoom Ratio";
+	ot->idname = "UVS_OT_view_zoom_ratio";
+	ot->description = "Set zoom ratio of the view";
+
+	/* api callbacks */
+	ot->exec = uvs_view_zoom_ratio_exec;
+	ot->poll = ED_operator_uvs_active;
+
+	/* flags */
+	ot->flag = OPTYPE_LOCK_BYPASS;
+
+	/* properties */
+	RNA_def_float(ot->srna, "ratio", 0.0f, -FLT_MAX, FLT_MAX,
+	              "Ratio", "Zoom ratio, 1.0 is 1:1, higher is zoomed in, lower is zoomed out", -FLT_MAX, FLT_MAX);
 }
