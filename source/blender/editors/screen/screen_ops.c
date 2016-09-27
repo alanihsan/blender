@@ -307,7 +307,6 @@ int ED_operator_image_active(bContext *C)
 
 int ED_operator_uvs_active(bContext *C)
 {
-	fprintf(stderr, "%s\n", __func__);
 	return ed_spacetype_test(C, SPACE_UVS);
 }
 
