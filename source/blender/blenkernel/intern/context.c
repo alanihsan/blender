@@ -813,7 +813,7 @@ struct SpaceClip *CTX_wm_space_clip(const bContext *C)
 	return NULL;
 }
 
-struct SpaceClip *CTX_wm_space_uvs(const bContext *C)
+struct SpaceUVs *CTX_wm_space_uvs(const bContext *C)
 {
 	ScrArea *sa = CTX_wm_area(C);
 	if (sa && sa->spacetype == SPACE_UVS)

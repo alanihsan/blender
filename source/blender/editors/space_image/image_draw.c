@@ -896,7 +896,7 @@ void draw_image_main(const bContext *C, ARegion *ar)
 
 	/* draw the image or grid */
 	if (ibuf == NULL) {
-		ED_region_grid_draw(ar, zoomx, zoomy);
+		ED_region_grid_draw(ar, zoomx, zoomy, 0.0f, 0.0f);
 	}
 	else {
 

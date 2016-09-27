@@ -36,12 +36,15 @@
 #include "DNA_space_types.h"
 
 #include "BLI_listbase.h"
+#include "BLI_rect.h"
 #include "BLI_utildefines.h"
 
 #include "BKE_context.h"
 #include "BKE_screen.h"
 
 #include "BIF_gl.h"
+
+#include "BLF_api.h"
 
 #include "ED_screen.h"
 #include "ED_space_api.h"
@@ -143,7 +146,6 @@ static SpaceLink *uvs_duplicate(SpaceLink *sl)
 	return (SpaceLink *)spuvs;
 }
 
-
 static void uvs_operatortypes(void)
 {
 	WM_operatortype_append(UVS_OT_properties);
@@ -157,6 +159,8 @@ static void uvs_keymap(wmKeyConfig *keyconf)
 	WM_keymap_add_item(keymap, "UVS_OT_properties", NKEY, KM_PRESS, 0, 0);
 }
 
+/* ************************* Main ************************* */
+
 /* add handlers, stuff you only do once or on area/region changes */
 static void uvs_main_region_init(wmWindowManager *wm, ARegion *ar)
 {
@@ -168,29 +172,93 @@ static void uvs_main_region_init(wmWindowManager *wm, ARegion *ar)
 	ED_region_panels_init(wm, ar);
 }
 
+static void uvs_main_region_listener(bScreen *sc, ScrArea *sa, ARegion *ar, wmNotifier *wmn)
+{
+	UNUSED_VARS(sc, sa);
+
+	/* context changes */
+	switch (wmn->category) {
+		case NC_IMAGE:
+			ED_region_tag_redraw(ar);
+			break;
+	}
+}
+
+static void uvs_main_region_set_view2d(SpaceUVs *suvs, ARegion *ar)
+{
+	UNUSED_VARS(suvs);
+	const float suvs_zoom = 1.0f;
+	const int suvs_xof = 0;
+	const int suvs_yof = 0;
+
+	const float w = 256;
+	const float h = 256;
+
+	int winx = BLI_rcti_size_x(&ar->winrct) + 1;
+	int winy = BLI_rcti_size_y(&ar->winrct) + 1;
+
+	ar->v2d.tot.xmin = 0;
+	ar->v2d.tot.ymin = 0;
+	ar->v2d.tot.xmax = w;
+	ar->v2d.tot.ymax = h;
+
+	ar->v2d.mask.xmin = ar->v2d.mask.ymin = 0;
+	ar->v2d.mask.xmax = winx;
+	ar->v2d.mask.ymax = winy;
+
+	/* which part of the image space do we see? */
+	float x1 = ar->winrct.xmin + (winx - suvs_zoom * w) / 2.0f;
+	float y1 = ar->winrct.ymin + (winy - suvs_zoom * h) / 2.0f;
+
+	x1 -= suvs_zoom * suvs_xof;
+	y1 -= suvs_zoom * suvs_yof;
+
+	/* relative display right */
+	ar->v2d.cur.xmin = ((ar->winrct.xmin - (float)x1) / suvs_zoom);
+	ar->v2d.cur.xmax = ar->v2d.cur.xmin + ((float)winx / suvs_zoom);
+
+	/* relative display left */
+	ar->v2d.cur.ymin = ((ar->winrct.ymin - (float)y1) / suvs_zoom);
+	ar->v2d.cur.ymax = ar->v2d.cur.ymin + ((float)winy / suvs_zoom);
+
+	/* normalize 0.0..1.0 */
+	ar->v2d.cur.xmin /= w;
+	ar->v2d.cur.xmax /= w;
+	ar->v2d.cur.ymin /= h;
+	ar->v2d.cur.ymax /= h;
+}
+
 static void uvs_main_region_draw(const bContext *C, ARegion *ar)
 {
-	View2D *v2d = &ar->v2d;
+	SpaceUVs *suvs = CTX_wm_space_uvs(C);
+	uvs_main_region_set_view2d(suvs, ar);
 
 	UI_ThemeClearColor(TH_BACK);
 	glClear(GL_COLOR_BUFFER_BIT);
 
-	UI_view2d_view_ortho(v2d);
+	int x1, y1;
 
-	ED_region_draw_cb_draw(C, ar, REGION_DRAW_PRE_VIEW);
+	char udim_str[8];
+	for (int x = suvs->uspan_min; x < suvs->uspan_max; ++x) {
+		for (int y = suvs->vspan_min; y < suvs->vspan_max; ++y) {
+			ED_region_grid_draw(ar, 1.0f, 1.0f, x, y);
 
-	/* only set once */
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glEnable(GL_MAP1_VERTEX_3);
+			if ((suvs->flags & SUV_SHOW_UDIM_NUMBERS) == 0) {
+				continue;
+			}
 
-	/* default grid */
-	UI_view2d_multi_grid_draw(v2d, TH_BACK, U.widget_unit, 5, 2);
+			UI_ThemeColor(TH_TEXT);
 
-	ED_region_draw_cb_draw(C, ar, REGION_DRAW_POST_VIEW);
+			const int udim_index = 1000 + (x + 1) + (y * 10);
+			sprintf(udim_str, "%d", udim_index);
 
-	/* reset view matrix */
-	UI_view2d_view_restore(C);
+			UI_view2d_view_to_region(&ar->v2d, x, y, &x1, &y1);
+			BLF_draw_default_ascii(x1 + 4.0f * U.pixelsize, y1 + 4.0f * U.pixelsize, 0.0f, udim_str, 4);
+		}
+	}
 }
+
+/* ************************* Header ************************* */
 
 /* add handlers, stuff you only do once or on area/region changes */
 static void uvs_header_region_init(wmWindowManager *wm, ARegion *ar)
@@ -210,12 +278,6 @@ static void uvs_header_listener(bScreen *sc, ScrArea *sa, ARegion *ar, wmNotifie
 	/* context changes */
 }
 
-static void uvs_main_region_listener(bScreen *sc, ScrArea *sa, ARegion *ar, wmNotifier *wmn)
-{
-	UNUSED_VARS(sc, sa, ar, wmn);
-	/* context changes */
-}
-
 /* ************************* Toolbar ************************* */
 
 static void uvs_tools_region_init(wmWindowManager *wm, ARegion *ar)
@@ -230,9 +292,17 @@ static void uvs_tools_region_draw(const bContext *C, ARegion *ar)
 
 static void uvs_tools_region_listener(bScreen *sc, ScrArea *sa, ARegion *ar, wmNotifier *wmn)
 {
-	UNUSED_VARS(sc, sa, ar, wmn);
+	UNUSED_VARS(sc, sa);
+
 	/* context changes */
+	switch (wmn->category) {
+		case NC_IMAGE:
+			ED_region_tag_redraw(ar);
+			break;
+	}
 }
+
+/* ************************************************************************** */
 
 /* only called once, from space/spacetypes.c */
 void ED_spacetype_uvs(void)

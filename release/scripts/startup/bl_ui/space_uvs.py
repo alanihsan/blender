@@ -49,6 +49,7 @@ class UVS_PT_settings(Panel):
         col.prop(sc, "max_span_u")
         col.prop(sc, "min_span_v")
         col.prop(sc, "max_span_v")
+        col.prop(sc, "show_udim_numbers")
 
 
 if __name__ == "__main__":  # only for live edit.
