@@ -1342,6 +1342,10 @@ typedef struct SpaceUVs {
 	int spacetype;
 	int flags;
 
+	float zoom;
+	float xof, yof;
+	int pad;
+
 	short uspan_min;  /* Min coordinate of the tiles in the U direction. */
 	short vspan_min;  /* Min coordinate of the tiles in the V direction. */
 	short uspan_max;  /* Max coordinate of the tiles in the U direction. */

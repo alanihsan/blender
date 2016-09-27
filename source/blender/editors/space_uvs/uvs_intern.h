@@ -39,5 +39,8 @@ struct wmOperatorType;
 struct ARegion *uvs_has_buttons_region(struct ScrArea *sa);
 
 void UVS_OT_properties(struct wmOperatorType *ot);
+void UVS_OT_view_pan(struct wmOperatorType *ot);
+void UVS_OT_view_zoom_in(struct wmOperatorType *ot);
+void UVS_OT_view_zoom_out(struct wmOperatorType *ot);
 
 #endif  /* __UVS_INTERN_H__ */

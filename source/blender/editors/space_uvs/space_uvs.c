@@ -98,6 +98,7 @@ static SpaceLink *uvs_new(const bContext *C)
 	suvs->uspan_max = 1;
 	suvs->vspan_min = 0;
 	suvs->vspan_max = 1;
+	suvs->zoom = 1.0f;
 
 	ARegion *ar;
 
@@ -149,14 +150,23 @@ static SpaceLink *uvs_duplicate(SpaceLink *sl)
 static void uvs_operatortypes(void)
 {
 	WM_operatortype_append(UVS_OT_properties);
+	WM_operatortype_append(UVS_OT_view_pan);
+	WM_operatortype_append(UVS_OT_view_zoom_in);
+	WM_operatortype_append(UVS_OT_view_zoom_out);
 }
 
 static void uvs_keymap(wmKeyConfig *keyconf)
 {
-	fprintf(stderr, "%s\n", __func__);
 	wmKeyMap *keymap = WM_keymap_find(keyconf, "UVs Generic", SPACE_UVS, 0);
 
 	WM_keymap_add_item(keymap, "UVS_OT_properties", NKEY, KM_PRESS, 0, 0);
+
+	WM_keymap_add_item(keymap, "UVS_OT_view_pan", MIDDLEMOUSE, KM_PRESS, 0, 0);
+	WM_keymap_add_item(keymap, "UVS_OT_view_pan", MIDDLEMOUSE, KM_PRESS, KM_SHIFT, 0);
+	WM_keymap_add_item(keymap, "UVS_OT_view_pan", MOUSEPAN, 0, 0, 0);
+
+	WM_keymap_add_item(keymap, "UVS_OT_view_zoom_in", WHEELINMOUSE, KM_PRESS, 0, 0);
+	WM_keymap_add_item(keymap, "UVS_OT_view_zoom_out", WHEELOUTMOUSE, KM_PRESS, 0, 0);
 }
 
 /* ************************* Main ************************* */
@@ -169,7 +179,10 @@ static void uvs_main_region_init(wmWindowManager *wm, ARegion *ar)
 
 	ar->v2d.scroll = V2D_SCROLL_RIGHT | V2D_SCROLL_VERTICAL_HIDE;
 
-	ED_region_panels_init(wm, ar);
+	UI_view2d_region_reinit(&ar->v2d, V2D_COMMONVIEW_STANDARD, ar->winx, ar->winy);
+
+	wmKeyMap *keymap = WM_keymap_find(wm->defaultconf, "UVs Generic", SPACE_UVS, 0);
+	WM_event_add_keymap_handler(&ar->handlers, keymap);
 }
 
 static void uvs_main_region_listener(bScreen *sc, ScrArea *sa, ARegion *ar, wmNotifier *wmn)
@@ -186,10 +199,11 @@ static void uvs_main_region_listener(bScreen *sc, ScrArea *sa, ARegion *ar, wmNo
 
 static void uvs_main_region_set_view2d(SpaceUVs *suvs, ARegion *ar)
 {
-	UNUSED_VARS(suvs);
-	const float suvs_zoom = 1.0f;
-	const int suvs_xof = 0;
-	const int suvs_yof = 0;
+	const float suvs_zoom = suvs->zoom;
+	const float suvs_xof = suvs->xof;
+	const float suvs_yof = suvs->yof;
+
+	//fprintf(stderr, "SpaceUVs offset: %f, %f\n", suvs->xof, suvs->yof);
 
 	const float w = 256;
 	const float h = 256;
@@ -263,8 +277,10 @@ static void uvs_main_region_draw(const bContext *C, ARegion *ar)
 /* add handlers, stuff you only do once or on area/region changes */
 static void uvs_header_region_init(wmWindowManager *wm, ARegion *ar)
 {
-	UNUSED_VARS(wm);
 	ED_region_header_init(ar);
+
+	wmKeyMap *keymap = WM_keymap_find(wm->defaultconf, "UVs Generic", SPACE_UVS, 0);
+	WM_event_add_keymap_handler(&ar->handlers, keymap);
 }
 
 static void uvs_header_region_draw(const bContext *C, ARegion *ar)
@@ -283,6 +299,9 @@ static void uvs_header_listener(bScreen *sc, ScrArea *sa, ARegion *ar, wmNotifie
 static void uvs_tools_region_init(wmWindowManager *wm, ARegion *ar)
 {
 	ED_region_panels_init(wm, ar);
+
+	wmKeyMap *keymap = WM_keymap_find(wm->defaultconf, "UVs Generic", SPACE_UVS, 0);
+	WM_event_add_keymap_handler(&ar->handlers, keymap);
 }
 
 static void uvs_tools_region_draw(const bContext *C, ARegion *ar)
