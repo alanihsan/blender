@@ -438,3 +438,111 @@ void UVS_OT_view_zoom_ratio(wmOperatorType *ot)
 	RNA_def_float(ot->srna, "ratio", 0.0f, -FLT_MAX, FLT_MAX,
 	              "Ratio", "Zoom ratio, 1.0 is 1:1, higher is zoomed in, lower is zoomed out", -FLT_MAX, FLT_MAX);
 }
+
+/********************** view zoom ratio operator *********************/
+
+static int paint_stroke_modal(bContext *C, wmOperator *op, const wmEvent *event)
+{
+	UNUSED_VARS(op);
+
+	SpaceUVs *suvs = CTX_wm_space_uvs(C);
+	ARegion *ar = CTX_wm_region(C);
+
+	if (event->val == KM_RELEASE) {
+		return OPERATOR_FINISHED;
+	}
+
+	float mouse[2];
+	ED_uvs_mouse_pos(suvs, ar, event->mval, mouse);
+
+	if (mouse[0] < 0.0f || mouse[1] < 0.0f) {
+		return OPERATOR_RUNNING_MODAL;
+	}
+
+	const int u_index = (int)mouse[0];
+	const int v_index = (int)mouse[1];
+
+	if (u_index >= suvs->uspan_max || v_index >= suvs->uspan_max) {
+		return OPERATOR_RUNNING_MODAL;
+	}
+
+	const int udim_index = 1000 + (u_index + 1) + (v_index * 10);
+
+	fprintf(stderr, "Mouse pos: %f, %f\n", mouse[0], mouse[1]);
+	fprintf(stderr, "UDIM tile: %d\n", udim_index);
+
+	return OPERATOR_RUNNING_MODAL;
+}
+
+static int paint_exec(bContext *C, wmOperator *op)
+{
+	SpaceUVs *suvs = CTX_wm_space_uvs(C);
+	float mouse[2];
+	RNA_float_get_array(op->ptr, "location", mouse);
+
+	if (mouse[0] < 0.0f || mouse[1] < 0.0f) {
+		return OPERATOR_CANCELLED;
+	}
+
+	const int u_index = (int)mouse[0];
+	const int v_index = (int)mouse[1];
+
+	if (u_index >= suvs->uspan_max || v_index >= suvs->uspan_max) {
+		return OPERATOR_CANCELLED;
+	}
+
+	const int udim_index = 1000 + (u_index + 1) + (v_index * 10);
+
+	fprintf(stderr, "Mouse pos: %f, %f\n", mouse[0], mouse[1]);
+	fprintf(stderr, "UDIM tile: %d\n", udim_index);
+
+	/* frees op->customdata */
+	return OPERATOR_FINISHED;
+}
+
+static int paint_invoke(bContext *C, wmOperator *op, const wmEvent *event)
+{
+	SpaceUVs *suvs = CTX_wm_space_uvs(C);
+	ARegion *ar = CTX_wm_region(C);
+
+	float location[2];
+	ED_uvs_mouse_pos(suvs, ar, event->mval, location);
+	RNA_float_set_array(op->ptr, "location", location);
+
+	int retval;
+
+	if ((retval = op->type->modal(C, op, event)) == OPERATOR_FINISHED) {
+		return OPERATOR_FINISHED;
+	}
+
+	/* add modal handler */
+	WM_event_add_modal_handler(C, op);
+
+	OPERATOR_RETVAL_CHECK(retval);
+	BLI_assert(retval == OPERATOR_RUNNING_MODAL);
+
+	return OPERATOR_RUNNING_MODAL;
+}
+
+void UVS_OT_paint(wmOperatorType *ot)
+{
+	/* identifiers */
+	ot->name = "View Zoom Ratio";
+	ot->idname = "UVS_OT_paint";
+	ot->description = "Set zoom ratio of the view";
+
+	/* api callbacks */
+	ot->modal = paint_stroke_modal;
+	ot->invoke = paint_invoke;
+	ot->exec = paint_exec;
+	ot->poll = ED_operator_uvs_active;
+
+	/* flags */
+	ot->flag = OPTYPE_LOCK_BYPASS;
+
+	/* properties */
+	PropertyRNA *prop;
+	prop = RNA_def_float_vector(ot->srna, "location", 2, NULL, -FLT_MAX, FLT_MAX, "Location",
+	                            "Cursor location in normalized (0.0-1.0) coordinates", -10.0f, 10.0f);
+	RNA_def_property_flag(prop, PROP_HIDDEN);
+}
