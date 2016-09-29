@@ -192,6 +192,18 @@ struct Image *BKE_image_add_generated(
 /* adds image from imbuf, owns imbuf */
 struct Image *BKE_image_add_from_imbuf(struct ImBuf *ibuf, const char *name);
 
+struct Image *BKE_add_image_no_buffer(
+        struct Main *bmain, unsigned int width, unsigned int height, const char *name,
+        int depth, int floatbuf, short gen_type, const float color[4]);
+
+void BKE_image_add_udim_tile(
+        struct Image *ima, int res, bool floatbuf, int depth, float color[4], int udim_index);
+
+struct UDIMTile;
+
+struct ImBuf *BKE_image_acquire_udim_ibuf(struct UDIMTile *tile);
+void BKE_image_release_udim_ibuf(struct ImBuf *ibuf);
+
 /* for reload, refresh, pack */
 void BKE_image_init_imageuser(struct Image *ima, struct ImageUser *iuser);
 void BKE_image_signal(struct Image *ima, struct ImageUser *iuser, int signal);

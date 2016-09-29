@@ -32,18 +32,27 @@
 
 #include "MEM_guardedalloc.h"
 
+#include "DNA_object_types.h"
 #include "DNA_space_types.h"
 
 #include "BKE_context.h"
+#include "BKE_image.h"
+#include "BKE_library.h"
+#include "BKE_main.h"
+#include "BKE_report.h"
 
 #include "BLI_math.h"
 #include "BLI_rect.h"
+
+#include "BLT_translation.h"
 
 #include "ED_screen.h"
 
 #include "RNA_access.h"
 #include "RNA_define.h"
 
+#include "UI_interface.h"
+#include "UI_resources.h"
 #include "UI_view2d.h"
 
 #include "WM_api.h"
@@ -57,7 +66,7 @@ static void ED_space_uvs_get_size(SpaceUVs *suvs, int *width, int *height)
 	*width = *height = IMG_SIZE_FALLBACK;
 }
 
-static void ED_space_uvs_get_zoom(SpaceUVs *suvs, ARegion *ar, float *zoomx, float *zoomy)
+void ED_space_uvs_get_zoom(SpaceUVs *suvs, ARegion *ar, float *zoomx, float *zoomy)
 {
 	int width, height;
 
@@ -545,4 +554,180 @@ void UVS_OT_paint(wmOperatorType *ot)
 	prop = RNA_def_float_vector(ot->srna, "location", 2, NULL, -FLT_MAX, FLT_MAX, "Location",
 	                            "Cursor location in normalized (0.0-1.0) coordinates", -10.0f, 10.0f);
 	RNA_def_property_flag(prop, PROP_HIDDEN);
+}
+
+/* ************************************************************************** */
+
+static void ED_space_uvs_set(SpaceUVs *sima, Object *obedit, Image *ima)
+{
+	/* change the space ima after because uvedit_face_visible_test uses the space ima
+	 * to check if the face is displayed in UV-localview */
+	sima->image = ima;
+
+	if (sima->image) {
+		BKE_image_signal(sima->image, &sima->iuser, IMA_SIGNAL_USER_NEW_IMAGE);
+	}
+
+	id_us_ensure_real((ID *)sima->image);
+
+	if (obedit) {
+		WM_main_add_notifier(NC_GEOM | ND_DATA, obedit->data);
+	}
+
+	WM_main_add_notifier(NC_SPACE | ND_SPACE_IMAGE, NULL);
+}
+
+enum {
+	IMG_RES_256  = 0,
+	IMG_RES_512  = 1,
+	IMG_RES_1024 = 2,
+	IMG_RES_2048 = 3,
+	IMG_RES_4096 = 4,
+};
+
+static int add_images_exec(bContext *C, wmOperator *op)
+{
+	/* retrieve state */
+	SpaceUVs *sima = CTX_wm_space_uvs(C);
+	Object *obedit = CTX_data_edit_object(C);
+	Main *bmain = CTX_data_main(C);
+
+	/* TODO(kevin): expose those. */
+	const bool floatbuf = true;
+	const bool alpha = false;
+
+	char _name[MAX_ID_NAME - 2];
+	char *name = _name;
+
+	PropertyRNA *prop = RNA_struct_find_property(op->ptr, "name");
+	RNA_property_string_get(op->ptr, prop, name);
+
+	if (!RNA_property_is_set(op->ptr, prop)) {
+		/* Default value, we can translate! */
+		name = (char *)DATA_(name);
+	}
+
+	const int gen_type = 0;
+	const int img_res = RNA_enum_get(op->ptr, "img_res");
+	int width, height;
+
+	switch (img_res) {
+		default:
+		case IMG_RES_256:
+			width = height = 256;
+			break;
+		case IMG_RES_512:
+			width = height = 512;
+			break;
+		case IMG_RES_1024:
+			width = height = 1024;
+			break;
+		case IMG_RES_2048:
+			width = height = 2048;
+			break;
+		case IMG_RES_4096:
+			width = height = 4096;
+			break;
+	}
+
+	float color[4];
+	RNA_float_get_array(op->ptr, "color", color);
+
+	if (!alpha) {
+		color[3] = 1.0f;
+	}
+
+	Image *ima = BKE_add_image_no_buffer(bmain, width, height, name, alpha ? 32 : 24, floatbuf, gen_type, color);
+
+	if (!ima) {
+		BKE_report(op->reports, RPT_ERROR, "Cannot add images");
+		return OPERATOR_CANCELLED;
+	}
+
+	for (int u = sima->uspan_min; u < sima->uspan_max; ++u) {
+		for (int v = sima->vspan_min; v < sima->vspan_max; ++v) {
+			const int udim_index = 1000 + (u + 1) + (v * 10);
+
+			BKE_image_add_udim_tile(ima, width, floatbuf, alpha ? 32 : 24, color, udim_index);
+		}
+	}
+
+	ED_space_uvs_set(sima, obedit, ima);
+
+	BKE_image_signal(ima, &sima->iuser, IMA_SIGNAL_USER_NEW_IMAGE);
+
+	WM_event_add_notifier(C, NC_IMAGE | NA_ADDED, ima);
+
+	return OPERATOR_FINISHED;
+}
+
+static int add_images_invoke(bContext *C, wmOperator *op, const wmEvent *event)
+{
+	UNUSED_VARS(event);
+
+	RNA_string_set(op->ptr, "name", DATA_("Untitled"));
+	return WM_operator_props_dialog_popup(C, op, 15 * UI_UNIT_X, 5 * UI_UNIT_Y);
+}
+
+static void image_new_draw(bContext *C, wmOperator *op)
+{
+	UNUSED_VARS(C);
+
+	uiLayout *split, *col[2];
+	uiLayout *layout = op->layout;
+	PointerRNA ptr;
+
+	RNA_pointer_create(NULL, op->type->srna, op->properties, &ptr);
+
+	/* copy of WM_operator_props_dialog_popup() layout */
+
+	split = uiLayoutSplit(layout, 0.5f, false);
+	col[0] = uiLayoutColumn(split, false);
+	col[1] = uiLayoutColumn(split, false);
+
+	uiItemL(col[0], IFACE_("Name"), ICON_NONE);
+	uiItemR(col[1], &ptr, "name", 0, "", ICON_NONE);
+
+	uiItemL(col[0], IFACE_("Resolution"), ICON_NONE);
+	uiItemR(col[1], &ptr, "img_res", 0, "", ICON_NONE);
+
+	uiItemL(col[0], IFACE_("Color"), ICON_NONE);
+	uiItemR(col[1], &ptr, "color", 0, "", ICON_NONE);
+}
+
+void UVS_OT_add_images(wmOperatorType *ot)
+{
+	/* identifiers */
+	ot->name = "Add Image";
+	ot->idname = "UVS_OT_add_images";
+	ot->description = "Set zoom ratio of the view";
+
+	/* api callbacks */
+	ot->invoke = add_images_invoke;
+	ot->exec = add_images_exec;
+	ot->ui = image_new_draw;
+
+	/* flags */
+	ot->flag = OPTYPE_UNDO;
+
+	/* properties */
+
+	static float default_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+
+	static EnumPropertyItem img_res_items[] = {
+		{IMG_RES_256,  "IMG_RES_256",  0, "256x256",   ""},
+	    {IMG_RES_512,  "IMG_RES_512",  0, "512x512",   ""},
+	    {IMG_RES_1024, "IMG_RES_1024", 0, "1024x1024", ""},
+	    {IMG_RES_2048, "IMG_RES_2048", 0, "2048x2048", ""},
+	    {IMG_RES_4096, "IMG_RES_4096", 0, "4096x4096", ""},
+		{0, NULL, 0, NULL, NULL}
+	};
+
+	PropertyRNA *prop;
+
+	RNA_def_string(ot->srna, "name", "Untitled", MAX_ID_NAME - 2, "Name", "Image data-block name");
+	prop = RNA_def_float_color(ot->srna, "color", 4, NULL, 0.0f, FLT_MAX, "Color", "Default fill color", 0.0f, 1.0f);
+	RNA_def_property_subtype(prop, PROP_COLOR_GAMMA);
+	RNA_def_property_float_array_default(prop, default_color);
+	RNA_def_enum(ot->srna, "img_res", img_res_items, IMG_RES_1024, "Resolution", "Resolution of the generated images");
 }

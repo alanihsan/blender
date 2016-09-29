@@ -34,6 +34,8 @@ class INFO_HT_header(Header):
         row = layout.row(align=True)
         row.template_header()
 
+        row.operator("uvs.add_images")
+
 
 class UVS_PT_settings(Panel):
     bl_space_type = 'UVS_EDITOR'

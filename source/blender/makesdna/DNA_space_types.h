@@ -1350,6 +1350,9 @@ typedef struct SpaceUVs {
 	short vspan_min;  /* Min coordinate of the tiles in the V direction. */
 	short uspan_max;  /* Max coordinate of the tiles in the U direction. */
 	short vspan_max;  /* Max coordinate of the tiles in the V direction. */
+
+	struct Image *image;
+	struct ImageUser iuser;
 } SpaceUVs;
 
 /* SpaceUVs::flags */

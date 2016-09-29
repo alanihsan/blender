@@ -96,6 +96,14 @@ enum {
 	TEXTARGET_COUNT = 2
 };
 
+typedef struct UDIMTile {
+	struct UDIMTile *next, *prev;
+	struct MovieCache *cache;
+
+	int index;
+	int pad;
+} UDIMTile;
+
 typedef struct Image {
 	ID id;
 	
@@ -147,7 +155,8 @@ typedef struct Image {
 	ColorManagedColorspaceSettings colorspace_settings;
 	char alpha_mode;
 
-	char pad[5];
+	char is_udim;
+	char pad[4];
 
 	/* Multiview */
 	char eye; /* for viewer node stereoscopy */
@@ -156,6 +165,9 @@ typedef struct Image {
 	struct Stereo3dFormat *stereo3d_format;
 
 	RenderSlot render_slots[8];  /* 8 = IMA_MAX_RENDER_SLOT */
+
+	/* UDIM */
+	ListBase udim_tiles;
 } Image;
 
 

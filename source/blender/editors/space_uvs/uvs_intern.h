@@ -34,9 +34,12 @@
 
 struct ARegion;
 struct ScrArea;
+struct SpaceUVs;
 struct wmOperatorType;
 
 struct ARegion *uvs_has_buttons_region(struct ScrArea *sa);
+
+void ED_space_uvs_get_zoom(struct SpaceUVs *suvs, struct ARegion *ar, float *zoomx, float *zoomy);
 
 void UVS_OT_properties(struct wmOperatorType *ot);
 void UVS_OT_view_pan(struct wmOperatorType *ot);
@@ -44,5 +47,6 @@ void UVS_OT_view_zoom_in(struct wmOperatorType *ot);
 void UVS_OT_view_zoom_out(struct wmOperatorType *ot);
 void UVS_OT_view_zoom_ratio(struct wmOperatorType *ot);
 void UVS_OT_paint(wmOperatorType *ot);
+void UVS_OT_add_images(wmOperatorType *ot);
 
 #endif  /* __UVS_INTERN_H__ */

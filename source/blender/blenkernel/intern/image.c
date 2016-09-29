@@ -144,30 +144,30 @@ static void imagecache_keydata(void *userkey, int *framenr, int *proxy, int *ren
 	*render_flags = 0;
 }
 
-static void imagecache_put(Image *image, int index, ImBuf *ibuf)
+static void imagecache_put(struct MovieCache **cache, int index, ImBuf *ibuf)
 {
 	ImageCacheKey key;
 
-	if (image->cache == NULL) {
+	if (*cache == NULL) {
 		// char cache_name[64];
 		// BLI_snprintf(cache_name, sizeof(cache_name), "Image Datablock %s", image->id.name);
 
-		image->cache = IMB_moviecache_create("Image Datablock Cache", sizeof(ImageCacheKey),
-		                                     imagecache_hashhash, imagecache_hashcmp);
-		IMB_moviecache_set_getdata_callback(image->cache, imagecache_keydata);
+		*cache = IMB_moviecache_create("Image Datablock Cache", sizeof(ImageCacheKey),
+		                               imagecache_hashhash, imagecache_hashcmp);
+		IMB_moviecache_set_getdata_callback(*cache, imagecache_keydata);
 	}
 
 	key.index = index;
 
-	IMB_moviecache_put(image->cache, &key, ibuf);
+	IMB_moviecache_put(*cache, &key, ibuf);
 }
 
-static struct ImBuf *imagecache_get(Image *image, int index)
+static struct ImBuf *imagecache_get(struct MovieCache *cache, int index)
 {
-	if (image->cache) {
+	if (cache) {
 		ImageCacheKey key;
 		key.index = index;
-		return IMB_moviecache_get(image->cache, &key);
+		return IMB_moviecache_get(cache, &key);
 	}
 
 	return NULL;
@@ -298,6 +298,16 @@ static void image_free_anims(Image *ima)
 	}
 }
 
+static void image_free_udim_tiles(Image *ima)
+{
+	while (ima->udim_tiles.last) {
+		UDIMTile *tile = ima->udim_tiles.last;
+		IMB_moviecache_free(tile->cache);
+		BLI_remlink(&ima->udim_tiles, tile);
+		MEM_freeN(tile);
+	}
+}
+
 /**
  * Simply free the image data from memory,
  * on display the image can load again (except for render buffers).
@@ -305,6 +315,8 @@ static void image_free_anims(Image *ima)
 void BKE_image_free_buffers(Image *ima)
 {
 	image_free_cached_frames(ima);
+
+	image_free_udim_tiles(ima);
 
 	image_free_anims(ima);
 
@@ -402,7 +414,7 @@ static ImBuf *image_get_cached_ibuf_for_index_frame(Image *ima, int index, int f
 		index = IMA_MAKE_INDEX(frame, index);
 	}
 
-	return imagecache_get(ima, index);
+	return imagecache_get(ima->cache, index);
 }
 
 /* no ima->ibuf anymore, but listbase */
@@ -412,7 +424,7 @@ static void image_assign_ibuf(Image *ima, ImBuf *ibuf, int index, int frame)
 		if (index != IMA_NO_INDEX)
 			index = IMA_MAKE_INDEX(frame, index);
 
-		imagecache_put(ima, index, ibuf);
+		imagecache_put(&ima->cache, index, ibuf);
 	}
 }
 
@@ -484,7 +496,7 @@ void BKE_image_merge(Image *dest, Image *source)
 			while (!IMB_moviecacheIter_done(iter)) {
 				ImBuf *ibuf = IMB_moviecacheIter_getImBuf(iter);
 				ImageCacheKey *key = IMB_moviecacheIter_getUserKey(iter);
-				imagecache_put(dest, key->index, ibuf);
+				imagecache_put(&dest->cache, key->index, ibuf);
 				IMB_moviecacheIter_step(iter);
 			}
 			IMB_moviecacheIter_free(iter);
@@ -723,6 +735,66 @@ Image *BKE_image_add_generated(
 	}
 
 	return ima;
+}
+
+Image *BKE_add_image_no_buffer(Main *bmain, unsigned int width, unsigned int height, const char *name,
+                               int depth, int floatbuf, short gen_type, const float color[4])
+{
+	Image *ima = image_alloc(bmain, name, IMA_SRC_GENERATED, IMA_TYPE_UV_TEST);
+
+	if (ima) {
+		/* BLI_strncpy(ima->name, name, FILE_MAX); */ /* don't do this, this writes in an invalid filepath! */
+		ima->gen_x = width;
+		ima->gen_y = height;
+		ima->gen_type = gen_type;
+		ima->gen_flag |= (floatbuf ? IMA_GEN_FLOAT : 0);
+		ima->gen_depth = depth;
+		copy_v4_v4(ima->gen_color, color);
+		ima->ok = IMA_OK_LOADED;
+	}
+
+	return ima;
+}
+
+void BKE_image_add_udim_tile(Image *ima, int res, bool floatbuf, int depth, float color[4], int udim_index)
+{
+	UDIMTile *tile = MEM_callocN(sizeof(UDIMTile), "UDIMTile");
+	tile->index = udim_index;
+
+	char name[MAX_NAME];
+	sprintf(name, "%s.%d", ima->name, udim_index);
+
+	ImBuf *ibuf = add_ibuf_size(res, res, name, depth, floatbuf, 0, color, &ima->colorspace_settings);
+
+	if (ibuf) {
+		imagecache_put(&tile->cache, IMA_NO_INDEX, ibuf);
+		/* imagecache_put increments user counter. */
+		IMB_freeImBuf(ibuf);
+	}
+
+	BLI_addtail(&ima->udim_tiles, tile);
+}
+
+ImBuf *BKE_image_acquire_udim_ibuf(UDIMTile *tile)
+{
+	ImBuf *ibuf;
+
+	BLI_spin_lock(&image_spin);
+
+	ibuf = imagecache_get(tile->cache, IMA_NO_INDEX);
+
+	BLI_spin_unlock(&image_spin);
+
+	return ibuf;
+}
+
+void BKE_image_release_udim_ibuf(ImBuf *ibuf)
+{
+	if (ibuf) {
+		BLI_spin_lock(&image_spin);
+		IMB_freeImBuf(ibuf);
+		BLI_spin_unlock(&image_spin);
+	}
 }
 
 /* Create an image image from ibuf. The refcount of ibuf is increased,

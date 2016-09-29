@@ -40,14 +40,20 @@
 #include "BLI_utildefines.h"
 
 #include "BKE_context.h"
+#include "BKE_image.h"
 #include "BKE_screen.h"
 
 #include "BIF_gl.h"
+#include "BIF_glutil.h"
 
 #include "BLF_api.h"
 
 #include "ED_screen.h"
 #include "ED_space_api.h"
+
+#include "IMB_colormanagement.h"
+#include "IMB_imbuf.h"
+#include "IMB_imbuf_types.h"
 
 #include "RNA_access.h"
 
@@ -157,6 +163,7 @@ static void uvs_operatortypes(void)
 	WM_operatortype_append(UVS_OT_view_zoom_out);
 	WM_operatortype_append(UVS_OT_view_zoom_ratio);
 	WM_operatortype_append(UVS_OT_paint);
+	WM_operatortype_append(UVS_OT_add_images);
 }
 
 static void uvs_keymap(wmKeyConfig *keyconf)
@@ -259,6 +266,40 @@ static void uvs_main_region_set_view2d(SpaceUVs *suvs, ARegion *ar)
 	ar->v2d.cur.ymax /= h;
 }
 
+static void draw_buffer(const bContext *C, ARegion *ar, ImBuf *ibuf, float fx, float fy, float zoomx, float zoomy)
+{
+	int x, y;
+
+	/* set zoom */
+	glPixelZoom(zoomx, zoomy);
+
+	glaDefine2DArea(&ar->winrct);
+
+	/* find window pixel coordinates of origin */
+	UI_view2d_view_to_region(&ar->v2d, fx, fy, &x, &y);
+
+	/* this part is generic image display */
+	unsigned char *display_buffer;
+	void *cache_handle;
+
+	/* TODO(sergey): Ideally GLSL shading should be capable of either
+	 * disabling some channels or displaying buffer with custom offset.
+	 */
+	display_buffer = IMB_display_buffer_acquire_ctx(C, ibuf, &cache_handle);
+
+	if (display_buffer != NULL) {
+		glaDrawPixelsSafe(x, y, ibuf->x, ibuf->y, ibuf->x, GL_LUMINANCE, GL_UNSIGNED_INT,
+		                  display_buffer - (4 - 1));
+	}
+
+	if (cache_handle != NULL) {
+		IMB_display_buffer_release(cache_handle);
+	}
+
+	/* reset zoom */
+	glPixelZoom(1.0f, 1.0f);
+}
+
 static void uvs_main_region_draw(const bContext *C, ARegion *ar)
 {
 	SpaceUVs *suvs = CTX_wm_space_uvs(C);
@@ -278,14 +319,42 @@ static void uvs_main_region_draw(const bContext *C, ARegion *ar)
 				continue;
 			}
 
+			const int udim_index = 1000 + (x + 1) + (y * 10);
+
 			UI_ThemeColor(TH_TEXT);
 
-			const int udim_index = 1000 + (x + 1) + (y * 10);
 			sprintf(udim_str, "%d", udim_index);
 
 			UI_view2d_view_to_region(&ar->v2d, x, y, &x1, &y1);
 			BLF_draw_default_ascii(x1 + 4.0f * U.pixelsize, y1 + 4.0f * U.pixelsize, 0.0f, udim_str, 4);
 		}
+	}
+
+	Image *ima = suvs->image;
+
+	if (ima == NULL) {
+		return;
+	}
+
+	float zoomx, zoomy;
+	ED_space_uvs_get_zoom(suvs, ar, &zoomx, &zoomy);
+
+	UDIMTile *tile = ima->udim_tiles.first;
+
+	for (; tile; tile = tile->next) {
+		ImBuf *ibuf = BKE_image_acquire_udim_ibuf(tile);
+
+		if (!ibuf) {
+			continue;
+		}
+
+		const int udim_index = tile->index;
+		const int u_index = ((udim_index - 1000) % 10) - 1;
+		const int v_index = ((udim_index - 1000) % 100) / 10;
+
+		draw_buffer(C, ar, ibuf, u_index, v_index, zoomx, zoomy);
+
+		BKE_image_release_udim_ibuf(ibuf);
 	}
 }
 
