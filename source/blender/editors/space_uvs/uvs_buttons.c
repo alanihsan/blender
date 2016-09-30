@@ -849,16 +849,6 @@ static int images_open_exec(bContext *C, wmOperator *op)
 
 	Image *ima = BKE_image_load(bmain, filename);
 
-	ListBase frames;
-	BLI_listbase_clear(&frames);
-
-	get_udim_span(filename, &frames);
-
-	CacheFrame *cache_frame = frames.first;
-
-	int u_span = 0;
-	int v_span = 0;
-
 	char tmp_filename[PATH_MAX];
 
 	strncpy(tmp_filename, filename, sizeof(tmp_filename));
@@ -874,14 +864,19 @@ static int images_open_exec(bContext *C, wmOperator *op)
 
 	size_t len = basename - tmp_filename;
 
-	for (; cache_frame; cache_frame = cache_frame->next) {
+	ListBase frames;
+	BLI_listbase_clear(&frames);
+
+	get_udim_span(filename, &frames);
+
+	for (CacheFrame *cache_frame = frames.first; cache_frame; cache_frame = cache_frame->next) {
 		/* Compute UDIM range from files. */
 		const int udim_index = cache_frame->framenr;
 		const int u_index = ((udim_index - 1000) % 10) - 1;
 		const int v_index = ((udim_index - 1000) % 100) / 10;
 
-		u_span = max_ii(u_span, u_index + 1);
-		v_span = max_ii(v_span, v_index + 1);
+		suvs->uspan_max = max_ii(suvs->uspan_max, u_index + 1);
+		suvs->vspan_max = max_ii(suvs->vspan_max, v_index + 1);
 
 		UDIMTile *tile = MEM_callocN(sizeof(UDIMTile), "UDIMTile");
 		tile->index = cache_frame->framenr;
@@ -895,9 +890,6 @@ static int images_open_exec(bContext *C, wmOperator *op)
 	}
 
 	BLI_freelistN(&frames);
-
-	suvs->uspan_max = max_ii(suvs->uspan_max, u_span);
-	suvs->vspan_max = max_ii(suvs->vspan_max, v_span);
 
 	ED_space_uvs_set(suvs, NULL, ima);
 
