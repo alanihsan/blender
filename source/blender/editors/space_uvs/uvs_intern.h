@@ -48,5 +48,6 @@ void UVS_OT_view_zoom_out(struct wmOperatorType *ot);
 void UVS_OT_view_zoom_ratio(struct wmOperatorType *ot);
 void UVS_OT_paint(wmOperatorType *ot);
 void UVS_OT_add_images(wmOperatorType *ot);
+void UVS_OT_open_images(wmOperatorType *ot);
 
 #endif  /* __UVS_INTERN_H__ */

@@ -302,7 +302,9 @@ static void image_free_udim_tiles(Image *ima)
 {
 	while (ima->udim_tiles.last) {
 		UDIMTile *tile = ima->udim_tiles.last;
-		IMB_moviecache_free(tile->cache);
+		if (tile->cache) {
+			IMB_moviecache_free(tile->cache);
+		}
 		BLI_remlink(&ima->udim_tiles, tile);
 		MEM_freeN(tile);
 	}
@@ -760,6 +762,8 @@ void BKE_image_add_udim_tile(Image *ima, int res, bool floatbuf, int depth, floa
 {
 	UDIMTile *tile = MEM_callocN(sizeof(UDIMTile), "UDIMTile");
 	tile->index = udim_index;
+	tile->colorspace_settings = &ima->colorspace_settings;
+	tile->source = IMA_SRC_GENERATED;
 
 	char name[MAX_NAME];
 	sprintf(name, "%s.%d", ima->name, udim_index);
@@ -777,11 +781,22 @@ void BKE_image_add_udim_tile(Image *ima, int res, bool floatbuf, int depth, floa
 
 ImBuf *BKE_image_acquire_udim_ibuf(UDIMTile *tile)
 {
-	ImBuf *ibuf;
-
 	BLI_spin_lock(&image_spin);
 
-	ibuf = imagecache_get(tile->cache, IMA_NO_INDEX);
+	ImBuf *ibuf = imagecache_get(tile->cache, IMA_NO_INDEX);
+
+	if (ibuf == NULL) {
+		if (tile->source == IMA_SRC_FILE) {
+			/* read ibuf */
+			ibuf = IMB_loadiffname(tile->filepath,
+			                       IB_rect | IB_multilayer | IB_metadata,
+			                       tile->colorspace_settings->name);
+
+			if (ibuf) {
+				imagecache_put(&tile->cache, IMA_NO_INDEX, ibuf);
+			}
+		}
+	}
 
 	BLI_spin_unlock(&image_spin);
 

@@ -164,6 +164,7 @@ static void uvs_operatortypes(void)
 	WM_operatortype_append(UVS_OT_view_zoom_ratio);
 	WM_operatortype_append(UVS_OT_paint);
 	WM_operatortype_append(UVS_OT_add_images);
+	WM_operatortype_append(UVS_OT_open_images);
 }
 
 static void uvs_keymap(wmKeyConfig *keyconf)

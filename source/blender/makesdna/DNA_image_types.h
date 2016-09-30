@@ -100,8 +100,12 @@ typedef struct UDIMTile {
 	struct UDIMTile *next, *prev;
 	struct MovieCache *cache;
 
+	ColorManagedColorspaceSettings *colorspace_settings;
+
+	char filepath[1024];
+
 	int index;
-	int pad;
+	int source;
 } UDIMTile;
 
 typedef struct Image {

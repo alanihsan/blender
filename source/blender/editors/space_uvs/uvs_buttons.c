@@ -30,6 +30,13 @@
 
 #include <stdio.h>
 
+/* needed for directory lookup */
+#ifndef WIN32
+#  include <dirent.h>
+#else
+#  include "BLI_winstuff.h"
+#endif
+
 #include "MEM_guardedalloc.h"
 
 #include "DNA_object_types.h"
@@ -41,12 +48,17 @@
 #include "BKE_main.h"
 #include "BKE_report.h"
 
+#include "BLI_fileops.h"
+#include "BLI_listbase.h"
 #include "BLI_math.h"
+#include "BLI_path_util.h"
 #include "BLI_rect.h"
 
 #include "BLT_translation.h"
 
 #include "ED_screen.h"
+
+#include "IMB_imbuf_types.h"
 
 #include "RNA_access.h"
 #include "RNA_define.h"
@@ -62,8 +74,25 @@
 
 static void ED_space_uvs_get_size(SpaceUVs *suvs, int *width, int *height)
 {
-	UNUSED_VARS(suvs);
-	*width = *height = IMG_SIZE_FALLBACK;
+	if (!suvs->image) {
+		*width = *height = IMG_SIZE_FALLBACK;
+		return;
+	}
+
+	Image *ima = suvs->image;
+	UDIMTile *tile = ima->udim_tiles.first;
+
+	if (!tile) {
+		*width = *height = IMG_SIZE_FALLBACK;
+		return;
+	}
+
+	ImBuf *ibuf = BKE_image_acquire_udim_ibuf(tile);
+
+	*width = ibuf->x;
+	*height = ibuf->y;
+
+	BKE_image_release_udim_ibuf(ibuf);
 }
 
 void ED_space_uvs_get_zoom(SpaceUVs *suvs, ARegion *ar, float *zoomx, float *zoomy)
@@ -700,7 +729,7 @@ void UVS_OT_add_images(wmOperatorType *ot)
 	/* identifiers */
 	ot->name = "Add Image";
 	ot->idname = "UVS_OT_add_images";
-	ot->description = "Set zoom ratio of the view";
+	ot->description = "Add a new image for each UDIM tile";
 
 	/* api callbacks */
 	ot->invoke = add_images_invoke;
@@ -730,4 +759,170 @@ void UVS_OT_add_images(wmOperatorType *ot)
 	RNA_def_property_subtype(prop, PROP_COLOR_GAMMA);
 	RNA_def_property_float_array_default(prop, default_color);
 	RNA_def_enum(ot->srna, "img_res", img_res_items, IMG_RES_1024, "Resolution", "Resolution of the generated images");
+}
+
+/* ************************************************************************** */
+
+/* TODO(kevin): check on de-duplicating all this with code in image_ops.c */
+
+typedef struct CacheFrame {
+	struct CacheFrame *next, *prev;
+	int framenr;
+} CacheFrame;
+
+static int cmp_frame(const void *a, const void *b)
+{
+	const CacheFrame *frame_a = a;
+	const CacheFrame *frame_b = b;
+
+	if (frame_a->framenr < frame_b->framenr) return -1;
+	if (frame_a->framenr > frame_b->framenr) return 1;
+	return 0;
+}
+
+static void get_udim_span(char *filename, ListBase *frames)
+{
+	int frame;
+	int numdigit;
+
+	if (!BLI_path_frame_get(filename, &frame, &numdigit)) {
+		return;
+	}
+
+	char path[FILE_MAX];
+	BLI_split_dir_part(filename, path, FILE_MAX);
+
+	DIR *dir = opendir(path);
+
+	const char *basename = BLI_path_basename(filename);
+	const char *ext = basename;
+
+	/* Get basename length. */
+	int len = 0;
+	while (*ext != '\0' && *ext != '.') {
+		++len;
+		++ext;
+	}
+
+	++ext;
+
+	/* Get to the extension. */
+	while (*ext != '\0' && *ext != '.') {
+		++ext;
+	}
+
+	struct dirent *fname;
+	while ((fname = readdir(dir)) != NULL) {
+		/* do we have the right extension? */
+		if (!strstr(fname->d_name, ext)) {
+			continue;
+		}
+
+		if (!STREQLEN(basename, fname->d_name, len)) {
+			continue;
+		}
+
+		CacheFrame *cache_frame = MEM_callocN(sizeof(CacheFrame), "abc_frame");
+
+		BLI_path_frame_get(fname->d_name, &cache_frame->framenr, &numdigit);
+
+		BLI_addtail(frames, cache_frame);
+	}
+
+	closedir(dir);
+
+	BLI_listbase_sort(frames, cmp_frame);
+}
+
+static int images_open_exec(bContext *C, wmOperator *op)
+{
+	if (!RNA_struct_property_is_set(op->ptr, "filepath")) {
+		BKE_report(op->reports, RPT_ERROR, "No filename given");
+		return OPERATOR_CANCELLED;
+	}
+
+	Main *bmain = CTX_data_main(C);
+	SpaceUVs *suvs = CTX_wm_space_uvs(C);
+
+	char filename[FILE_MAX];
+	RNA_string_get(op->ptr, "filepath", filename);
+
+	Image *ima = BKE_image_load(bmain, filename);
+
+	ListBase frames;
+	BLI_listbase_clear(&frames);
+
+	get_udim_span(filename, &frames);
+
+	CacheFrame *cache_frame = frames.first;
+
+	int u_span = 0;
+	int v_span = 0;
+
+	char tmp_filename[PATH_MAX];
+
+	strncpy(tmp_filename, filename, sizeof(tmp_filename));
+
+	const char *basename = BLI_path_basename(tmp_filename);
+
+	while (*basename != '\0' && *basename != '.') {
+		++basename;
+		++basename;
+	}
+
+	++basename;
+
+	size_t len = basename - tmp_filename;
+
+	for (; cache_frame; cache_frame = cache_frame->next) {
+		/* Compute UDIM range from files. */
+		const int udim_index = cache_frame->framenr;
+		const int u_index = ((udim_index - 1000) % 10) - 1;
+		const int v_index = ((udim_index - 1000) % 100) / 10;
+
+		u_span = max_ii(u_span, u_index + 1);
+		v_span = max_ii(v_span, v_index + 1);
+
+		UDIMTile *tile = MEM_callocN(sizeof(UDIMTile), "UDIMTile");
+		tile->index = cache_frame->framenr;
+		tile->colorspace_settings = &ima->colorspace_settings;
+		tile->source = IMA_SRC_FILE;
+
+		sprintf(tmp_filename + len, "%d%s", udim_index, filename + len + 4);
+		strncpy(tile->filepath, tmp_filename, sizeof(tile->filepath));
+
+		BLI_addtail(&ima->udim_tiles, tile);
+	}
+
+	BLI_freelistN(&frames);
+
+	suvs->uspan_max = max_ii(suvs->uspan_max, u_span);
+	suvs->vspan_max = max_ii(suvs->vspan_max, v_span);
+
+	ED_space_uvs_set(suvs, NULL, ima);
+
+	WM_event_add_notifier(C, NC_IMAGE | NA_EDITED, ima);
+
+	return OPERATOR_FINISHED;
+}
+
+void UVS_OT_open_images(wmOperatorType *ot)
+{
+	/* identifiers */
+	ot->name = "Open Image";
+	ot->idname = "UVS_OT_open_images";
+	ot->description = "Open a set of UDIM images";
+
+	/* api callbacks */
+	ot->exec = images_open_exec;
+	ot->invoke = WM_operator_filesel;
+
+	/* flags */
+	ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+
+	/* properties */
+	WM_operator_properties_filesel(
+	        ot, FILE_TYPE_FOLDER | FILE_TYPE_IMAGE, FILE_SPECIAL, FILE_OPENFILE,
+	        WM_FILESEL_FILEPATH | WM_FILESEL_DIRECTORY | WM_FILESEL_FILES | WM_FILESEL_RELPATH,
+	        FILE_DEFAULTDISPLAY, FILE_SORT_ALPHA);
 }

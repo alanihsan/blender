@@ -35,6 +35,7 @@ class INFO_HT_header(Header):
         row.template_header()
 
         row.operator("uvs.add_images")
+        row.operator("uvs.open_images")
 
 
 class UVS_PT_settings(Panel):
