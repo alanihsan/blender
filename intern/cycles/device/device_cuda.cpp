@@ -297,7 +297,7 @@ public:
 			cuda_error_message("CUDA nvcc compiler version could not be parsed.");
 			return false;
 		}
-		if(cuda_version < 60) {
+		if(cuda_version < 75) {
 			printf("Unsupported CUDA version %d.%d detected, "
 			       "you need CUDA 7.5 or newer.\n",
 			       major, minor);
@@ -343,7 +343,7 @@ public:
 		const string cubin_file = string_printf("cycles_kernel_sm%d%d_%s.cubin",
 		                                        major, minor,
 		                                        cubin_md5.c_str());
-		const string cubin = path_user_get(path_join("cache", cubin_file));
+		const string cubin = path_cache_get(path_join("kernels", cubin_file));
 		VLOG(1) << "Testing for locally compiled kernel " << cubin << ".";
 		if(path_exists(cubin)) {
 			VLOG(1) << "Using locally compiled kernel.";
@@ -576,6 +576,7 @@ public:
 			case TYPE_UINT: format = CU_AD_FORMAT_UNSIGNED_INT32; break;
 			case TYPE_INT: format = CU_AD_FORMAT_SIGNED_INT32; break;
 			case TYPE_FLOAT: format = CU_AD_FORMAT_FLOAT; break;
+			case TYPE_HALF: format = CU_AD_FORMAT_HALF; break;
 			default: assert(0); return;
 		}
 
@@ -747,8 +748,12 @@ public:
 				}
 
 				/* Resize once */
-				if(flat_slot >= bindless_mapping.size())
-					bindless_mapping.resize(4096); /*TODO(dingto): Make this a variable */
+				if(flat_slot >= bindless_mapping.size()) {
+					/* Allocate some slots in advance, to reduce amount
+					 * of re-allocations.
+					 */
+					bindless_mapping.resize(flat_slot + 128);
+				}
 
 				/* Set Mapping and tag that we need to (re-)upload to device */
 				bindless_mapping.get_data()[flat_slot] = (uint)tex;
@@ -988,7 +993,7 @@ public:
 				cuda_assert(cuCtxSynchronize());
 
 				if(task.get_cancel()) {
-					canceled = false;
+					canceled = true;
 					break;
 				}
 			}

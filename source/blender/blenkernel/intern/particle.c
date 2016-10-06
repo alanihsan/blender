@@ -318,16 +318,24 @@ void psys_check_group_weights(ParticleSettings *part)
 	int current = 0;
 
 	if (part->ren_as == PART_DRAW_GR && part->dup_group && part->dup_group->gobject.first) {
-		/* first remove all weights that don't have an object in the group */
+		/* First try to find NULL objects from their index,
+		 * and remove all weights that don't have an object in the group. */
 		dw = part->dupliweights.first;
 		while (dw) {
-			if (!BKE_group_object_exists(part->dup_group, dw->ob)) {
-				tdw = dw->next;
-				BLI_freelinkN(&part->dupliweights, dw);
-				dw = tdw;
+			if (dw->ob == NULL || !BKE_group_object_exists(part->dup_group, dw->ob)) {
+				go = (GroupObject *)BLI_findlink(&part->dup_group->gobject, dw->index);
+				if (go) {
+					dw->ob = go->ob;
+				}
+				else {
+					tdw = dw->next;
+					BLI_freelinkN(&part->dupliweights, dw);
+					dw = tdw;
+				}
 			}
-			else
+			else {
 				dw = dw->next;
+			}
 		}
 
 		/* then add objects in the group to new list */
@@ -495,7 +503,9 @@ void psys_free_particles(ParticleSystem *psys)
 	PARTICLE_P;
 
 	if (psys->particles) {
-		if (psys->part->type == PART_HAIR) {
+		/* Even though psys->part should never be NULL, this can happen as an exception during deletion.
+		 * See ID_REMAP_SKIP/FORCE/FLAG_NEVER_NULL_USAGE in BKE_library_remap. */
+		if (psys->part && psys->part->type == PART_HAIR) {
 			LOOP_PARTICLES {
 				if (pa->hair)
 					MEM_freeN(pa->hair);
@@ -877,6 +887,9 @@ static void get_pointcache_keys_for_time(Object *UNUSED(ob), PointCache *cache, 
 
 			index2 = BKE_ptcache_mem_index_find(pm, index);
 			index1 = BKE_ptcache_mem_index_find(pm->prev, index);
+			if (index2 < 0) {
+				return;
+			}
 
 			BKE_ptcache_make_particle_key(key2, index2, pm->data, (float)pm->frame);
 			if (index1 < 0)
@@ -887,6 +900,9 @@ static void get_pointcache_keys_for_time(Object *UNUSED(ob), PointCache *cache, 
 		else if (cache->mem_cache.first) {
 			pm = cache->mem_cache.first;
 			index2 = BKE_ptcache_mem_index_find(pm, index);
+			if (index2 < 0) {
+				return;
+			}
 			BKE_ptcache_make_particle_key(key2, index2, pm->data, (float)pm->frame);
 			copy_particle_key(key1, key2, 1);
 		}
@@ -3172,6 +3188,9 @@ void object_remove_particle_system(Scene *UNUSED(scene), Object *ob)
 
 	/* clear particle system */
 	BLI_remlink(&ob->particlesystem, psys);
+	if (psys->part) {
+		id_us_min(&psys->part->id);
+	}
 	psys_free(ob, psys);
 
 	if (ob->particlesystem.first)
@@ -4050,13 +4069,16 @@ void psys_get_dupli_texture(ParticleSystem *psys, ParticleSettings *part,
 
 	uv[0] = uv[1] = 0.f;
 
+	/* Grid distribution doesn't support UV or emit from vertex mode */
+	bool is_grid = (part->distr == PART_DISTR_GRID && part->from != PART_FROM_VERT);
+
 	if (cpa) {
 		if ((part->childtype == PART_CHILD_FACES) && (psmd->dm_final != NULL)) {
 			CustomData *mtf_data = psmd->dm_final->getTessFaceDataLayout(psmd->dm_final);
 			const int uv_idx = CustomData_get_render_layer(mtf_data, CD_MTFACE);
 			mtface = CustomData_get_layer_n(mtf_data, CD_MTFACE, uv_idx);
 
-			if (mtface) {
+			if (mtface && !is_grid) {
 				mface = psmd->dm_final->getTessFaceData(psmd->dm_final, cpa->num, CD_MFACE);
 				mtface += cpa->num;
 				psys_interpolate_uvs(mtface, mface->v4, cpa->fuv, uv);
@@ -4070,7 +4092,7 @@ void psys_get_dupli_texture(ParticleSystem *psys, ParticleSettings *part,
 		}
 	}
 
-	if ((part->from == PART_FROM_FACE) && (psmd->dm_final != NULL)) {
+	if ((part->from == PART_FROM_FACE) && (psmd->dm_final != NULL) && !is_grid) {
 		CustomData *mtf_data = psmd->dm_final->getTessFaceDataLayout(psmd->dm_final);
 		const int uv_idx = CustomData_get_render_layer(mtf_data, CD_MTFACE);
 		mtface = CustomData_get_layer_n(mtf_data, CD_MTFACE, uv_idx);

@@ -409,7 +409,8 @@ static void attr_create_uv_map(Scene *scene,
                                BL::Mesh& b_mesh,
                                const vector<int>& nverts,
                                const vector<int>& face_flags,
-                               bool subdivision)
+                               bool subdivision,
+                               bool subdivide_uvs)
 {
 	if(subdivision) {
 		BL::Mesh::uv_layers_iterator l;
@@ -428,6 +429,10 @@ static void attr_create_uv_map(Scene *scene,
 					attr = mesh->subd_attributes.add(std, name);
 				else
 					attr = mesh->subd_attributes.add(name, TypeDesc::TypePoint, ATTR_ELEMENT_CORNER);
+
+				if(subdivide_uvs) {
+					attr->flags |= ATTR_SUBDIVIDED;
+				}
 
 				BL::Mesh::polygons_iterator p;
 				float3 *fdata = attr->data_float3();
@@ -592,7 +597,8 @@ static void create_mesh(Scene *scene,
                         Mesh *mesh,
                         BL::Mesh& b_mesh,
                         const vector<Shader*>& used_shaders,
-                        bool subdivision=false)
+                        bool subdivision=false,
+                        bool subdivide_uvs=true)
 {
 	/* count vertices and faces */
 	int numverts = b_mesh.vertices.length();
@@ -600,7 +606,7 @@ static void create_mesh(Scene *scene,
 	int numtris = 0;
 	int numcorners = 0;
 	int numngons = 0;
-	bool use_loop_normals = b_mesh.use_auto_smooth();
+	bool use_loop_normals = b_mesh.use_auto_smooth() && (mesh->subdivision_type != Mesh::SUBDIVISION_CATMULL_CLARK);
 
 	BL::Mesh::vertices_iterator v;
 	BL::Mesh::tessfaces_iterator f;
@@ -638,6 +644,7 @@ static void create_mesh(Scene *scene,
 	/* create generated coordinates from undeformed coordinates */
 	if(mesh->need_attribute(scene, ATTR_STD_GENERATED)) {
 		Attribute *attr = attributes.add(ATTR_STD_GENERATED);
+		attr->flags |= ATTR_SUBDIVIDED;
 
 		float3 loc, size;
 		mesh_texture_space(b_mesh, loc, size);
@@ -746,7 +753,7 @@ static void create_mesh(Scene *scene,
 	 * The calculate functions will check whether they're needed or not.
 	 */
 	attr_create_vertex_color(scene, mesh, b_mesh, nverts, face_flags, subdivision);
-	attr_create_uv_map(scene, mesh, b_mesh, nverts, face_flags, subdivision);
+	attr_create_uv_map(scene, mesh, b_mesh, nverts, face_flags, subdivision, subdivide_uvs);
 
 	/* for volume objects, create a matrix to transform from object space to
 	 * mesh texture space. this does not work with deformations but that can
@@ -770,9 +777,39 @@ static void create_subd_mesh(Scene *scene,
                              float dicing_rate,
                              int max_subdivisions)
 {
-	create_mesh(scene, mesh, b_mesh, used_shaders, true);
+	BL::SubsurfModifier subsurf_mod(b_ob.modifiers[b_ob.modifiers.length()-1]);
+	bool subdivide_uvs = subsurf_mod.use_subsurf_uv();
 
-	SubdParams sdparams(mesh);
+	create_mesh(scene, mesh, b_mesh, used_shaders, true, subdivide_uvs);
+
+	/* export creases */
+	size_t num_creases = 0;
+	BL::Mesh::edges_iterator e;
+
+	for(b_mesh.edges.begin(e); e != b_mesh.edges.end(); ++e) {
+		if(e->crease() != 0.0f) {
+			num_creases++;
+		}
+	}
+
+	mesh->subd_creases.resize(num_creases);
+
+	Mesh::SubdEdgeCrease* crease = mesh->subd_creases.data();
+	for(b_mesh.edges.begin(e); e != b_mesh.edges.end(); ++e) {
+		if(e->crease() != 0.0f) {
+			crease->v[0] = e->vertices()[0];
+			crease->v[1] = e->vertices()[1];
+			crease->crease = e->crease();
+
+			crease++;
+		}
+	}
+
+	/* set subd params */
+	if(!mesh->subd_params) {
+		mesh->subd_params = new SubdParams(mesh);
+	}
+	SubdParams& sdparams = *mesh->subd_params;
 
 	PointerRNA cobj = RNA_pointer_get(&b_ob.ptr, "cycles");
 
@@ -782,10 +819,6 @@ static void create_subd_mesh(Scene *scene,
 	scene->camera->update();
 	sdparams.camera = scene->camera;
 	sdparams.objecttoworld = get_transform(b_ob.matrix_world());
-
-	/* tesselate */
-	DiagSplit dsplit(sdparams);
-	mesh->tessellate(&dsplit);
 }
 
 /* Sync */
@@ -903,8 +936,6 @@ Mesh *BlenderSync::sync_mesh(BL::Object& b_ob,
 	mesh_synced.insert(mesh);
 
 	/* create derived mesh */
-	PointerRNA cmesh = RNA_pointer_get(&b_ob_data.ptr, "cycles");
-
 	array<int> oldtriangle = mesh->triangles;
 	
 	/* compares curve_keys rather than strands in order to handle quick hair
@@ -928,25 +959,7 @@ Mesh *BlenderSync::sync_mesh(BL::Object& b_ob,
 
 		bool need_undeformed = mesh->need_attribute(scene, ATTR_STD_GENERATED);
 
-		mesh->subdivision_type = Mesh::SUBDIVISION_NONE;
-
-		PointerRNA cobj = RNA_pointer_get(&b_ob.ptr, "cycles");
-
-		if(cobj.data && b_ob.modifiers.length() > 0 && experimental) {
-			BL::Modifier mod = b_ob.modifiers[b_ob.modifiers.length()-1];
-			bool enabled = preview ? mod.show_viewport() : mod.show_render();
-
-			if(enabled && mod.type() == BL::Modifier::type_SUBSURF && RNA_int_get(&cobj, "use_adaptive_subdivision")) {
-				BL::SubsurfModifier subsurf(mod);
-
-				if(subsurf.subdivision_type() == BL::SubsurfModifier::subdivision_type_CATMULL_CLARK) {
-					mesh->subdivision_type = Mesh::SUBDIVISION_CATMULL_CLARK;
-				}
-				else {
-					mesh->subdivision_type = Mesh::SUBDIVISION_LINEAR;
-				}
-			}
-		}
+		mesh->subdivision_type = object_subdivision_type(b_ob, preview, experimental);
 
 		BL::Mesh b_mesh = object_to_mesh(b_data, b_ob, b_scene, true, !preview, need_undeformed, mesh->subdivision_type);
 
@@ -973,21 +986,6 @@ Mesh *BlenderSync::sync_mesh(BL::Object& b_ob,
 		}
 	}
 	mesh->geometry_flags = requested_geometry_flags;
-
-	/* displacement method */
-	if(cmesh.data) {
-		const int method = get_enum(cmesh,
-		                            "displacement_method",
-		                            Mesh::DISPLACE_NUM_METHODS,
-		                            Mesh::DISPLACE_BUMP);
-
-		if(method == 0 || !experimental)
-			mesh->displacement_method = Mesh::DISPLACE_BUMP;
-		else if(method == 1)
-			mesh->displacement_method = Mesh::DISPLACE_TRUE;
-		else
-			mesh->displacement_method = Mesh::DISPLACE_BOTH;
-	}
 
 	/* fluid motion */
 	sync_mesh_fluid_motion(b_ob, scene, mesh);
