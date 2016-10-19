@@ -340,18 +340,29 @@ static void uvs_main_region_draw(const bContext *C, ARegion *ar)
 	float zoomx, zoomy;
 	ED_space_uvs_get_zoom(suvs, ar, &zoomx, &zoomy);
 
+	int max_x, max_y;
+	UI_view2d_view_to_region(&ar->v2d, ar->v2d.cur.xmax, ar->v2d.cur.ymax, &max_x, &max_y);
+
 	UDIMTile *tile = ima->udim_tiles.first;
 
 	for (; tile; tile = tile->next) {
+		const int udim_index = tile->index;
+		const int u_index = ((udim_index - 1000) % 10) - 1;
+		const int v_index = ((udim_index - 1000) % 100) / 10;
+
+		UI_view2d_view_to_region(&ar->v2d, u_index, v_index, &x1, &y1);
+
+		/* Only draw tiles that are visible. */
+		if (x1 > max_x || y1 > max_y) {
+			//fprintf(stderr, "Tile %d is out of sight\n", tile->index);
+			continue;
+		}
+
 		ImBuf *ibuf = BKE_image_acquire_udim_ibuf(tile);
 
 		if (!ibuf) {
 			continue;
 		}
-
-		const int udim_index = tile->index;
-		const int u_index = ((udim_index - 1000) % 10) - 1;
-		const int v_index = ((udim_index - 1000) % 100) / 10;
 
 		draw_buffer(C, ar, ibuf, u_index, v_index, zoomx, zoomy);
 
