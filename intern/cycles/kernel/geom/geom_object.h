@@ -308,7 +308,7 @@ ccl_device_inline uint object_patch_map_offset(KernelGlobals *kg, int object)
 
 ccl_device int shader_pass_id(KernelGlobals *kg, const ShaderData *sd)
 {
-	return kernel_tex_fetch(__shader_flag, (ccl_fetch(sd, shader) & SHADER_MASK)*2 + 1);
+	return kernel_tex_fetch(__shader_flag, (ccl_fetch(sd, shader) & SHADER_MASK)*SHADER_SIZE + 1);
 }
 
 /* Particle data from which object was instanced */
@@ -376,15 +376,33 @@ ccl_device float3 particle_angular_velocity(KernelGlobals *kg, int particle)
 ccl_device_inline float3 bvh_clamp_direction(float3 dir)
 {
 	/* clamp absolute values by exp2f(-80.0f) to avoid division by zero when calculating inverse direction */
-	float ooeps = 8.271806E-25f;
+#if defined(__KERNEL_SSE__) && defined(__KERNEL_SSE2__)
+	const ssef oopes(8.271806E-25f,8.271806E-25f,8.271806E-25f,0.0f);
+	const ssef mask = _mm_cmpgt_ps(fabs(dir), oopes);
+	const ssef signdir = signmsk(dir.m128) | oopes;
+#  ifndef __KERNEL_AVX__
+	ssef res = mask & ssef(dir);
+	res = _mm_or_ps(res,_mm_andnot_ps(mask, signdir));
+#  else
+	ssef res = _mm_blendv_ps(signdir, dir, mask);
+#  endif
+	return float3(res);
+#else  /* __KERNEL_SSE__ && __KERNEL_SSE2__ */
+	const float ooeps = 8.271806E-25f;
 	return make_float3((fabsf(dir.x) > ooeps)? dir.x: copysignf(ooeps, dir.x),
 	                   (fabsf(dir.y) > ooeps)? dir.y: copysignf(ooeps, dir.y),
 	                   (fabsf(dir.z) > ooeps)? dir.z: copysignf(ooeps, dir.z));
+#endif  /* __KERNEL_SSE__ && __KERNEL_SSE2__ */
 }
 
 ccl_device_inline float3 bvh_inverse_direction(float3 dir)
 {
+	/* TODO(sergey): Currently disabled, gives speedup but causes precision issues. */
+#if defined(__KERNEL_SSE__) && 0
+	return rcp(dir);
+#else
 	return 1.0f / dir;
+#endif
 }
 
 /* Transform ray into object space to enter static object in BVH */
@@ -564,6 +582,15 @@ ccl_device_inline void bvh_instance_motion_pop_factor(KernelGlobals *kg,
  */
 
 #ifdef __KERNEL_OPENCL__
+ccl_device_inline void object_position_transform_addrspace(KernelGlobals *kg,
+                                                         const ShaderData *sd,
+                                                         ccl_addr_space float3 *P)
+{
+	float3 private_P = *P;
+	object_position_transform(kg, sd, &private_P);
+	*P = private_P;
+}
+
 ccl_device_inline void object_dir_transform_addrspace(KernelGlobals *kg,
                                                       const ShaderData *sd,
                                                       ccl_addr_space float3 *D)
@@ -584,9 +611,11 @@ ccl_device_inline void object_normal_transform_addrspace(KernelGlobals *kg,
 #endif
 
 #ifndef __KERNEL_OPENCL__
+#  define object_position_transform_auto object_position_transform
 #  define object_dir_transform_auto object_dir_transform
 #  define object_normal_transform_auto object_normal_transform
 #else
+#  define object_position_transform_auto object_position_transform_addrspace
 #  define object_dir_transform_auto object_dir_transform_addrspace
 #  define object_normal_transform_auto object_normal_transform_addrspace
 #endif

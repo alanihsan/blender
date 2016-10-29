@@ -155,6 +155,7 @@ option_defaults_init(
 	_init_BUILDINFO
 	_init_CODEC_FFMPEG
 	_init_CYCLES_OSL
+	_init_CYCLES_OPENSUBDIV
 	_init_IMAGE_OPENEXR
 	_init_INPUT_NDOF
 	_init_JACK
@@ -172,6 +173,7 @@ if(UNIX AND NOT APPLE)
 	# disable less important dependencies by default
 	set(_init_CODEC_FFMPEG                   OFF)
 	set(_init_CYCLES_OSL                     OFF)
+	set(_init_CYCLES_OPENSUBDIV              OFF)
 	set(_init_IMAGE_OPENEXR                  OFF)
 	set(_init_JACK                           OFF)
 	set(_init_OPENCOLLADA                    OFF)
@@ -220,6 +222,8 @@ if(${CMAKE_VERSION} VERSION_LESS 2.8.8)
 endif()
 set(BUILDINFO_OVERRIDE_DATE "" CACHE STRING "Use instead of the current date for reproducable builds (empty string disables this option)")
 set(BUILDINFO_OVERRIDE_TIME "" CACHE STRING "Use instead of the current time for reproducable builds (empty string disables this option)")
+set(CPACK_OVERRIDE_PACKAGENAME "" CACHE STRING "Use instead of the standard packagename (empty string disables this option)")
+mark_as_advanced(CPACK_OVERRIDE_PACKAGENAME)
 mark_as_advanced(BUILDINFO_OVERRIDE_DATE)
 mark_as_advanced(BUILDINFO_OVERRIDE_TIME)
 
@@ -339,9 +343,9 @@ option(WITH_OPENCOLLADA   "Enable OpenCollada Support (http://www.opencollada.or
 # Sound output
 option(WITH_SDL           "Enable SDL for sound and joystick support" ${_init_SDL})
 option(WITH_OPENAL        "Enable OpenAL Support (http://www.openal.org)" ON)
-option(WITH_JACK          "Enable Jack Support (http://www.jackaudio.org)" ${_init_JACK})
+option(WITH_JACK          "Enable JACK Support (http://www.jackaudio.org)" ${_init_JACK})
 if(UNIX AND NOT APPLE)
-	option(WITH_JACK_DYNLOAD  "Enable runtime dynamic Jack libraries loading" OFF)
+	option(WITH_JACK_DYNLOAD  "Enable runtime dynamic JACK libraries loading" OFF)
 endif()
 if(UNIX AND NOT APPLE)
 	option(WITH_SDL_DYNLOAD  "Enable runtime dynamic SDL libraries loading" OFF)
@@ -398,9 +402,9 @@ option(WITH_CYCLES					"Enable Cycles Render Engine" ON)
 option(WITH_CYCLES_STANDALONE		"Build Cycles standalone application" OFF)
 option(WITH_CYCLES_STANDALONE_GUI	"Build Cycles standalone with GUI" OFF)
 option(WITH_CYCLES_OSL				"Build Cycles with OSL support" ${_init_CYCLES_OSL})
-option(WITH_CYCLES_OPENSUBDIV		"Build Cycles with OpenSubdiv support" ON)
+option(WITH_CYCLES_OPENSUBDIV		"Build Cycles with OpenSubdiv support" ${_init_CYCLES_OPENSUBDIV})
 option(WITH_CYCLES_CUDA_BINARIES	"Build Cycles CUDA binaries" OFF)
-set(CYCLES_CUDA_BINARIES_ARCH sm_20 sm_21 sm_30 sm_35 sm_37 sm_50 sm_52 CACHE STRING "CUDA architectures to build binaries for")
+set(CYCLES_CUDA_BINARIES_ARCH sm_20 sm_21 sm_30 sm_35 sm_37 sm_50 sm_52 sm_60 sm_61 CACHE STRING "CUDA architectures to build binaries for")
 mark_as_advanced(CYCLES_CUDA_BINARIES_ARCH)
 unset(PLATFORM_DEFAULT)
 option(WITH_CYCLES_LOGGING	"Build Cycles with logging support" ON)
@@ -512,6 +516,15 @@ mark_as_advanced(WITH_LEGACY_DEPSGRAPH)
 option(WITH_WINDOWS_FIND_MODULES "Use find_package to locate libraries" OFF)
 mark_as_advanced(WITH_WINDOWS_FIND_MODULES)
 
+option(WITH_WINDOWS_CODESIGN "Use signtool to sign the final binary." OFF)
+mark_as_advanced(WITH_WINDOWS_CODESIGN)
+
+set(WINDOWS_CODESIGN_PFX CACHE FILEPATH  "Path to pfx file to use for codesigning.")
+mark_as_advanced(WINDOWS_CODESIGN_PFX)
+
+set(WINDOWS_CODESIGN_PFX_PASSWORD CACHE STRING  "password for pfx file used for codesigning.")
+mark_as_advanced(WINDOWS_CODESIGN_PFX_PASSWORD)
+
 # avoid using again
 option_defaults_clear()
 
@@ -616,9 +629,21 @@ if(APPLE)
 		set(CMAKE_FIND_ROOT_PATH ${CMAKE_OSX_SYSROOT})
 	endif()
 
-	if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
-		# 10.6 is our min. target, if you use higher sdk, weak linking happens
-		set(CMAKE_OSX_DEPLOYMENT_TARGET "10.6" CACHE STRING "" FORCE)
+	if(WITH_CXX11)
+		# 10.9 is our min. target, if you use higher sdk, weak linking happens
+		if(CMAKE_OSX_DEPLOYMENT_TARGET)
+			if(${CMAKE_OSX_DEPLOYMENT_TARGET} VERSION_LESS 10.9)
+				message(STATUS "Setting deployment target to 10.9, lower versions are incompatible with WITH_CXX11")
+				set(CMAKE_OSX_DEPLOYMENT_TARGET "10.9" CACHE STRING "" FORCE)
+			endif()
+		else()
+			set(CMAKE_OSX_DEPLOYMENT_TARGET "10.9" CACHE STRING "" FORCE)
+		endif()
+	else()
+		if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+			# 10.6 is our min. target, if you use higher sdk, weak linking happens
+			set(CMAKE_OSX_DEPLOYMENT_TARGET "10.6" CACHE STRING "" FORCE)
+		endif()
 	endif()
 	
 	if(NOT ${CMAKE_GENERATOR} MATCHES "Xcode")
@@ -941,11 +966,6 @@ if(WITH_CYCLES)
 			)
 		endif()
 	endif()
-
-	if(WITH_CYCLES_OPENSUBDIV AND NOT WITH_OPENSUBDIV)
-		message(STATUS "WITH_CYCLES_OPENSUBDIV requires WITH_OPENSUBDIV to be ON, turning OFF")
-		set(WITH_CYCLES_OPENSUBDIV OFF)
-	endif()
 endif()
 
 if(WITH_INTERNATIONAL)
@@ -966,7 +986,7 @@ if(SUPPORT_SSE_BUILD)
 	add_definitions(-D__SSE__ -D__MMX__)
 endif()
 if(SUPPORT_SSE2_BUILD)
-	set(PLATFORM_CFLAGS " ${COMPILER_SSE2_FLAG} ${PLATFORM_CFLAGS}")
+	set(PLATFORM_CFLAGS " ${PLATFORM_CFLAGS} ${COMPILER_SSE2_FLAG}")
 	add_definitions(-D__SSE2__)
 	if(NOT SUPPORT_SSE_BUILD) # dont double up
 		add_definitions(-D__MMX__)

@@ -1575,7 +1575,7 @@ static int make_links_data_exec(bContext *C, wmOperator *op)
 							Material *ma = give_current_material(ob_src, a + 1);
 							assign_material(ob_dst, ma, a + 1, BKE_MAT_ASSIGN_USERPREF); /* also works with ma==NULL */
 						}
-						DAG_id_tag_update(&ob_dst->id, 0);
+						DAG_id_tag_update(&ob_dst->id, OB_RECALC_DATA);
 						break;
 					case MAKE_LINKS_ANIMDATA:
 						BKE_animdata_copy_id((ID *)ob_dst, (ID *)ob_src, false);
@@ -1609,7 +1609,7 @@ static int make_links_data_exec(bContext *C, wmOperator *op)
 					case MAKE_LINKS_DUPLIGROUP:
 						ob_dst->dup_group = ob_src->dup_group;
 						if (ob_dst->dup_group) {
-							id_lib_extern(&ob_dst->dup_group->id);
+							id_us_plus(&ob_dst->dup_group->id);
 							ob_dst->transflag |= OB_DUPLIGROUP;
 						}
 						break;
@@ -2346,7 +2346,7 @@ void OBJECT_OT_make_local(wmOperatorType *ot)
 
 	/* identifiers */
 	ot->name = "Make Local";
-	ot->description = "Make library linked datablocks local to this file";
+	ot->description = "Make library linked data-blocks local to this file";
 	ot->idname = "OBJECT_OT_make_local";
 
 	/* api callbacks */
@@ -2441,7 +2441,7 @@ void OBJECT_OT_make_single_user(wmOperatorType *ot)
 
 	RNA_def_boolean(ot->srna, "object", 0, "Object", "Make single user objects");
 	RNA_def_boolean(ot->srna, "obdata", 0, "Object Data", "Make single user object data");
-	RNA_def_boolean(ot->srna, "material", 0, "Materials", "Make materials local to each datablock");
+	RNA_def_boolean(ot->srna, "material", 0, "Materials", "Make materials local to each data-block");
 	RNA_def_boolean(ot->srna, "texture", 0, "Textures",
 	                "Make textures local to each material (needs 'Materials' to be set too)");
 	RNA_def_boolean(ot->srna, "animation", 0, "Object Animation", "Make animation data local to each object");
