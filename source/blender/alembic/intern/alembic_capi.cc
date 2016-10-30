@@ -885,3 +885,150 @@ CacheReader *CacheReader_open_alembic_object(AbcArchiveHandle *handle, CacheRead
 
 	return reinterpret_cast<CacheReader *>(abc_reader);
 }
+
+/* ************************************************************************ */
+
+using Alembic::Abc::IV3fArrayProperty;
+
+static V3fArraySamplePtr get_velocity_prop(const ICompoundProperty &prop, const ISampleSelector &iss)
+{
+	std::string name = "velocity";
+
+	if (!has_property(prop, name)) {
+		name = "Velocity";
+
+		if (!has_property(prop, name)) {
+			return V3fArraySamplePtr();
+		}
+	}
+
+	const IV3fArrayProperty &velocity_prop = IV3fArrayProperty(prop, name, 0);
+
+	if (velocity_prop) {
+		return velocity_prop.getValue(iss);
+	}
+
+	return V3fArraySamplePtr();
+}
+
+bool ABC_has_velocity_cache(CacheReader *reader, const float time)
+{
+	AbcObjectReader *abc_reader = reinterpret_cast<AbcObjectReader *>(reader);
+
+	if (!abc_reader) {
+		return false;
+	}
+
+	IObject iobject = abc_reader->iobject();
+
+	if (!iobject.valid()) {
+		return false;
+	}
+
+	const ObjectHeader &header = iobject.getHeader();
+
+	if (!IPolyMesh::matches(header)) {
+		return false;
+	}
+
+	IPolyMesh mesh(iobject, kWrapExisting);
+	IPolyMeshSchema schema = mesh.getSchema();
+	ISampleSelector sample_sel(time);
+	const IPolyMeshSchema::Sample sample = schema.getValue(sample_sel);
+
+	V3fArraySamplePtr velocities = sample.getVelocities();
+
+	if (!velocities) {
+//		std::cerr << "No velocities found, checking arbitrary params...\n";
+
+		/* Check arbitrary parameters for legacy apps like RealFlow. */
+		ICompoundProperty prop = schema.getArbGeomParams();
+
+		velocities = get_velocity_prop(prop, sample_sel);
+
+		if (!velocities) {
+//			std::cerr << "Still no velocities found.\n";
+			return false;
+		}
+	}
+
+	return true;
+}
+
+void ABC_get_velocity_cache(CacheReader *reader, float *values, const float time)
+{
+	AbcObjectReader *abc_reader = reinterpret_cast<AbcObjectReader *>(reader);
+
+	if (!abc_reader) {
+		return;
+	}
+
+	IObject iobject = abc_reader->iobject();
+
+	if (!iobject.valid()) {
+		return;
+	}
+
+	const ObjectHeader &header = iobject.getHeader();
+
+	if (!IPolyMesh::matches(header)) {
+		return;
+	}
+
+	IPolyMesh mesh(iobject, kWrapExisting);
+	IPolyMeshSchema schema = mesh.getSchema();
+	ISampleSelector sample_sel(time);
+	const IPolyMeshSchema::Sample sample = schema.getValue(sample_sel);
+
+	V3fArraySamplePtr velocities = sample.getVelocities();
+
+	if (!velocities) {
+		/* Check arbitrary parameters for legacy apps like RealFlow. */
+		ICompoundProperty prop = schema.getArbGeomParams();
+
+		velocities = get_velocity_prop(prop, sample_sel);
+
+		if (!velocities) {
+			return;
+		}
+	}
+
+	float fps = 1.0f / 24.0f;
+	float vel[3];
+
+	std::cerr << __func__ << ", velocity vectors: " << velocities->size() << '\n';
+
+	//#define DEBUG_VELOCITY
+
+#ifdef DEBUG_VELOCITY
+	float maxx = std::numeric_limits<float>::min();
+	float maxy = std::numeric_limits<float>::min();
+	float maxz = std::numeric_limits<float>::min();
+#endif
+
+	for (size_t i = 0; i < velocities->size(); ++i) {
+		const Imath::V3f &vel_in = (*velocities)[i];
+		copy_yup_zup(vel, vel_in.getValue());
+
+#ifdef DEBUG_VELOCITY
+		if (vel[0] > maxx) {
+			maxx = vel[0];
+		}
+
+		if (vel[1] > maxy) {
+			maxy = vel[1];
+		}
+
+		if (vel[2] > maxz) {
+			maxz = vel[2];
+		}
+#endif
+
+		mul_v3_fl(vel, fps);
+		copy_v3_v3(values + i * 3, vel);
+	}
+
+#ifdef DEBUG_VELOCITY
+	std::cerr << "Max vel: " << maxx << ", " << maxy << ", " << maxz << '\n';
+#endif
+}

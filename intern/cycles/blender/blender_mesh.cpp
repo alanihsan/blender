@@ -823,6 +823,66 @@ static void create_subd_mesh(Scene *scene,
 
 /* Sync */
 
+static inline BL::MeshSequenceCacheModifier object_mesh_cache_find(BL::Object &b_ob)
+{
+	BL::Object::modifiers_iterator b_mod;
+
+	for(b_ob.modifiers.begin(b_mod); b_mod != b_ob.modifiers.end(); ++b_mod) {
+		if (!b_mod->is_a(&RNA_MeshSequenceCacheModifier)) {
+			continue;
+		}
+
+		BL::MeshSequenceCacheModifier mesh_cache = BL::MeshSequenceCacheModifier(*b_mod);
+
+		if (MeshSequenceCacheModifier_has_velocity_get(&mesh_cache.ptr)) {
+			return mesh_cache;
+		}
+	}
+
+	return BL::MeshSequenceCacheModifier(PointerRNA_NULL);
+}
+
+static void sync_mesh_cached_velocities(BL::Object& b_ob, Scene *scene, Mesh *mesh)
+{
+	if(scene->need_motion() == Scene::MOTION_NONE)
+		return;
+
+	BL::MeshSequenceCacheModifier mesh_cache = object_mesh_cache_find(b_ob);
+
+	if(!mesh_cache) {
+		return;
+	}
+
+	/* TODO: check that the number of vertices still matches. */
+
+	/* Find or add attribute */
+	float3 *P = &mesh->verts[0];
+	Attribute *attr_mP = mesh->attributes.find(ATTR_STD_MOTION_VERTEX_POSITION);
+
+	if(!attr_mP) {
+		attr_mP = mesh->attributes.add(ATTR_STD_MOTION_VERTEX_POSITION);
+	}
+
+	const size_t numverts = mesh->verts.size();
+
+	float3 *buffer = new float3[numverts];
+
+	MeshSequenceCacheModifier_velocity_cache_get(&mesh_cache.ptr, &buffer[0].x);
+
+	/* Only export previous and next frame, we don't have any in between data. */
+	float motion_times[2] = {-1.0f, 1.0f};
+	for (int step = 0; step < 2; step++) {
+		const float relative_time = motion_times[step] * scene->motion_shutter_time() * 0.5f;
+		float3 *mP = attr_mP->data_float3() + step*numverts;
+
+		for (int i = 0; i < numverts; ++i) {
+			mP[i] = P[i] + buffer[i]*relative_time;
+		}
+	}
+
+	delete [] buffer;
+}
+
 static void sync_mesh_fluid_motion(BL::Object& b_ob, Scene *scene, Mesh *mesh)
 {
 	if(scene->need_motion() == Scene::MOTION_NONE)
@@ -987,6 +1047,9 @@ Mesh *BlenderSync::sync_mesh(BL::Object& b_ob,
 	}
 	mesh->geometry_flags = requested_geometry_flags;
 
+	/* cached velocities (e.g. from alembic archive) */
+	sync_mesh_cached_velocities(b_ob, scene, mesh);
+
 	/* fluid motion */
 	sync_mesh_fluid_motion(b_ob, scene, mesh);
 
@@ -1078,6 +1141,11 @@ void BlenderSync::sync_mesh_motion(BL::Object& b_ob,
 	/* skip objects without deforming modifiers. this is not totally reliable,
 	 * would need a more extensive check to see which objects are animated */
 	BL::Mesh b_mesh(PointerRNA_NULL);
+
+	/* cached motion is exported immediately with mesh, skip here */
+	BL::MeshSequenceCacheModifier mesh_cache = object_mesh_cache_find(b_ob);
+	if (mesh_cache)
+		return;
 
 	/* fluid motion is exported immediate with mesh, skip here */
 	BL::DomainFluidSettings b_fluid_domain = object_fluid_domain_find(b_ob);

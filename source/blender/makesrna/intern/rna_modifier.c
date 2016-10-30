@@ -1146,6 +1146,35 @@ static void rna_MeshSequenceCache_object_path_update(Main *bmain, Scene *scene, 
 	rna_Modifier_update(bmain, scene, ptr);
 }
 
+static void rna_MeshSequenceCacheModifier_velocity_get(PointerRNA *ptr, float *values)
+{
+#ifdef WITH_ALEMBIC
+	MeshSeqCacheModifierData *mcmd = (MeshSeqCacheModifierData *)ptr->data;
+
+	Scene *scene = mcmd->modifier.scene;
+	const float time = BKE_cachefile_time_offset(mcmd->cache_file, CFRA, FPS);
+
+	ABC_get_velocity_cache(mcmd->reader, values, time);
+#else
+	UNUSED_VARS(ptr, values);
+#endif
+}
+
+static int rna_MeshSequenceCacheModifier_has_velocity_get(PointerRNA *ptr)
+{
+#ifdef WITH_ALEMBIC
+	MeshSeqCacheModifierData *mcmd = (MeshSeqCacheModifierData *)ptr->data;
+
+	Scene *scene = mcmd->modifier.scene;
+	const float time = BKE_cachefile_time_offset(mcmd->cache_file, CFRA, FPS);
+
+	return ABC_has_velocity_cache(mcmd->reader, time);
+#else
+	return false;
+	UNUSED_VARS(ptr);
+#endif
+}
+
 #else
 
 static PropertyRNA *rna_def_property_subdivision_common(StructRNA *srna, const char type[])
@@ -4286,6 +4315,20 @@ static void rna_def_modifier_meshseqcache(BlenderRNA *brna)
 	RNA_def_property_flag(prop, PROP_ENUM_FLAG);
 	RNA_def_property_enum_sdna(prop, NULL, "read_flag");
 	RNA_def_property_enum_items(prop, read_flag_items);
+	RNA_def_property_update(prop, 0, "rna_Modifier_update");
+
+	/* -------------------------- velocity vectors -------------------------- */
+
+	prop = RNA_def_property(srna, "velocity_cache", PROP_FLOAT, PROP_NONE);
+	RNA_def_property_array(prop, 32);
+	RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+	RNA_def_property_float_funcs(prop, "rna_MeshSequenceCacheModifier_velocity_get", NULL, NULL);
+	RNA_def_property_ui_text(prop, "Velocity Cache", "Vertices velocity cache");
+
+	prop = RNA_def_property(srna, "has_velocity", PROP_BOOLEAN, PROP_NONE);
+	RNA_def_property_ui_text(prop, "Has Velocity Cache", "");
+	RNA_def_property_boolean_funcs(prop, "rna_MeshSequenceCacheModifier_has_velocity_get", NULL);
+	RNA_def_property_clear_flag(prop, PROP_EDITABLE);
 	RNA_def_property_update(prop, 0, "rna_Modifier_update");
 }
 

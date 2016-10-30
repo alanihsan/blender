@@ -112,6 +112,9 @@ struct CacheReader *CacheReader_open_alembic_object(struct AbcArchiveHandle *han
                                                     struct Object *object,
                                                     const char *object_path);
 
+bool ABC_has_velocity_cache(struct CacheReader *reader, const float time);
+void ABC_get_velocity_cache(struct CacheReader *reader, float *values, float time);
+
 #ifdef __cplusplus
 }
 #endif
