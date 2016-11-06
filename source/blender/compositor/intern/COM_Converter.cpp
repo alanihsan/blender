@@ -117,6 +117,7 @@ extern "C" {
 #include "COM_ZCombineNode.h"
 #include "COM_PixelateNode.h"
 #include "COM_PlaneTrackDeformNode.h"
+#include "COM_SaturationNode.h"
 
 bool Converter::is_fast_node(bNode *b_node)
 {
@@ -405,6 +406,9 @@ Node *Converter::convert(bNode *b_node)
 			break;
 		case CMP_NODE_SUNBEAMS:
 			node = new SunBeamsNode(b_node);
+			break;
+		case CMP_NODE_SATURATION:
+			node = new SaturationNode(b_node);
 			break;
 	}
 	return node;

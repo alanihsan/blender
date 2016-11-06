@@ -3532,6 +3532,7 @@ static void registerCompositNodes(void)
 	register_node_type_cmp_switch();
 	register_node_type_cmp_switch_view();
 	register_node_type_cmp_pixelate();
+	register_node_type_cmp_saturation();
 
 	register_node_type_cmp_mask();
 	register_node_type_cmp_trackpos();

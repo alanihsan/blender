@@ -1670,11 +1670,21 @@ static void node_composit_buts_despeckle(uiLayout *layout, bContext *UNUSED(C), 
 
 static void node_composit_buts_diff_matte(uiLayout *layout, bContext *UNUSED(C), PointerRNA *ptr)
 {
+	bNode *node = ptr->data;
 	uiLayout *col;
-	
+
+	uiItemR(layout, ptr, "mode", 0, NULL, ICON_NONE);
+
 	col = uiLayoutColumn(layout, true);
-	uiItemR(col, ptr, "tolerance", UI_ITEM_R_SLIDER, NULL, ICON_NONE);
-	uiItemR(col, ptr, "falloff", UI_ITEM_R_SLIDER, NULL, ICON_NONE);
+
+	if (node->custom1 == 0) {
+		uiItemR(col, ptr, "tolerance", UI_ITEM_R_SLIDER, NULL, ICON_NONE);
+		uiItemR(col, ptr, "falloff", UI_ITEM_R_SLIDER, NULL, ICON_NONE);
+	}
+	else {
+		uiItemR(col, ptr, "gain", UI_ITEM_R_SLIDER, NULL, ICON_NONE);
+		uiItemR(col, ptr, "offset", UI_ITEM_R_SLIDER, NULL, ICON_NONE);
+	}
 }
 
 static void node_composit_buts_distance_matte(uiLayout *layout, bContext *UNUSED(C), PointerRNA *ptr)
@@ -2376,6 +2386,14 @@ static void node_composit_buts_mask(uiLayout *layout, bContext *C, PointerRNA *p
 	}
 }
 
+static void node_composit_buts_saturation(uiLayout *layout, bContext *C, PointerRNA *ptr)
+{
+	UNUSED_VARS(C);
+
+	uiItemR(layout, ptr, "mode", 0, NULL, ICON_NONE);
+	uiItemR(layout, ptr, "saturation", 0, NULL, ICON_NONE);
+}
+
 static void node_composit_buts_keyingscreen(uiLayout *layout, bContext *C, PointerRNA *ptr)
 {
 	bNode *node = ptr->data;
@@ -2730,6 +2748,8 @@ static void node_composit_set_butfunc(bNodeType *ntype)
 		case CMP_NODE_SUNBEAMS:
 			ntype->draw_buttons = node_composit_buts_sunbeams;
 			break;
+		case CMP_NODE_SATURATION:
+			ntype->draw_buttons = node_composit_buts_saturation;
 	}
 }
 

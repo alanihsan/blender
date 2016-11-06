@@ -15,58 +15,35 @@
  * along with this program; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
- * Contributor: 
- *		Jeroen Bakker 
- *		Monique Dewanchand
+ * Contributor:
+ *		Kevin Dietrich
  */
 
-#ifndef _COM_DifferenceMatteOperation_h
-#define _COM_DifferenceMatteOperation_h
-#include "COM_MixOperation.h"
+#pragma once
 
+#include "COM_NodeOperation.h"
 
-/**
- * this program converts an input color to an output value.
- * it assumes we are in sRGB color space.
- */
-class DifferenceMatteOperation : public NodeOperation {
+class SaturationOperation : public NodeOperation {
 private:
-	NodeChroma *m_settings;
-	SocketReader *m_inputImage1Program;
-	SocketReader *m_inputImage2Program;
-	float m_gain;
-	float m_offset;
+	SocketReader *m_inputOperation;
+	float m_saturation;
 	int m_mode;
 
 public:
-	/**
-	 * Default constructor
-	 */
-	DifferenceMatteOperation();
-	
-	/**
-	 * the inner loop of this program
-	 */
+	SaturationOperation();
+
 	void executePixelSampled(float output[4], float x, float y, PixelSampler sampler);
-	
+
 	void initExecution();
 	void deinitExecution();
-	
-	void setSettings(NodeChroma *nodeChroma) { this->m_settings = nodeChroma; }
 
-	void setGain(float gain)
+	void setSaturation(float saturation)
 	{
-		m_gain = gain;
+		this->m_saturation = saturation;
 	}
 
-	void setOffset(float offset)
+	void setMode(int mode)
 	{
-		m_offset = offset;
-	}
-
-	void setMode(float mode)
-	{
-		m_mode = mode;
+		this->m_mode = mode;
 	}
 };
-#endif

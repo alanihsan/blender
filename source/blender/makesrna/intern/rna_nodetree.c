@@ -5058,6 +5058,30 @@ static void def_cmp_diff_matte(StructRNA *srna)
 {
 	PropertyRNA *prop;
 
+	static EnumPropertyItem math_type_items[] = {
+		{0, "OLD_DIFF", 0, "Old", "Blender's old difference matte"},
+		{1, "NEW_DIFF", 0, "New", "Blender's new difference matte"},
+		{0, NULL, 0, NULL, NULL}
+	};
+
+	prop = RNA_def_property(srna, "mode", PROP_ENUM, PROP_NONE);
+	RNA_def_property_enum_bitflag_sdna(prop, NULL, "custom1");
+	RNA_def_property_enum_items(prop, math_type_items);
+	RNA_def_property_ui_text(prop, "Mode", "");
+	RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+	prop = RNA_def_property(srna, "gain", PROP_FLOAT, PROP_NONE);
+	RNA_def_property_float_sdna(prop, NULL, "custom3");
+	RNA_def_property_range(prop, 0.0f, 1.0f);
+	RNA_def_property_ui_text(prop, "Gain", "");
+	RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+	prop = RNA_def_property(srna, "offset", PROP_FLOAT, PROP_NONE);
+	RNA_def_property_float_sdna(prop, NULL, "custom4");
+	RNA_def_property_range(prop, 0.0f, 1.0f);
+	RNA_def_property_ui_text(prop, "Offset", "");
+	RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
 	RNA_def_struct_sdna_from(srna, "NodeChroma", "storage");
 	
 	prop = RNA_def_property(srna, "tolerance", PROP_FLOAT, PROP_NONE);
@@ -6094,6 +6118,32 @@ static void def_cmp_mask(StructRNA *srna)
 	prop = RNA_def_property(srna, "size_y", PROP_INT, PROP_NONE);
 	RNA_def_property_range(prop, 1.0f, 10000.0f);
 	RNA_def_property_ui_text(prop, "Y", "");
+	RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_cmp_saturation(StructRNA *srna)
+{
+	PropertyRNA *prop;
+
+	static EnumPropertyItem math_type_items[] = {
+		{0, "REC709",   0, "Rec 709",   ""},
+		{1, "CCIR601",   0, "Ccir 601",   ""},
+		{2, "AVERAGE",   0, "Average", ""},
+	    {3, "MAXIMUM",   0, "Maximum", ""},
+		{0, NULL, 0, NULL, NULL}
+	};
+
+	prop = RNA_def_property(srna, "saturation", PROP_FLOAT, PROP_NONE);
+	RNA_def_property_float_sdna(prop, NULL, "custom3");
+	RNA_def_property_range(prop, 0.0, 4.0f);
+	RNA_def_property_float_default(prop, 1.0f);
+	RNA_def_property_ui_text(prop, "Saturation", "Factor to mix saturation in");
+	RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+	prop = RNA_def_property(srna, "mode", PROP_ENUM, PROP_NONE);
+	RNA_def_property_enum_bitflag_sdna(prop, NULL, "custom1");
+	RNA_def_property_enum_items(prop, math_type_items);
+	RNA_def_property_ui_text(prop, "Luminance Math", "");
 	RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 }
 

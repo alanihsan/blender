@@ -326,6 +326,7 @@ compositor_node_categories = [
         NodeItem("CompositorNodeGamma"),
         NodeItem("CompositorNodeColorCorrection"),
         NodeItem("CompositorNodeTonemap"),
+        NodeItem("CompositorNodeSaturation"),
         NodeItem("CompositorNodeZcombine"),
         ]),
     CompositorNodeCategory("CMP_CONVERTOR", "Converter", items=[

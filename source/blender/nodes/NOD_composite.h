@@ -135,6 +135,7 @@ void register_node_type_cmp_bokehblur(void);
 void register_node_type_cmp_switch(void);
 void register_node_type_cmp_switch_view(void);
 void register_node_type_cmp_pixelate(void);
+void register_node_type_cmp_saturation(void);
 void register_node_type_cmp_trackpos(void);
 void register_node_type_cmp_planetrackdeform(void);
 void register_node_type_cmp_cornerpin(void);

@@ -51,38 +51,56 @@ void DifferenceMatteOperation::executePixelSampled(float output[4], float x, flo
 
 	const float tolerance = this->m_settings->t1;
 	const float falloff = this->m_settings->t2;
-	float difference;
-	float alpha;
 
 	this->m_inputImage1Program->readSampled(inColor1, x, y, sampler);
 	this->m_inputImage2Program->readSampled(inColor2, x, y, sampler);
 
-	difference = (fabsf(inColor2[0] - inColor1[0]) +
-	              fabsf(inColor2[1] - inColor1[1]) +
-	              fabsf(inColor2[2] - inColor1[2]));
+	switch (this->m_mode) {
+		case 0:
+		{
+			float difference = (fabsf(inColor2[0] - inColor1[0]) +
+			                    fabsf(inColor2[1] - inColor1[1]) +
+			                    fabsf(inColor2[2] - inColor1[2]));
 
-	/* average together the distances */
-	difference = difference / 3.0f;
+			/* average together the distances */
+			difference = difference / 3.0f;
 
-	/* make 100% transparent */
-	if (difference < tolerance) {
-		output[0] = 0.0f;
-	}
-	/*in the falloff region, make partially transparent */
-	else if (difference < falloff + tolerance) {
-		difference = difference - tolerance;
-		alpha = difference / falloff;
-		/*only change if more transparent than before */
-		if (alpha < inColor1[3]) {
-			output[0] = alpha;
+			/* make 100% transparent */
+			if (difference < tolerance) {
+				output[0] = 0.0f;
+			}
+			/*in the falloff region, make partially transparent */
+			else if (difference < falloff + tolerance) {
+				difference = difference - tolerance;
+				float alpha = difference / falloff;
+				/*only change if more transparent than before */
+				if (alpha < inColor1[3]) {
+					output[0] = alpha;
+				}
+				else { /* leave as before */
+					output[0] = inColor1[3];
+				}
+			}
+			else {
+				/* foreground object */
+				output[0] = inColor1[3];
+			}
+
+			break;
 		}
-		else { /* leave as before */
-			output[0] = inColor1[3];
+		case 1:
+		{
+			const float dr = inColor2[0] - inColor1[0];
+			const float dg = inColor2[1] - inColor1[1];
+			const float db = inColor2[2] - inColor1[2];
+
+			const float difference = dr * dr + db * db + dg * dg;
+
+			output[0] = difference * m_gain - m_offset;
+			CLAMP(output[0], 0.0f, 1.0f);
+
+			break;
 		}
-	}
-	else {
-		/* foreground object */
-		output[0] = inColor1[3];
 	}
 }
 

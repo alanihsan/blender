@@ -40,6 +40,9 @@ void DifferenceMatteNode::convertToOperations(NodeConverter &converter, const Co
 
 	DifferenceMatteOperation *operationSet = new DifferenceMatteOperation();
 	operationSet->setSettings((NodeChroma *)editorNode->storage);
+	operationSet->setMode(editorNode->custom1);
+	operationSet->setGain(editorNode->custom3);
+	operationSet->setOffset(editorNode->custom4);
 	converter.addOperation(operationSet);
 	
 	converter.mapInputSocket(inputSocket, operationSet->getInputSocket(0));

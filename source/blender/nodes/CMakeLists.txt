@@ -98,6 +98,7 @@ set(SRC
 	composite/nodes/node_composite_premulkey.c
 	composite/nodes/node_composite_rgb.c
 	composite/nodes/node_composite_rotate.c
+	composite/nodes/node_composite_saturation.c
 	composite/nodes/node_composite_scale.c
 	composite/nodes/node_composite_sepcombHSVA.c
 	composite/nodes/node_composite_sepcombRGBA.c

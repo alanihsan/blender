@@ -236,6 +236,8 @@ set(SRC
 	nodes/COM_ColorCorrectionNode.h
 	nodes/COM_TonemapNode.cpp
 	nodes/COM_TonemapNode.h
+	nodes/COM_SaturationNode.cpp
+	nodes/COM_SaturationNode.h
 	operations/COM_TonemapOperation.cpp
 	operations/COM_TonemapOperation.h
 
@@ -455,6 +457,8 @@ set(SRC
 	operations/COM_MapValueOperation.h
 	operations/COM_MapRangeOperation.cpp
 	operations/COM_MapRangeOperation.h
+	operations/COM_SaturationOperation.cpp
+	operations/COM_SaturationOperation.h
 
 	# Distort operation
 	operations/COM_TranslateOperation.h
