@@ -886,7 +886,7 @@ CacheReader *CacheReader_open_alembic_object(AbcArchiveHandle *handle, CacheRead
 	return reinterpret_cast<CacheReader *>(abc_reader);
 }
 
-/* ************************************************************************ */
+/* ************************************************************************** */
 
 using Alembic::Abc::IV3fArrayProperty;
 
@@ -895,6 +895,8 @@ static V3fArraySamplePtr get_velocity_prop(const ICompoundProperty &prop, const 
 	std::string name = "velocity";
 
 	if (!has_property(prop, name)) {
+		/* Some old files are using camel case, although they might be rare, it
+		 * doesn't hurt to check. */
 		name = "Velocity";
 
 		if (!has_property(prop, name)) {
@@ -955,6 +957,8 @@ bool ABC_has_velocity_cache(CacheReader *reader, const float time)
 	return true;
 }
 
+#undef DEBUG_VELOCITY
+
 void ABC_get_velocity_cache(CacheReader *reader, float *values, const float time)
 {
 	AbcObjectReader *abc_reader = reinterpret_cast<AbcObjectReader *>(reader);
@@ -993,34 +997,30 @@ void ABC_get_velocity_cache(CacheReader *reader, float *values, const float time
 		}
 	}
 
-	float fps = 1.0f / 24.0f;
-	float vel[3];
-
+#ifdef DEBUG_VELOCITY
 	std::cerr << __func__ << ", velocity vectors: " << velocities->size() << '\n';
 
-	//#define DEBUG_VELOCITY
-
-#ifdef DEBUG_VELOCITY
-	float maxx = std::numeric_limits<float>::min();
-	float maxy = std::numeric_limits<float>::min();
-	float maxz = std::numeric_limits<float>::min();
+	float maxvel[3] = {
+	    std::numeric_limits<float>::min(),
+	    std::numeric_limits<float>::min(),
+	    std::numeric_limits<float>::min(),
+	};
 #endif
+
+	/* TODO: vectors might need to be scaled by the FPS? Sounds weird. Only
+	 * reasonable to scale them by dh, if they come from grided simulations. */
+	const float fps = 1.0f / 24.0f;
+	float vel[3];
 
 	for (size_t i = 0; i < velocities->size(); ++i) {
 		const Imath::V3f &vel_in = (*velocities)[i];
 		copy_yup_zup(vel, vel_in.getValue());
 
 #ifdef DEBUG_VELOCITY
-		if (vel[0] > maxx) {
-			maxx = vel[0];
-		}
-
-		if (vel[1] > maxy) {
-			maxy = vel[1];
-		}
-
-		if (vel[2] > maxz) {
-			maxz = vel[2];
+		for (int i = 0; i < 3; ++i) {
+			if (vel[i] > maxvel[i]) {
+				maxvel[i] = vel[i];
+			}
 		}
 #endif
 
@@ -1029,6 +1029,7 @@ void ABC_get_velocity_cache(CacheReader *reader, float *values, const float time
 	}
 
 #ifdef DEBUG_VELOCITY
-	std::cerr << "Max vel: " << maxx << ", " << maxy << ", " << maxz << '\n';
+	std::cerr << "Maximal velocity: <"
+	          << maxvel[0] << "," << maxvel[1] << "," << maxvel[2] << ">\n";
 #endif
 }
