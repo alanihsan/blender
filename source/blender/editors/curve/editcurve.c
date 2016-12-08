@@ -4993,7 +4993,7 @@ static int add_vertex_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 			copy_v3_v3(location, ED_view3d_cursor3d_get(vc.scene, vc.v3d));
 		}
 
-		ED_view3d_win_to_3d_int(vc.ar, location, event->mval, location);
+		ED_view3d_win_to_3d_int(vc.v3d, vc.ar, location, event->mval, location);
 
 		if (use_proj) {
 			const float mval[2] = {UNPACK2(event->mval)};
@@ -5843,7 +5843,7 @@ static int curve_dissolve_exec(bContext *C, wmOperator *UNUSED(op))
 					normalize_v3(tan_r);
 
 					curve_fit_cubic_to_points_single_fl(
-					        points, points_len, dims, FLT_EPSILON,
+					        points, points_len, NULL, dims, FLT_EPSILON,
 					        tan_l, tan_r,
 					        bezt_prev->vec[2], bezt_next->vec[0],
 					        &error_sq_dummy);

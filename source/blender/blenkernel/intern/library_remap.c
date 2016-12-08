@@ -38,6 +38,7 @@
 #include "DNA_armature_types.h"
 #include "DNA_brush_types.h"
 #include "DNA_camera_types.h"
+#include "DNA_cachefile_types.h"
 #include "DNA_group_types.h"
 #include "DNA_gpencil_types.h"
 #include "DNA_ipo_types.h"
@@ -69,6 +70,7 @@
 #include "BKE_armature.h"
 #include "BKE_brush.h"
 #include "BKE_camera.h"
+#include "BKE_cachefile.h"
 #include "BKE_curve.h"
 #include "BKE_depsgraph.h"
 #include "BKE_fcurve.h"
@@ -97,6 +99,7 @@
 #include "BKE_object.h"
 #include "BKE_paint.h"
 #include "BKE_particle.h"
+#include "BKE_sca.h"
 #include "BKE_speaker.h"
 #include "BKE_sound.h"
 #include "BKE_screen.h"
@@ -131,6 +134,7 @@ void BKE_library_callback_remap_editor_id_reference_set(BKE_library_remap_editor
 }
 
 typedef struct IDRemap {
+	Main *bmain;  /* Only used to trigger depsgraph updates in the right bmain. */
 	ID *old_id;
 	ID *new_id;
 	ID *id;  /* The ID in which we are replacing old_id by new_id usages. */
@@ -152,7 +156,7 @@ enum {
 	ID_REMAP_IS_USER_ONE_SKIPPED    = 1 << 1,  /* There was some skipped 'user_one' usages of old_id. */
 };
 
-static int foreach_libblock_remap_callback(void *user_data, ID *UNUSED(id_self), ID **id_p, int cb_flag)
+static int foreach_libblock_remap_callback(void *user_data, ID *id_self, ID **id_p, int cb_flag)
 {
 	IDRemap *id_remap_data = user_data;
 	ID *old_id = id_remap_data->old_id;
@@ -210,6 +214,7 @@ static int foreach_libblock_remap_callback(void *user_data, ID *UNUSED(id_self),
 		else {
 			if (!is_never_null) {
 				*id_p = new_id;
+				DAG_id_tag_update_ex(id_remap_data->bmain, id_self, OB_RECALC_OB | OB_RECALC_DATA | OB_RECALC_TIME);
 			}
 			if (cb_flag & IDWALK_USER) {
 				id_us_min(old_id);
@@ -373,6 +378,18 @@ static void libblock_remap_data_postprocess_obdata_relink(Main *UNUSED(bmain), O
 	}
 }
 
+static void libblock_remap_data_postprocess_nodetree_update(Main *bmain, ID *new_id)
+{
+	/* Verify all nodetree user nodes. */
+	ntreeVerifyNodes(bmain, new_id);
+
+	/* Update node trees as necessary. */
+	FOREACH_NODETREE(bmain, ntree, id) {
+		/* make an update call for the tree */
+		ntreeUpdateTree(bmain, ntree);
+	} FOREACH_NODETREE_END
+}
+
 /**
  * Execute the 'data' part of the remapping (that is, all ID pointers from other ID datablocks).
  *
@@ -383,15 +400,15 @@ static void libblock_remap_data_postprocess_obdata_relink(Main *UNUSED(bmain), O
  * - \a id is non-NULL:
  *   + If \a old_id is NULL, \a new_id must also be NULL, and all ID pointers from \a id are cleared (i.e. \a id
  *     does not references any other datablock anymore).
- *   + If \a old_id is non-NULL, behavior is as with a NULL \a id, but only for given \a id.
+ *   + If \a old_id is non-NULL, behavior is as with a NULL \a id, but only within given \a id.
  *
- * \param bmain: the Main data storage to operate on (can be NULL if \a id is non-NULL).
- * \param id: the datablock to operate on (can be NULL if \a bmain is non-NULL).
+ * \param bmain: the Main data storage to operate on (must never be NULL).
+ * \param id: the datablock to operate on (can be NULL, in which case we operate over all IDs from given bmain).
  * \param old_id: the datablock to dereference (may be NULL if \a id is non-NULL).
  * \param new_id: the new datablock to replace \a old_id references with (may be NULL).
  * \param r_id_remap_data: if non-NULL, the IDRemap struct to use (uselful to retrieve info about remapping process).
  */
-static void libblock_remap_data(
+ATTR_NONNULL(1) static void libblock_remap_data(
         Main *bmain, ID *id, ID *old_id, ID *new_id, const short remap_flags, IDRemap *r_id_remap_data)
 {
 	IDRemap id_remap_data;
@@ -401,6 +418,7 @@ static void libblock_remap_data(
 	if (r_id_remap_data == NULL) {
 		r_id_remap_data = &id_remap_data;
 	}
+	r_id_remap_data->bmain = bmain;
 	r_id_remap_data->old_id = old_id;
 	r_id_remap_data->new_id = new_id;
 	r_id_remap_data->id = NULL;
@@ -441,6 +459,10 @@ static void libblock_remap_data(
 				            id_curr, foreach_libblock_remap_callback, (void *)r_id_remap_data, IDWALK_NOP);
 			}
 		}
+	}
+
+	if (old_id && GS(old_id->name) == ID_OB) {
+		BKE_sca_logic_links_remap(bmain, (Object *)old_id, (Object *)new_id);
 	}
 
 	/* XXX We may not want to always 'transfer' fakeuser from old to new id... Think for now it's desired behavior
@@ -541,6 +563,8 @@ void BKE_libblock_remap_locked(
 		default:
 			break;
 	}
+	/* Node trees may virtually use any kind of data-block... */
+	libblock_remap_data_postprocess_nodetree_update(bmain, new_id);
 
 	/* Full rebuild of DAG! */
 	DAG_relations_tag_update(bmain);
@@ -608,7 +632,7 @@ void BKE_libblock_relink_ex(
 		BLI_assert(new_id == NULL);
 	}
 
-	libblock_remap_data(NULL, id, old_id, new_id, remap_flags, NULL);
+	libblock_remap_data(bmain, id, old_id, new_id, remap_flags, NULL);
 
 	/* Some after-process updates.
 	 * This is a bit ugly, but cannot see a way to avoid it. Maybe we should do a per-ID callback for this instead?
@@ -656,46 +680,23 @@ void BKE_libblock_relink_ex(
 	}
 }
 
-static void animdata_dtar_clear_cb(ID *UNUSED(id), AnimData *adt, void *userdata)
-{
-	ChannelDriver *driver;
-	FCurve *fcu;
-
-	/* find the driver this belongs to and update it */
-	for (fcu = adt->drivers.first; fcu; fcu = fcu->next) {
-		driver = fcu->driver;
-		
-		if (driver) {
-			DriverVar *dvar;
-			for (dvar = driver->variables.first; dvar; dvar = dvar->next) {
-				DRIVER_TARGETS_USED_LOOPER(dvar) 
-				{
-					if (dtar->id == userdata)
-						dtar->id = NULL;
-				}
-				DRIVER_TARGETS_LOOPER_END
-			}
-		}
-	}
-}
-
-void BKE_libblock_free_data(Main *bmain, ID *id)
+void BKE_libblock_free_data(Main *UNUSED(bmain), ID *id)
 {
 	if (id->properties) {
 		IDP_FreeProperty(id->properties);
 		MEM_freeN(id->properties);
 	}
-	
-	/* this ID may be a driver target! */
-	BKE_animdata_main_cb(bmain, animdata_dtar_clear_cb, (void *)id);
 }
 
 /**
  * used in headerbuttons.c image.c mesh.c screen.c sound.c and library.c
  *
  * \param do_id_user: if \a true, try to release other ID's 'references' hold by \a idv.
+ *                    (only applies to main database)
+ * \param do_ui_user: similar to do_id_user but makes sure UI does not hold references to
+ *                    \a id.
  */
-void BKE_libblock_free_ex(Main *bmain, void *idv, const bool do_id_user)
+void BKE_libblock_free_ex(Main *bmain, void *idv, const bool do_id_user, const bool do_ui_user)
 {
 	ID *id = idv;
 	short type = GS(id->name);
@@ -795,7 +796,7 @@ void BKE_libblock_free_ex(Main *bmain, void *idv, const bool do_id_user)
 				free_windowmanager_cb(NULL, (wmWindowManager *)id);
 			break;
 		case ID_GD:
-			BKE_gpencil_free((bGPdata *)id);
+			BKE_gpencil_free((bGPdata *)id, true);
 			break;
 		case ID_MC:
 			BKE_movieclip_free((MovieClip *)id);
@@ -812,17 +813,22 @@ void BKE_libblock_free_ex(Main *bmain, void *idv, const bool do_id_user)
 		case ID_PC:
 			BKE_paint_curve_free((PaintCurve *)id);
 			break;
+		case ID_CF:
+			BKE_cachefile_free((CacheFile *)id);
+			break;
 	}
 
 	/* avoid notifying on removed data */
 	BKE_main_lock(bmain);
 
-	if (free_notifier_reference_cb) {
-		free_notifier_reference_cb(id);
-	}
+	if (do_ui_user) {
+		if (free_notifier_reference_cb) {
+			free_notifier_reference_cb(id);
+		}
 
-	if (remap_editor_id_reference_cb) {
-		remap_editor_id_reference_cb(id, NULL);
+		if (remap_editor_id_reference_cb) {
+			remap_editor_id_reference_cb(id, NULL);
+		}
 	}
 
 	BLI_remlink(lb, id);
@@ -835,7 +841,7 @@ void BKE_libblock_free_ex(Main *bmain, void *idv, const bool do_id_user)
 
 void BKE_libblock_free(Main *bmain, void *idv)
 {
-	BKE_libblock_free_ex(bmain, idv, true);
+	BKE_libblock_free_ex(bmain, idv, true, true);
 }
 
 void BKE_libblock_free_us(Main *bmain, void *idv)      /* test users */
@@ -870,8 +876,8 @@ void BKE_libblock_delete(Main *bmain, void *idv)
 	BKE_main_id_tag_all(bmain, LIB_TAG_DOIT, false);
 
 	/* First tag all datablocks directly from target lib.
-     * Note that we go forward here, since we want to check dependencies before users (e.g. meshes before objects).
-     * Avoids to have to loop twice. */
+	 * Note that we go forward here, since we want to check dependencies before users (e.g. meshes before objects).
+	 * Avoids to have to loop twice. */
 	for (i = 0; i < base_count; i++) {
 		ListBase *lb = lbarray[i];
 		ID *id;

@@ -2606,6 +2606,10 @@ static void rna_Node_image_layer_update(Main *bmain, Scene *scene, PointerRNA *p
 	BKE_image_signal(ima, iuser, IMA_SIGNAL_SRC_CHANGE);
 	
 	rna_Node_update(bmain, scene, ptr);
+
+	if (scene->nodetree != NULL) {
+		ntreeCompositForceHidden(scene->nodetree);
+	}
 }
 
 static EnumPropertyItem *renderresult_layers_add_enum(RenderLayer *rl)
@@ -2737,6 +2741,14 @@ static EnumPropertyItem *rna_Node_scene_layer_itemf(bContext *UNUSED(C), Pointer
 	*r_free = true;
 	
 	return item;
+}
+
+static void rna_Node_scene_layer_update(Main *bmain, Scene *scene, PointerRNA *ptr)
+{
+	rna_Node_update(bmain, scene, ptr);
+	if (scene->nodetree != NULL) {
+		ntreeCompositForceHidden(scene->nodetree);
+	}
 }
 
 static EnumPropertyItem *rna_Node_channel_itemf(bContext *UNUSED(C), PointerRNA *ptr,
@@ -3095,6 +3107,9 @@ void rna_ShaderNodePointDensity_density_cache(bNode *self,
 		            sizeof(pd->vertex_attribute_name));
 	}
 
+	/* Store resolution, so it can be changed in the UI. */
+	shader_point_density->cached_resolution = shader_point_density->resolution;
+
 	/* Single-threaded sampling of the voxel domain. */
 	RE_point_density_cache(scene,
 	                       pd,
@@ -3109,15 +3124,15 @@ void rna_ShaderNodePointDensity_density_calc(bNode *self,
 {
 	NodeShaderTexPointDensity *shader_point_density = self->storage;
 	PointDensity *pd = &shader_point_density->pd;
+	const int resolution = shader_point_density->cached_resolution;
 
 	if (scene == NULL) {
 		*length = 0;
 		return;
 	}
 
-	*length = 4 * shader_point_density->resolution *
-	              shader_point_density->resolution *
-	              shader_point_density->resolution;
+	/* TODO(sergey): Will likely overflow, but how to pass size_t via RNA? */
+	*length = 4 * resolution * resolution * resolution;
 
 	if (*values == NULL) {
 		*values = MEM_mallocN(sizeof(float) * (*length), "point density dynamic array");
@@ -3125,13 +3140,14 @@ void rna_ShaderNodePointDensity_density_calc(bNode *self,
 
 	/* Single-threaded sampling of the voxel domain. */
 	RE_point_density_sample(scene, pd,
-	                        shader_point_density->resolution,
+	                        resolution,
 	                        settings == 1,
 	                        *values);
 
 	/* We're done, time to clean up. */
 	BKE_texture_pointdensity_free_data(pd);
 	memset(pd, 0, sizeof(*pd));
+	shader_point_density->cached_resolution = 0.0f;
 }
 
 void rna_ShaderNodePointDensity_density_minmax(bNode *self,
@@ -4434,6 +4450,7 @@ static void def_cmp_hue_saturation(StructRNA *srna)
 	prop = RNA_def_property(srna, "color_hue", PROP_FLOAT, PROP_NONE);
 	RNA_def_property_float_sdna(prop, NULL, "hue");
 	RNA_def_property_range(prop, 0.0f, 1.0f);
+	RNA_def_property_float_default(prop, 0.5f);
 	RNA_def_property_ui_text(prop, "Hue", "");
 	RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 	
@@ -4441,12 +4458,14 @@ static void def_cmp_hue_saturation(StructRNA *srna)
 	RNA_def_property_float_sdna(prop, NULL, "sat");
 	RNA_def_property_range(prop, 0.0f, 2.0f);
 	RNA_def_property_ui_text(prop, "Saturation", "");
+	RNA_def_property_float_default(prop, 1.0f);
 	RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 	
 	prop = RNA_def_property(srna, "color_value", PROP_FLOAT, PROP_NONE);
 	RNA_def_property_float_sdna(prop, NULL, "val");
 	RNA_def_property_range(prop, 0.0f, 2.0f);
 	RNA_def_property_ui_text(prop, "Value", "");
+	RNA_def_property_float_default(prop, 1.0f);
 	RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 }
 
@@ -4784,7 +4803,7 @@ static void def_cmp_render_layers(StructRNA *srna)
 	RNA_def_property_enum_funcs(prop, NULL, NULL, "rna_Node_scene_layer_itemf");
 	RNA_def_property_flag(prop, PROP_ENUM_NO_TRANSLATE);
 	RNA_def_property_ui_text(prop, "Layer", "");
-	RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+	RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_scene_layer_update");
 }
 
 static void rna_def_cmp_output_file_slot_file(BlenderRNA *brna)
@@ -5379,13 +5398,13 @@ static void def_cmp_double_edge_mask(StructRNA *srna)
 	};
 
 	prop = RNA_def_property(srna, "inner_mode", PROP_ENUM, PROP_NONE);
-	RNA_def_property_enum_sdna(prop, NULL, "custom2");
+	RNA_def_property_enum_sdna(prop, NULL, "custom1");
 	RNA_def_property_enum_items(prop, InnerEdgeMode_items);
 	RNA_def_property_ui_text(prop, "Inner Edge Mode", "");
 	RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 
 	prop = RNA_def_property(srna, "edge_mode", PROP_ENUM, PROP_NONE);
-	RNA_def_property_enum_sdna(prop, NULL, "custom1");
+	RNA_def_property_enum_sdna(prop, NULL, "custom2");
 	RNA_def_property_enum_items(prop, BufEdgeMode_items);
 	RNA_def_property_ui_text(prop, "Buffer Edge Mode", "");
 	RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
@@ -8205,9 +8224,9 @@ static void rna_def_nodetree(BlenderRNA *brna)
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL);
 	parm = RNA_def_pointer(func, "result_1", "NodeTree", "Node Tree", "Active node tree from context");
 	RNA_def_function_output(func, parm);
-	parm = RNA_def_pointer(func, "result_2", "ID", "Owner ID", "ID data block that owns the node tree");
+	parm = RNA_def_pointer(func, "result_2", "ID", "Owner ID", "ID data-block that owns the node tree");
 	RNA_def_function_output(func, parm);
-	parm = RNA_def_pointer(func, "result_3", "ID", "From ID", "Original ID data block selected from the context");
+	parm = RNA_def_pointer(func, "result_3", "ID", "From ID", "Original ID data-block selected from the context");
 	RNA_def_function_output(func, parm);
 }
 

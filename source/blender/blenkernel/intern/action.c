@@ -156,10 +156,7 @@ bAction *BKE_action_copy(Main *bmain, bAction *src)
 		}
 	}
 	
-	if (ID_IS_LINKED_DATABLOCK(src)) {
-		BKE_id_expand_local(&dst->id);
-		BKE_id_lib_local_paths(bmain, src->id.lib, &dst->id);
-	}
+	BKE_id_copy_ensure_local(bmain, &src->id, &dst->id);
 
 	return dst;
 }
@@ -436,8 +433,8 @@ bPoseChannel *BKE_pose_channel_verify(bPose *pose, const char *name)
 	
 	chan->scaleIn = chan->scaleOut = 1.0f;
 	
-	chan->limitmin[0] = chan->limitmin[1] = chan->limitmin[2] = -180.0f;
-	chan->limitmax[0] = chan->limitmax[1] = chan->limitmax[2] = 180.0f;
+	chan->limitmin[0] = chan->limitmin[1] = chan->limitmin[2] = -M_PI;
+	chan->limitmax[0] = chan->limitmax[1] = chan->limitmax[2] = M_PI;
 	chan->stiffness[0] = chan->stiffness[1] = chan->stiffness[2] = 0.0f;
 	chan->ikrotweight = chan->iklinweight = 0.0f;
 	unit_m4(chan->constinv);

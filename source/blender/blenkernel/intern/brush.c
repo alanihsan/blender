@@ -197,10 +197,7 @@ Brush *BKE_brush_copy(Main *bmain, Brush *brush)
 	/* enable fake user by default */
 	id_fake_user_set(&brush->id);
 
-	if (ID_IS_LINKED_DATABLOCK(brush)) {
-		BKE_id_expand_local(&brushn->id);
-		BKE_id_lib_local_paths(bmain, brush->id.lib, &brushn->id);
-	}
+	BKE_id_copy_ensure_local(bmain, &brush->id, &brushn->id);
 
 	return brushn;
 }
@@ -251,6 +248,9 @@ void BKE_brush_make_local(Main *bmain, Brush *brush, const bool lib_local)
 			Brush *brush_new = BKE_brush_copy(bmain, brush);  /* Ensures FAKE_USER is set */
 
 			brush_new->id.us = 0;
+
+			/* setting newid is mandatory for complex make_lib_local logic... */
+			ID_NEW_SET(brush, brush_new);
 
 			if (!lib_local) {
 				BKE_libblock_remap(bmain, brush, brush_new, ID_REMAP_SKIP_INDIRECT_USAGE);

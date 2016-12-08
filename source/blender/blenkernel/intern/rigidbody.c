@@ -65,12 +65,21 @@
 #include "BKE_rigidbody.h"
 #include "BKE_scene.h"
 
-#ifdef WITH_BULLET
-
 /* ************************************** */
 /* Memory Management */
 
 /* Freeing Methods --------------------- */
+
+#ifndef WITH_BULLET
+
+static void RB_dworld_remove_constraint(void *UNUSED(world), void *UNUSED(con)) {}
+static void RB_dworld_remove_body(void *UNUSED(world), void *UNUSED(body)) {}
+static void RB_dworld_delete(void *UNUSED(world)) {}
+static void RB_body_delete(void *UNUSED(body)) {}
+static void RB_shape_delete(void *UNUSED(shape)) {}
+static void RB_constraint_delete(void *UNUSED(con)) {}
+
+#endif
 
 /* Free rigidbody world */
 void BKE_rigidbody_free_world(RigidBodyWorld *rbw)
@@ -165,6 +174,8 @@ void BKE_rigidbody_free_constraint(Object *ob)
 	ob->rigidbody_constraint = NULL;
 }
 
+#ifdef WITH_BULLET
+
 /* Copying Methods --------------------- */
 
 /* These just copy the data, clearing out references to physics objects.
@@ -214,8 +225,8 @@ RigidBodyCon *BKE_rigidbody_copy_constraint(Object *ob)
 /* preserve relationships between constraints and rigid bodies after duplication */
 void BKE_rigidbody_relink_constraint(RigidBodyCon *rbc)
 {
-	ID_NEW(rbc->ob1);
-	ID_NEW(rbc->ob2);
+	ID_NEW_REMAP(rbc->ob1);
+	ID_NEW_REMAP(rbc->ob2);
 }
 
 /* ************************************** */
@@ -804,6 +815,18 @@ static void rigidbody_validate_sim_constraint(RigidBodyWorld *rbw, Object *ob, b
 					RB_constraint_set_stiffness_6dof_spring(rbc->physics_constraint, RB_LIMIT_LIN_Z, rbc->spring_stiffness_z);
 					RB_constraint_set_damping_6dof_spring(rbc->physics_constraint, RB_LIMIT_LIN_Z, rbc->spring_damping_z);
 
+					RB_constraint_set_spring_6dof_spring(rbc->physics_constraint, RB_LIMIT_ANG_X, rbc->flag & RBC_FLAG_USE_SPRING_ANG_X);
+					RB_constraint_set_stiffness_6dof_spring(rbc->physics_constraint, RB_LIMIT_ANG_X, rbc->spring_stiffness_ang_x);
+					RB_constraint_set_damping_6dof_spring(rbc->physics_constraint, RB_LIMIT_ANG_X, rbc->spring_damping_ang_x);
+
+					RB_constraint_set_spring_6dof_spring(rbc->physics_constraint, RB_LIMIT_ANG_Y, rbc->flag & RBC_FLAG_USE_SPRING_ANG_Y);
+					RB_constraint_set_stiffness_6dof_spring(rbc->physics_constraint, RB_LIMIT_ANG_Y, rbc->spring_stiffness_ang_y);
+					RB_constraint_set_damping_6dof_spring(rbc->physics_constraint, RB_LIMIT_ANG_Y, rbc->spring_damping_ang_y);
+
+					RB_constraint_set_spring_6dof_spring(rbc->physics_constraint, RB_LIMIT_ANG_Z, rbc->flag & RBC_FLAG_USE_SPRING_ANG_Z);
+					RB_constraint_set_stiffness_6dof_spring(rbc->physics_constraint, RB_LIMIT_ANG_Z, rbc->spring_stiffness_ang_z);
+					RB_constraint_set_damping_6dof_spring(rbc->physics_constraint, RB_LIMIT_ANG_Z, rbc->spring_damping_ang_z);
+
 					RB_constraint_set_equilibrium_6dof_spring(rbc->physics_constraint);
 					/* fall-through */
 				case RBC_TYPE_6DOF:
@@ -1072,9 +1095,15 @@ RigidBodyCon *BKE_rigidbody_create_constraint(Scene *scene, Object *ob, short ty
 	rbc->spring_damping_x = 0.5f;
 	rbc->spring_damping_y = 0.5f;
 	rbc->spring_damping_z = 0.5f;
+	rbc->spring_damping_ang_x = 0.5f;
+	rbc->spring_damping_ang_y = 0.5f;
+	rbc->spring_damping_ang_z = 0.5f;
 	rbc->spring_stiffness_x = 10.0f;
 	rbc->spring_stiffness_y = 10.0f;
 	rbc->spring_stiffness_z = 10.0f;
+	rbc->spring_stiffness_ang_x = 10.0f;
+	rbc->spring_stiffness_ang_y = 10.0f;
+	rbc->spring_stiffness_ang_z = 10.0f;
 
 	rbc->motor_lin_max_impulse = 1.0f;
 	rbc->motor_lin_target_velocity = 1.0f;
@@ -1560,14 +1589,16 @@ void BKE_rigidbody_do_simulation(Scene *scene, float ctime)
 
 	/* try to read from cache */
 	// RB_TODO deal with interpolated, old and baked results
-	if (BKE_ptcache_read(&pid, ctime)) {
+	bool can_simulate = (ctime == rbw->ltime + 1) && !(cache->flag & PTCACHE_BAKED);
+
+	if (BKE_ptcache_read(&pid, ctime, can_simulate)) {
 		BKE_ptcache_validate(cache, (int)ctime);
 		rbw->ltime = ctime;
 		return;
 	}
 
 	/* advance simulation, we can only step one frame forward */
-	if (ctime == rbw->ltime + 1 && !(cache->flag & PTCACHE_BAKED)) {
+	if (can_simulate) {
 		/* write cache for first frame when on second frame */
 		if (rbw->ltime == startframe && (cache->flag & PTCACHE_OUTDATED || cache->last_exact == 0)) {
 			BKE_ptcache_write(&pid, startframe);
@@ -1600,9 +1631,6 @@ void BKE_rigidbody_do_simulation(Scene *scene, float ctime)
 #  pragma GCC diagnostic ignored "-Wunused-parameter"
 #endif
 
-void BKE_rigidbody_free_world(RigidBodyWorld *rbw) {}
-void BKE_rigidbody_free_object(Object *ob) {}
-void BKE_rigidbody_free_constraint(Object *ob) {}
 struct RigidBodyOb *BKE_rigidbody_copy_object(Object *ob) { return NULL; }
 struct RigidBodyCon *BKE_rigidbody_copy_constraint(Object *ob) { return NULL; }
 void BKE_rigidbody_relink_constraint(RigidBodyCon *rbc) {}

@@ -32,14 +32,26 @@
 
 #include "MEM_guardedalloc.h"
 
+// #define DEBUG_TIME
+
 extern "C" {
+#include "DNA_cachefile_types.h"
 #include "DNA_object_types.h"
 #include "DNA_scene_types.h"
+#include "DNA_object_force.h"
 
 #include "BLI_utildefines.h"
 #include "BLI_ghash.h"
 
+#ifdef DEBUG_TIME
+#  include "PIL_time.h"
+#  include "PIL_time_utildefines.h"
+#endif
+
 #include "BKE_main.h"
+#include "BKE_collision.h"
+#include "BKE_effect.h"
+#include "BKE_modifier.h"
 
 #include "DEG_depsgraph.h"
 #include "DEG_depsgraph_debug.h"
@@ -89,6 +101,7 @@ static DEG::eDepsNode_Type deg_build_object_component_type(
 		case DEG_OB_COMP_BONE:              return DEG::DEPSNODE_TYPE_BONE;
 		case DEG_OB_COMP_EVAL_PARTICLES:    return DEG::DEPSNODE_TYPE_EVAL_PARTICLES;
 		case DEG_OB_COMP_SHADING:           return DEG::DEPSNODE_TYPE_SHADING;
+		case DEG_OB_COMP_CACHE:             return DEG::DEPSNODE_TYPE_CACHE;
 	}
 	return DEG::DEPSNODE_TYPE_UNDEFINED;
 }
@@ -123,6 +136,20 @@ void DEG_add_object_relation(DepsNodeHandle *handle,
 	deg_handle->builder->add_node_handle_relation(comp_key,
 	                                              deg_handle,
 	                                              DEG::DEPSREL_TYPE_GEOMETRY_EVAL,
+	                                              description);
+}
+
+void DEG_add_object_cache_relation(DepsNodeHandle *handle,
+                                   CacheFile *cache_file,
+                                   eDepsObjectComponentType component,
+                                   const char *description)
+{
+	DEG::eDepsNode_Type type = deg_build_object_component_type(component);
+	DEG::ComponentKey comp_key(&cache_file->id, type);
+	DEG::DepsNodeHandle *deg_handle = get_handle(handle);
+	deg_handle->builder->add_node_handle_relation(comp_key,
+	                                              deg_handle,
+	                                              DEG::DEPSREL_TYPE_CACHE,
 	                                              description);
 }
 
@@ -170,6 +197,10 @@ void DEG_add_special_eval_flag(Depsgraph *graph, ID *id, short flag)
  */
 void DEG_graph_build_from_scene(Depsgraph *graph, Main *bmain, Scene *scene)
 {
+#ifdef DEBUG_TIME
+	TIMEIT_START(DEG_graph_build_from_scene);
+#endif
+
 	DEG::Depsgraph *deg_graph = reinterpret_cast<DEG::Depsgraph *>(graph);
 
 	/* 1) Generate all the nodes in the graph first */
@@ -218,6 +249,10 @@ void DEG_graph_build_from_scene(Depsgraph *graph, Main *bmain, Scene *scene)
 		printf("Consistency validation failed, ABORTING!\n");
 		abort();
 	}
+#endif
+
+#ifdef DEBUG_TIME
+	TIMEIT_END(DEG_graph_build_from_scene);
 #endif
 }
 
@@ -287,4 +322,83 @@ void DEG_scene_graph_free(Scene *scene)
 		DEG_graph_free(scene->depsgraph);
 		scene->depsgraph = NULL;
 	}
+}
+
+void DEG_add_collision_relations(DepsNodeHandle *handle,
+                                 Scene *scene,
+                                 Object *ob,
+                                 Group *group,
+                                 int layer,
+                                 unsigned int modifier_type,
+                                 DEG_CollobjFilterFunction fn,
+                                 bool dupli,
+                                 const char *name)
+{
+	unsigned int numcollobj;
+	Object **collobjs = get_collisionobjects_ext(scene, ob, group, layer, &numcollobj, modifier_type, dupli);
+
+	for (unsigned int i = 0; i < numcollobj; i++) {
+		Object *ob1 = collobjs[i];
+
+		if (!fn || fn(ob1, modifiers_findByType(ob1, (ModifierType)modifier_type))) {
+			DEG_add_object_relation(handle, ob1, DEG_OB_COMP_TRANSFORM, name);
+			DEG_add_object_relation(handle, ob1, DEG_OB_COMP_GEOMETRY, name);
+		}
+	}
+
+	if (collobjs)
+		MEM_freeN(collobjs);
+}
+
+void DEG_add_forcefield_relations(DepsNodeHandle *handle,
+                                  Scene *scene,
+                                  Object *ob,
+                                  EffectorWeights *effector_weights,
+                                  bool add_absorption,
+                                  int skip_forcefield,
+                                  const char *name)
+{
+	ListBase *effectors = pdInitEffectors(scene, ob, NULL, effector_weights, false);
+
+	if (effectors) {
+		for (EffectorCache *eff = (EffectorCache*)effectors->first; eff; eff = eff->next) {
+			if (eff->ob != ob && eff->pd->forcefield != skip_forcefield) {
+				DEG_add_object_relation(handle, eff->ob, DEG_OB_COMP_TRANSFORM, name);
+
+				if (eff->psys) {
+					DEG_add_object_relation(handle, eff->ob, DEG_OB_COMP_EVAL_PARTICLES, name);
+
+					/* TODO: remove this when/if EVAL_PARTICLES is sufficient
+					 * for up to date particles.
+					 */
+					DEG_add_object_relation(handle, eff->ob, DEG_OB_COMP_GEOMETRY, name);
+				}
+
+				if (eff->pd->forcefield == PFIELD_SMOKEFLOW && eff->pd->f_source) {
+					DEG_add_object_relation(handle,
+					                        eff->pd->f_source,
+					                        DEG_OB_COMP_TRANSFORM,
+					                        "Smoke Force Domain");
+					DEG_add_object_relation(handle,
+					                        eff->pd->f_source,
+					                        DEG_OB_COMP_GEOMETRY,
+					                        "Smoke Force Domain");
+				}
+
+				if (add_absorption && (eff->pd->flag & PFIELD_VISIBILITY)) {
+					DEG_add_collision_relations(handle,
+					                            scene,
+					                            ob,
+					                            NULL,
+					                            eff->ob->lay,
+					                            eModifierType_Collision,
+					                            NULL,
+					                            true,
+					                            "Force Absorption");
+				}
+			}
+		}
+	}
+
+	pdEndEffectors(&effectors);
 }

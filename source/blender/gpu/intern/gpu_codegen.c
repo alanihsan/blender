@@ -877,7 +877,7 @@ static char *code_generate_geometry(ListBase *nodes, bool use_opensubdiv)
 					if (input->attribtype == CD_MTFACE) {
 						BLI_dynstr_appendf(
 						        ds,
-						        "\tINTERP_FACE_VARYING_2(var%d, "
+						        "\tINTERP_FACE_VARYING_ATT_2(var%d, "
 						        "int(texelFetch(FVarDataOffsetBuffer, fvar%d_offset).r), st);\n",
 						        input->attribid,
 						        input->attribid);
@@ -1732,3 +1732,9 @@ void GPU_pass_free(GPUPass *pass)
 		MEM_freeN(pass->vertexcode);
 	MEM_freeN(pass);
 }
+
+void GPU_pass_free_nodes(ListBase *nodes)
+{
+	gpu_nodes_free(nodes);
+}
+

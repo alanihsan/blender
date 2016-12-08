@@ -58,6 +58,7 @@
 
 #include "BLI_strict_flags.h"
 
+#include "atomic_ops.h"
 #include "mikktspace.h"
 
 // #define DEBUG_TIME
@@ -236,7 +237,9 @@ static void mesh_calc_normals_poly_accum_task_cb(void *userdata, const int pidx)
 			const float fac = saacos(-dot_v3v3(cur_edge, prev_edge));
 
 			/* accumulate */
-			madd_v3_v3fl(vnors[ml[i].v], pnor, fac);
+			for (int k = 3; k--; ) {
+				atomic_add_and_fetch_fl(&vnors[ml[i].v][k], pnor[k] * fac);
+			}
 			prev_edge = cur_edge;
 		}
 	}
@@ -434,7 +437,7 @@ MLoopNorSpace *BKE_lnor_space_create(MLoopNorSpaceArray *lnors_spacearr)
 }
 
 /* This threshold is a bit touchy (usual float precision issue), this value seems OK. */
-#define LNOR_SPACE_TRIGO_THRESHOLD (1.0f - 1e-6f)
+#define LNOR_SPACE_TRIGO_THRESHOLD (1.0f - 1e-4f)
 
 /* Should only be called once.
  * Beware, this modifies ref_vec and other_vec in place!

@@ -50,7 +50,7 @@
 #ifndef NDEBUG
 void BLI_system_backtrace(FILE *fp)
 {
-	(void)fp;
+       (void)fp;
 }
 #endif
 
@@ -1536,7 +1536,11 @@ static void rna_def_property_funcs(FILE *f, StructRNA *srna, PropertyDefRNA *dp)
 			const char *nextfunc = (const char *)cprop->next;
 			const char *item_type = (const char *)cprop->item_type;
 
-			if (dp->dnatype && STREQ(dp->dnatype, "ListBase")) {
+			if (cprop->length) {
+				/* always generate if we have a manual implementation */
+				cprop->length = (void *)rna_def_property_length_func(f, srna, prop, dp, (const char *)cprop->length);
+			}
+			else if (dp->dnatype && STREQ(dp->dnatype, "ListBase")) {
 				/* pass */
 			}
 			else if (dp->dnalengthname || dp->dnalengthfixed) {
@@ -3301,6 +3305,7 @@ static RNAProcessItem PROCESS_ITEMS[] = {
 	{"rna_armature.c", "rna_armature_api.c", RNA_def_armature},
 	{"rna_boid.c", NULL, RNA_def_boid},
 	{"rna_brush.c", NULL, RNA_def_brush},
+	{"rna_cachefile.c", NULL, RNA_def_cachefile},
 	{"rna_camera.c", "rna_camera_api.c", RNA_def_camera},
 	{"rna_cloth.c", NULL, RNA_def_cloth},
 	{"rna_color.c", NULL, RNA_def_color},

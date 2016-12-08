@@ -535,6 +535,8 @@ RNA_MAIN_ID_TAG_FUNCS_DEF(gpencil, gpencil, ID_GD)
 RNA_MAIN_ID_TAG_FUNCS_DEF(movieclips, movieclip, ID_MC)
 RNA_MAIN_ID_TAG_FUNCS_DEF(masks, mask, ID_MSK)
 RNA_MAIN_ID_TAG_FUNCS_DEF(linestyle, linestyle, ID_LS)
+RNA_MAIN_ID_TAG_FUNCS_DEF(cachefiles, cachefiles, ID_CF)
+RNA_MAIN_ID_TAG_FUNCS_DEF(paintcurves, paintcurves, ID_PC)
 
 #undef RNA_MAIN_ID_TAG_FUNCS_DEF
 
@@ -583,7 +585,7 @@ void RNA_def_main_cameras(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "camera", "Camera", "", "Camera to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "",
+	RNA_def_boolean(func, "do_unlink", true, "",
 	                "Unlink all usages of this camera before deleting it "
 	                "(WARNING: will also delete objects instancing that camera data)");
 
@@ -622,7 +624,7 @@ void RNA_def_main_scenes(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "scene", "Scene", "", "Scene to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "", "Unlink all usages of this scene before deleting it");
+	RNA_def_boolean(func, "do_unlink", true, "", "Unlink all usages of this scene before deleting it");
 
 	func = RNA_def_function(srna, "tag", "rna_Main_scenes_tag");
 	parm = RNA_def_boolean(func, "value", 0, "Value", "");
@@ -663,7 +665,7 @@ void RNA_def_main_objects(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "object", "Object", "", "Object to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "", "Unlink all usages of this object before deleting it");
+	RNA_def_boolean(func, "do_unlink", true, "", "Unlink all usages of this object before deleting it");
 
 	func = RNA_def_function(srna, "tag", "rna_Main_objects_tag");
 	parm = RNA_def_boolean(func, "value", 0, "Value", "");
@@ -700,7 +702,7 @@ void RNA_def_main_materials(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "material", "Material", "", "Material to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "", "Unlink all usages of this material before deleting it");
+	RNA_def_boolean(func, "do_unlink", true, "", "Unlink all usages of this material before deleting it");
 
 	func = RNA_def_function(srna, "tag", "rna_Main_materials_tag");
 	parm = RNA_def_boolean(func, "value", 0, "Value", "");
@@ -744,7 +746,7 @@ void RNA_def_main_node_groups(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "tree", "NodeTree", "", "Node tree to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "", "Unlink all usages of this node tree before deleting it");
+	RNA_def_boolean(func, "do_unlink", true, "", "Unlink all usages of this node tree before deleting it");
 
 	func = RNA_def_function(srna, "tag", "rna_Main_node_groups_tag");
 	parm = RNA_def_boolean(func, "value", 0, "Value", "");
@@ -803,7 +805,7 @@ void RNA_def_main_meshes(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "mesh", "Mesh", "", "Mesh to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "",
+	RNA_def_boolean(func, "do_unlink", true, "",
 	                "Unlink all usages of this mesh before deleting it "
 	                "(WARNING: will also delete objects instancing that mesh data)");
 
@@ -843,7 +845,7 @@ void RNA_def_main_lamps(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "lamp", "Lamp", "", "Lamp to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "",
+	RNA_def_boolean(func, "do_unlink", true, "",
 	                "Unlink all usages of this lamp before deleting it "
 	                "(WARNING: will also delete objects instancing that lamp data)");
 
@@ -961,7 +963,7 @@ void RNA_def_main_images(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "image", "Image", "", "Image to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "", "Unlink all usages of this image before deleting it");
+	RNA_def_boolean(func, "do_unlink", true, "", "Unlink all usages of this image before deleting it");
 
 	func = RNA_def_function(srna, "tag", "rna_Main_images_tag");
 	parm = RNA_def_boolean(func, "value", 0, "Value", "");
@@ -998,7 +1000,7 @@ void RNA_def_main_lattices(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "lattice", "Lattice", "", "Lattice to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "",
+	RNA_def_boolean(func, "do_unlink", true, "",
 	                "Unlink all usages of this lattice before deleting it "
 	                "(WARNING: will also delete objects instancing that lattice data)");
 
@@ -1038,7 +1040,7 @@ void RNA_def_main_curves(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "curve", "Curve", "", "Curve to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "",
+	RNA_def_boolean(func, "do_unlink", true, "",
 	                "Unlink all usages of this curve before deleting it "
 	                "(WARNING: will also delete objects instancing that curve data)");
 
@@ -1076,7 +1078,7 @@ void RNA_def_main_metaballs(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "metaball", "MetaBall", "", "Metaball to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "",
+	RNA_def_boolean(func, "do_unlink", true, "",
 	                "Unlink all usages of this metaball before deleting it "
 	                "(WARNING: will also delete objects instancing that metaball data)");
 
@@ -1116,7 +1118,7 @@ void RNA_def_main_fonts(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "vfont", "VectorFont", "", "Font to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "", "Unlink all usages of this font before deleting it");
+	RNA_def_boolean(func, "do_unlink", true, "", "Unlink all usages of this font before deleting it");
 
 	func = RNA_def_function(srna, "tag", "rna_Main_fonts_tag");
 	parm = RNA_def_boolean(func, "value", 0, "Value", "");
@@ -1154,7 +1156,7 @@ void RNA_def_main_textures(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "texture", "Texture", "", "Texture to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "", "Unlink all usages of this texture before deleting it");
+	RNA_def_boolean(func, "do_unlink", true, "", "Unlink all usages of this texture before deleting it");
 
 	func = RNA_def_function(srna, "tag", "rna_Main_textures_tag");
 	parm = RNA_def_boolean(func, "value", 0, "Value", "");
@@ -1191,7 +1193,7 @@ void RNA_def_main_brushes(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "brush", "Brush", "", "Brush to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "", "Unlink all usages of this brush before deleting it");
+	RNA_def_boolean(func, "do_unlink", true, "", "Unlink all usages of this brush before deleting it");
 
 	func = RNA_def_function(srna, "tag", "rna_Main_brushes_tag");
 	parm = RNA_def_boolean(func, "value", 0, "Value", "");
@@ -1228,7 +1230,7 @@ void RNA_def_main_worlds(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "world", "World", "", "World to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "", "Unlink all usages of this world before deleting it");
+	RNA_def_boolean(func, "do_unlink", true, "", "Unlink all usages of this world before deleting it");
 
 	func = RNA_def_function(srna, "tag", "rna_Main_worlds_tag");
 	parm = RNA_def_boolean(func, "value", 0, "Value", "");
@@ -1265,7 +1267,7 @@ void RNA_def_main_groups(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "group", "Group", "", "Group to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "", "Unlink all usages of this group before deleting it");
+	RNA_def_boolean(func, "do_unlink", true, "", "Unlink all usages of this group before deleting it");
 
 	func = RNA_def_function(srna, "tag", "rna_Main_groups_tag");
 	parm = RNA_def_boolean(func, "value", 0, "Value", "");
@@ -1302,7 +1304,7 @@ void RNA_def_main_speakers(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "speaker", "Speaker", "", "Speaker to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "",
+	RNA_def_boolean(func, "do_unlink", true, "",
 	                "Unlink all usages of this speaker before deleting it "
 	                "(WARNING: will also delete objects instancing that speaker data)");
 
@@ -1341,7 +1343,7 @@ void RNA_def_main_texts(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "text", "Text", "", "Text to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "", "Unlink all usages of this text before deleting it");
+	RNA_def_boolean(func, "do_unlink", true, "", "Unlink all usages of this text before deleting it");
 
 	/* load func */
 	func = RNA_def_function(srna, "load", "rna_Main_texts_load");
@@ -1391,7 +1393,7 @@ void RNA_def_main_sounds(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "sound", "Sound", "", "Sound to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "", "Unlink all usages of this sound before deleting it");
+	RNA_def_boolean(func, "do_unlink", true, "", "Unlink all usages of this sound before deleting it");
 
 	func = RNA_def_function(srna, "tag", "rna_Main_sounds_tag");
 	parm = RNA_def_boolean(func, "value", 0, "Value", "");
@@ -1428,7 +1430,7 @@ void RNA_def_main_armatures(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "armature", "Armature", "", "Armature to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "",
+	RNA_def_boolean(func, "do_unlink", true, "",
 	                "Unlink all usages of this armature before deleting it "
 	                "(WARNING: will also delete objects instancing that armature data)");
 
@@ -1466,7 +1468,7 @@ void RNA_def_main_actions(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "action", "Action", "", "Action to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "", "Unlink all usages of this action before deleting it");
+	RNA_def_boolean(func, "do_unlink", true, "", "Unlink all usages of this action before deleting it");
 
 	func = RNA_def_function(srna, "tag", "rna_Main_actions_tag");
 	parm = RNA_def_boolean(func, "value", 0, "Value", "");
@@ -1502,7 +1504,7 @@ void RNA_def_main_particles(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "particle", "ParticleSettings", "", "Particle Settings to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "", "Unlink all usages of those particle settings before deleting them");
+	RNA_def_boolean(func, "do_unlink", true, "", "Unlink all usages of those particle settings before deleting them");
 
 	func = RNA_def_function(srna, "tag", "rna_Main_particles_tag");
 	parm = RNA_def_boolean(func, "value", 0, "Value", "");
@@ -1538,7 +1540,7 @@ void RNA_def_main_palettes(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "palette", "Palette", "", "Palette to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "", "Unlink all usages of this palette before deleting it");
+	RNA_def_boolean(func, "do_unlink", true, "", "Unlink all usages of this palette before deleting it");
 
 	func = RNA_def_function(srna, "tag", "rna_Main_palettes_tag");
 	parm = RNA_def_boolean(func, "value", 0, "Value", "");
@@ -1547,6 +1549,36 @@ void RNA_def_main_palettes(BlenderRNA *brna, PropertyRNA *cprop)
 	prop = RNA_def_property(srna, "is_updated", PROP_BOOLEAN, PROP_NONE);
 	RNA_def_property_clear_flag(prop, PROP_EDITABLE);
 	RNA_def_property_boolean_funcs(prop, "rna_Main_palettes_is_updated_get", NULL);
+}
+void RNA_def_main_cachefiles(BlenderRNA *brna, PropertyRNA *cprop)
+{
+	RNA_def_property_srna(cprop, "BlendDataCacheFiles");
+	StructRNA *srna = RNA_def_struct(brna, "BlendDataCacheFiles", NULL);
+	RNA_def_struct_sdna(srna, "Main");
+	RNA_def_struct_ui_text(srna, "Main Cache Files", "Collection of cache files");
+
+	FunctionRNA *func = RNA_def_function(srna, "tag", "rna_Main_cachefiles_tag");
+	PropertyRNA *parm = RNA_def_boolean(func, "value", 0, "Value", "");
+	RNA_def_property_flag(parm, PROP_REQUIRED);
+
+	PropertyRNA *prop = RNA_def_property(srna, "is_updated", PROP_BOOLEAN, PROP_NONE);
+	RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+	RNA_def_property_boolean_funcs(prop, "rna_Main_cachefiles_is_updated_get", NULL);
+}
+void RNA_def_main_paintcurves(BlenderRNA *brna, PropertyRNA *cprop)
+{
+	RNA_def_property_srna(cprop, "BlendDataPaintCurves");
+	StructRNA *srna = RNA_def_struct(brna, "BlendDataPaintCurves", NULL);
+	RNA_def_struct_sdna(srna, "Main");
+	RNA_def_struct_ui_text(srna, "Main Paint Curves", "Collection of paint curves");
+
+	FunctionRNA *func = RNA_def_function(srna, "tag", "rna_Main_paintcurves_tag");
+	PropertyRNA *parm = RNA_def_boolean(func, "value", 0, "Value", "");
+	RNA_def_property_flag(parm, PROP_REQUIRED);
+
+	PropertyRNA *prop = RNA_def_property(srna, "is_updated", PROP_BOOLEAN, PROP_NONE);
+	RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+	RNA_def_property_boolean_funcs(prop, "rna_Main_paintcurves_is_updated_get", NULL);
 }
 void RNA_def_main_gpencil(BlenderRNA *brna, PropertyRNA *cprop)
 {
@@ -1564,7 +1596,7 @@ void RNA_def_main_gpencil(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_boolean(func, "value", 0, "Value", "");
 	RNA_def_property_flag(parm, PROP_REQUIRED);
 
-	func = RNA_def_function(srna, "new", "gpencil_data_addnew");
+	func = RNA_def_function(srna, "new", "BKE_gpencil_data_addnew");
 	RNA_def_function_flag(func, FUNC_NO_SELF);
 	parm = RNA_def_string(func, "name", "GreasePencil", 0, "", "New name for the data-block");
 	RNA_def_property_flag(parm, PROP_REQUIRED);
@@ -1578,7 +1610,7 @@ void RNA_def_main_gpencil(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "grease_pencil", "GreasePencil", "", "Grease Pencil to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "", "Unlink all usages of this grease pencil before deleting it");
+	RNA_def_boolean(func, "do_unlink", true, "", "Unlink all usages of this grease pencil before deleting it");
 
 	prop = RNA_def_property(srna, "is_updated", PROP_BOOLEAN, PROP_NONE);
 	RNA_def_property_clear_flag(prop, PROP_EDITABLE);
@@ -1607,7 +1639,7 @@ void RNA_def_main_movieclips(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "clip", "MovieClip", "", "Movie clip to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "", "Unlink all usages of this movie clip before deleting it");
+	RNA_def_boolean(func, "do_unlink", true, "", "Unlink all usages of this movie clip before deleting it");
 
 	/* load func */
 	func = RNA_def_function(srna, "load", "rna_Main_movieclip_load");
@@ -1659,7 +1691,7 @@ void RNA_def_main_masks(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "mask", "Mask", "", "Mask to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "", "Unlink all usages of this mask before deleting it");
+	RNA_def_boolean(func, "do_unlink", true, "", "Unlink all usages of this mask before deleting it");
 
 	prop = RNA_def_property(srna, "is_updated", PROP_BOOLEAN, PROP_NONE);
 	RNA_def_property_clear_flag(prop, PROP_EDITABLE);
@@ -1696,7 +1728,7 @@ void RNA_def_main_linestyles(BlenderRNA *brna, PropertyRNA *cprop)
 	parm = RNA_def_pointer(func, "linestyle", "FreestyleLineStyle", "", "Line style to remove");
 	RNA_def_property_flag(parm, PROP_REQUIRED | PROP_NEVER_NULL | PROP_RNAPTR);
 	RNA_def_property_clear_flag(parm, PROP_THICK_WRAP);
-	RNA_def_boolean(func, "do_unlink", false, "", "Unlink all usages of this line style before deleting it");
+	RNA_def_boolean(func, "do_unlink", true, "", "Unlink all usages of this line style before deleting it");
 
 	prop = RNA_def_property(srna, "is_updated", PROP_BOOLEAN, PROP_NONE);
 	RNA_def_property_clear_flag(prop, PROP_EDITABLE);

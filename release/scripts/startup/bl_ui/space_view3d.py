@@ -19,7 +19,10 @@
 # <pep8 compliant>
 import bpy
 from bpy.types import Header, Menu, Panel
-from bl_ui.properties_grease_pencil_common import GreasePencilDataPanel
+from bl_ui.properties_grease_pencil_common import (
+        GreasePencilDataPanel,
+        GreasePencilPaletteColorPanel,
+        )
 from bl_ui.properties_paint_common import UnifiedPaintPanel
 from bpy.app.translations import contexts as i18n_contexts
 
@@ -37,7 +40,6 @@ class VIEW3D_HT_header(Header):
 
         row = layout.row(align=True)
         row.template_header()
-        sub = row.row(align=True)
 
         VIEW3D_MT_editor_menus.draw_collapsible(context, layout)
 
@@ -104,10 +106,10 @@ class VIEW3D_HT_header(Header):
             else:
                 row.prop(toolsettings, "snap_target", text="")
                 if obj:
-                    if mode in {'OBJECT', 'POSE'} and snap_element != 'VOLUME':
-                        row.prop(toolsettings, "use_snap_align_rotation", text="")
-                    elif mode == 'EDIT':
+                    if mode == 'EDIT':
                         row.prop(toolsettings, "use_snap_self", text="")
+                    if mode in {'OBJECT', 'POSE', 'EDIT'} and snap_element != 'VOLUME':
+                        row.prop(toolsettings, "use_snap_align_rotation", text="")
 
             if snap_element == 'VOLUME':
                 row.prop(toolsettings, "use_snap_peel_object", text="")
@@ -137,11 +139,12 @@ class VIEW3D_HT_header(Header):
             row.operator("gpencil.copy", text="", icon='COPYDOWN')
             row.operator("gpencil.paste", text="", icon='PASTEDOWN')
 
-            layout.prop(context.gpencil_data, "use_onion_skinning", text="Onion Skins", icon='PARTICLE_PATH') # XXX: icon
+            # XXX: icon
+            layout.prop(context.gpencil_data, "use_onion_skinning", text="Onion Skins", icon='PARTICLE_PATH')
 
-            layout.prop(context.tool_settings.gpencil_sculpt, "use_select_mask")
-
-
+            row = layout.row(align=True)
+            row.prop(context.tool_settings.gpencil_sculpt, "use_select_mask")
+            row.prop(context.tool_settings.gpencil_sculpt, "selection_alpha", slider=True)
 
 
 class VIEW3D_MT_editor_menus(Menu):
@@ -406,6 +409,20 @@ class VIEW3D_MT_uv_map(Menu):
         layout.separator()
 
         layout.operator("uv.reset")
+
+
+class VIEW3D_MT_edit_proportional(Menu):
+    bl_label = "Proportional Editing"
+
+    def draw(self, context):
+        layout = self.layout
+
+        layout.props_enum(context.tool_settings, "proportional_edit")
+
+        layout.separator()
+
+        layout.label("Falloff:")
+        layout.props_enum(context.tool_settings, "proportional_edit_falloff")
 
 
 # ********** View menus **********
@@ -693,6 +710,7 @@ class VIEW3D_MT_select_particle(Menu):
         layout = self.layout
 
         layout.operator("view3d.select_border")
+        layout.operator("view3d.select_circle")
 
         layout.separator()
 
@@ -997,8 +1015,7 @@ class VIEW3D_MT_select_gpencil(Menu):
         layout.operator("gpencil.select_all", text="(De)select All").action = 'TOGGLE'
         layout.operator("gpencil.select_all", text="Inverse").action = 'INVERT'
         layout.operator("gpencil.select_linked", text="Linked")
-        #layout.operator_menu_enum("gpencil.select_grouped", "type", text="Grouped")
-        layout.operator("gpencil.select_grouped", text="Grouped")
+        layout.operator_menu_enum("gpencil.select_grouped", "type", text="Grouped")
 
         layout.separator()
 
@@ -1505,14 +1522,14 @@ class VIEW3D_MT_object_apply(Menu):
         props.location, props.rotation, props.scale = False, True, True
 
         layout.separator()
-        
+
         layout.operator("object.transforms_to_deltas", text="Location to Deltas", text_ctxt=i18n_contexts.default).mode = 'LOC'
         layout.operator("object.transforms_to_deltas", text="Rotation to Deltas", text_ctxt=i18n_contexts.default).mode = 'ROT'
         layout.operator("object.transforms_to_deltas", text="Scale to Deltas", text_ctxt=i18n_contexts.default).mode = 'SCALE'
-        
+
         layout.operator("object.transforms_to_deltas", text="All Transforms to Deltas", text_ctxt=i18n_contexts.default).mode = 'ALL'
         layout.operator("object.anim_transforms_to_deltas")
-        
+
         layout.separator()
 
         layout.operator("object.visual_transform_apply", text="Visual Transform", text_ctxt=i18n_contexts.default)
@@ -2309,8 +2326,7 @@ class VIEW3D_MT_edit_mesh(Menu):
         layout.separator()
 
         layout.prop(toolsettings, "use_mesh_automerge")
-        layout.prop_menu_enum(toolsettings, "proportional_edit")
-        layout.prop_menu_enum(toolsettings, "proportional_edit_falloff")
+        layout.menu("VIEW3D_MT_edit_proportional")
 
         layout.separator()
 
@@ -2425,6 +2441,8 @@ class VIEW3D_MT_edit_mesh_vertices(Menu):
         layout = self.layout
         layout.operator_context = 'INVOKE_REGION_WIN'
 
+        with_bullet = bpy.app.build_options.bullet
+
         layout.operator("mesh.merge")
         layout.operator("mesh.rip_move")
         layout.operator("mesh.rip_move_fill")
@@ -2445,7 +2463,8 @@ class VIEW3D_MT_edit_mesh_vertices(Menu):
         layout.separator()
 
         layout.operator("mesh.bevel").vertex_only = True
-        layout.operator("mesh.convex_hull")
+        if with_bullet:
+            layout.operator("mesh.convex_hull")
         layout.operator("mesh.vertices_smooth")
         layout.operator("mesh.remove_doubles")
 
@@ -2458,6 +2477,10 @@ class VIEW3D_MT_edit_mesh_vertices(Menu):
 
         layout.menu("VIEW3D_MT_vertex_group")
         layout.menu("VIEW3D_MT_hook")
+
+        layout.separator()
+
+        layout.operator("object.vertex_parent_set")
 
 
 class VIEW3D_MT_edit_mesh_edges(Menu):
@@ -2679,8 +2702,7 @@ def draw_curve(self, context):
 
     layout.separator()
 
-    layout.prop_menu_enum(toolsettings, "proportional_edit")
-    layout.prop_menu_enum(toolsettings, "proportional_edit_falloff")
+    layout.menu("VIEW3D_MT_edit_proportional")
 
     layout.separator()
 
@@ -2713,6 +2735,10 @@ class VIEW3D_MT_edit_curve_ctrlpoints(Menu):
             layout.separator()
 
         layout.menu("VIEW3D_MT_hook")
+
+        layout.separator()
+
+        layout.operator("object.vertex_parent_set")
 
 
 class VIEW3D_MT_edit_curve_segments(Menu):
@@ -2839,8 +2865,7 @@ class VIEW3D_MT_edit_meta(Menu):
 
         layout.separator()
 
-        layout.prop_menu_enum(toolsettings, "proportional_edit")
-        layout.prop_menu_enum(toolsettings, "proportional_edit_falloff")
+        layout.menu("VIEW3D_MT_edit_proportional")
 
         layout.separator()
 
@@ -2877,8 +2902,11 @@ class VIEW3D_MT_edit_lattice(Menu):
 
         layout.separator()
 
-        layout.prop_menu_enum(toolsettings, "proportional_edit")
-        layout.prop_menu_enum(toolsettings, "proportional_edit_falloff")
+        layout.operator("object.vertex_parent_set")
+
+        layout.separator()
+
+        layout.menu("VIEW3D_MT_edit_proportional")
 
 
 class VIEW3D_MT_edit_armature(Menu):
@@ -3025,11 +3053,18 @@ class VIEW3D_MT_edit_gpencil(Menu):
         layout.separator()
 
         layout.menu("VIEW3D_MT_object_animation")   # NOTE: provides keyingset access...
+        layout.menu("VIEW3D_MT_edit_gpencil_interpolate")
 
         layout.separator()
 
         layout.menu("VIEW3D_MT_edit_gpencil_delete")
         layout.operator("gpencil.duplicate_move", text="Duplicate")
+        layout.operator("gpencil.stroke_subdivide", text="Subdivide")
+
+        layout.separator()
+
+        layout.operator_menu_enum("gpencil.stroke_join", "type", text="Join...")
+        layout.operator("gpencil.stroke_flip", text="Flip Direction")
 
         layout.separator()
 
@@ -3038,8 +3073,7 @@ class VIEW3D_MT_edit_gpencil(Menu):
 
         layout.separator()
 
-        layout.prop_menu_enum(toolsettings, "proportional_edit")
-        layout.prop_menu_enum(toolsettings, "proportional_edit_falloff")
+        layout.menu("VIEW3D_MT_edit_proportional")
 
         layout.separator()
 
@@ -3050,6 +3084,11 @@ class VIEW3D_MT_edit_gpencil(Menu):
         layout.separator()
 
         layout.operator_menu_enum("gpencil.move_to_layer", "layer", text="Move to Layer")
+        layout.operator("gpencil.stroke_change_color", text="Move to Color")
+        layout.operator_menu_enum("gpencil.stroke_arrange", "direction", text="Arrange Strokes...")
+
+        layout.separator()
+
         layout.operator_menu_enum("gpencil.convert", "type", text="Convert to Geometry...")
 
 
@@ -3070,11 +3109,32 @@ class VIEW3D_MT_edit_gpencil_transform(Menu):
         layout.operator("transform.tosphere", text="To Sphere")
         layout.operator("transform.transform", text="Shrink Fatten").mode = 'GPENCIL_SHRINKFATTEN'
 
+        layout.separator()
+
+        layout.operator("gpencil.reproject")
+
+
+class VIEW3D_MT_edit_gpencil_interpolate(Menu):
+    bl_label = "Interpolate"
+
+    def draw(self, context):
+        layout = self.layout
+
+        layout.operator("gpencil.interpolate", text="Interpolate")
+        layout.operator("gpencil.interpolate_sequence", text="Sequence")
+
 
 # ********** Panel **********
 
 
 class VIEW3D_PT_grease_pencil(GreasePencilDataPanel, Panel):
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+
+    # NOTE: this is just a wrapper around the generic GP Panel
+
+
+class VIEW3D_PT_grease_pencil_palettecolor(GreasePencilPaletteColorPanel, Panel):
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
 
@@ -3210,8 +3270,10 @@ class VIEW3D_PT_view3d_display(Panel):
         row.prop(view, "show_axis_z", text="Z", toggle=True)
 
         sub = col.column(align=True)
-        sub.active = (display_all and view.show_floor)
-        sub.prop(view, "grid_lines", text="Lines")
+        sub.active = bool(view.show_floor or view.region_quadviews or not view.region_3d.is_perspective)
+        subsub = sub.column(align=True)
+        subsub.active = view.show_floor
+        subsub.prop(view, "grid_lines", text="Lines")
         sub.prop(view, "grid_scale", text="Scale")
         subsub = sub.column(align=True)
         subsub.active = scene.unit_settings.system == 'NONE'

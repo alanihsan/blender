@@ -22,7 +22,9 @@ from bpy.types import Menu, Panel, UIList
 from bl_ui.properties_grease_pencil_common import (
         GreasePencilDrawingToolsPanel,
         GreasePencilStrokeEditPanel,
-        GreasePencilStrokeSculptPanel
+        GreasePencilStrokeSculptPanel,
+        GreasePencilBrushPanel,
+        GreasePencilBrushCurvesPanel
         )
 from bl_ui.properties_paint_common import (
         UnifiedPaintPanel,
@@ -429,6 +431,7 @@ class VIEW3D_PT_tools_shading(View3DPanel, Panel):
         col.label(text="Normals:")
         col.operator("mesh.normals_make_consistent", text="Recalculate")
         col.operator("mesh.flip_normals", text="Flip Direction")
+        col.operator("mesh.set_normals_from_faces", text="Set From Faces")
 
 
 class VIEW3D_PT_tools_uvs(View3DPanel, Panel):
@@ -570,6 +573,7 @@ class VIEW3D_PT_tools_curveedit_options_stroke(View3DPanel, Panel):
         if cps.curve_type == 'BEZIER':
             col.label("Bezier Options:")
             col.prop(cps, "error_threshold")
+            col.prop(cps, "fit_method")
             col.prop(cps, "use_corners_detect")
 
             col = layout.column()
@@ -603,6 +607,7 @@ class VIEW3D_PT_tools_curveedit_options_stroke(View3DPanel, Panel):
             if cps.use_stroke_endpoints:
                 colsub = layout.column(align=True)
                 colsub.prop(cps, "surface_plane", expand=True)
+
 
 # ********** default tools for editmode_surface ****************
 
@@ -1555,7 +1560,7 @@ class VIEW3D_PT_sculpt_dyntopo(Panel, View3DPaintPanel):
         sub.active = (brush and brush.sculpt_tool != 'MASK')
         if (sculpt.detail_type_method == 'CONSTANT'):
             row = sub.row(align=True)
-            row.prop(sculpt, "constant_detail")
+            row.prop(sculpt, "constant_detail_resolution")
             row.operator("sculpt.sample_detail_size", text="", icon='EYEDROPPER')
         elif (sculpt.detail_type_method == 'BRUSH'):
             sub.prop(sculpt, "detail_percent")
@@ -1960,6 +1965,15 @@ class VIEW3D_PT_tools_grease_pencil_edit(GreasePencilStrokeEditPanel, Panel):
 
 # Grease Pencil stroke sculpting tools
 class VIEW3D_PT_tools_grease_pencil_sculpt(GreasePencilStrokeSculptPanel, Panel):
+    bl_space_type = 'VIEW_3D'
+
+
+# Grease Pencil drawing brushes
+class VIEW3D_PT_tools_grease_pencil_brush(GreasePencilBrushPanel, Panel):
+    bl_space_type = 'VIEW_3D'
+
+# Grease Pencil drawingcurves
+class VIEW3D_PT_tools_grease_pencil_brushcurves(GreasePencilBrushCurvesPanel, Panel):
     bl_space_type = 'VIEW_3D'
 
 

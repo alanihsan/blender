@@ -46,23 +46,29 @@
 #include "DNA_screen_types.h"
 #include "DNA_object_force.h"
 #include "DNA_object_types.h"
+#include "DNA_mask_types.h"
 #include "DNA_mesh_types.h"
 #include "DNA_modifier_types.h"
 #include "DNA_particle_types.h"
 #include "DNA_linestyle_types.h"
 #include "DNA_actuator_types.h"
 #include "DNA_view3d_types.h"
+#include "DNA_smoke_types.h"
+#include "DNA_rigidbody_types.h"
 
 #include "DNA_genfile.h"
 
 #include "BKE_colortools.h"
 #include "BKE_library.h"
 #include "BKE_main.h"
+#include "BKE_mask.h"
 #include "BKE_modifier.h"
 #include "BKE_node.h"
 #include "BKE_scene.h"
 #include "BKE_sequencer.h"
 #include "BKE_screen.h"
+#include "BKE_tracking.h"
+#include "BKE_gpencil.h"
 
 #include "BLI_math.h"
 #include "BLI_listbase.h"
@@ -73,6 +79,23 @@
 #include "readfile.h"
 
 #include "MEM_guardedalloc.h"
+
+/**
+ * Setup rotation stabilization from ancient single track spec.
+ * Former Version of 2D stabilization used a single tracking marker to determine the rotation
+ * to be compensated. Now several tracks can contribute to rotation detection and this feature
+ * is enabled by the MovieTrackingTrack#flag on a per track base.
+ */
+static void migrate_single_rot_stabilization_track_settings(MovieTrackingStabilization *stab)
+{
+	if (stab->rot_track) {
+		if (!(stab->rot_track->flag & TRACK_USE_2D_STAB_ROT)) {
+			stab->tot_rot_track++;
+			stab->rot_track->flag |= TRACK_USE_2D_STAB_ROT;
+		}
+	}
+	stab->rot_track = NULL; /* this field is now ignored */
+}
 
 static void do_version_constraints_radians_degrees_270_1(ListBase *lb)
 {
@@ -1075,15 +1098,6 @@ void blo_do_versions_270(FileData *fd, Library *UNUSED(lib), Main *main)
 			}
 		}
 
-		/* init grease pencil smooth level iterations */
-		for (bGPdata *gpd = main->gpencil.first; gpd; gpd = gpd->id.next) {
-			for (bGPDlayer *gpl = gpd->layers.first; gpl; gpl = gpl->next) {
-				if (gpl->draw_smoothlvl == 0) {
-					gpl->draw_smoothlvl = 1;
-				}
-			}
-		}
-
 		for (bScreen *screen = main->screen.first; screen; screen = screen->id.next) {
 			for (ScrArea *sa = screen->areabase.first; sa; sa = sa->next) {
 				for (SpaceLink *sl = sa->spacedata.first; sl; sl = sl->next) {
@@ -1192,7 +1206,7 @@ void blo_do_versions_270(FileData *fd, Library *UNUSED(lib), Main *main)
 
 		for (Camera *camera = main->camera.first; camera != NULL; camera = camera->id.next) {
 			if (camera->stereo.pole_merge_angle_from == 0.0f &&
-			    camera->stereo.pole_merge_angle_to == 0.0f)
+				camera->stereo.pole_merge_angle_to == 0.0f)
 			{
 				camera->stereo.pole_merge_angle_from = DEG2RADF(60.0f);
 				camera->stereo.pole_merge_angle_to = DEG2RADF(75.0f);
@@ -1229,6 +1243,252 @@ void blo_do_versions_270(FileData *fd, Library *UNUSED(lib), Main *main)
 		for (Brush *br = main->brush.first; br; br = br->id.next) {
 			if (br->sculpt_tool == SCULPT_TOOL_FLATTEN) {
 				br->flag |= BRUSH_ACCUMULATE;
+			}
+		}
+
+		if (!DNA_struct_elem_find(fd->filesdna, "ClothSimSettings", "float", "time_scale")) {
+			Object *ob;
+			ModifierData *md;
+			for (ob = main->object.first; ob; ob = ob->id.next) {
+				for (md = ob->modifiers.first; md; md = md->next) {
+					if (md->type == eModifierType_Cloth) {
+						ClothModifierData *clmd = (ClothModifierData *)md;
+						clmd->sim_parms->time_scale = 1.0f;
+					}
+					else if (md->type == eModifierType_ParticleSystem) {
+						ParticleSystemModifierData *pmd = (ParticleSystemModifierData *)md;
+						if (pmd->psys->clmd) {
+							pmd->psys->clmd->sim_parms->time_scale = 1.0f;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if (!MAIN_VERSION_ATLEAST(main, 277, 3)) {
+		/* ------- init of grease pencil initialization --------------- */
+		if (!DNA_struct_elem_find(fd->filesdna, "bGPDstroke", "bGPDpalettecolor", "*palcolor")) {
+			for (Scene *scene = main->scene.first; scene; scene = scene->id.next) {
+				ToolSettings *ts = scene->toolsettings;
+				/* initialize use position for sculpt brushes */
+				ts->gp_sculpt.flag |= GP_BRUSHEDIT_FLAG_APPLY_POSITION;
+				/* initialize  selected vertices alpha factor */
+				ts->gp_sculpt.alpha = 1.0f;
+
+				/* new strength sculpt brush */
+				if (ts->gp_sculpt.brush[0].size >= 11) {
+					GP_BrushEdit_Settings *gset = &ts->gp_sculpt;
+					GP_EditBrush_Data *brush;
+
+					brush = &gset->brush[GP_EDITBRUSH_TYPE_STRENGTH];
+					brush->size = 25;
+					brush->strength = 0.5f;
+					brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
+				}
+			}
+			/* create a default grease pencil drawing brushes set */
+			if (!BLI_listbase_is_empty(&main->gpencil)) {
+				for (Scene *scene = main->scene.first; scene; scene = scene->id.next) {
+					ToolSettings *ts = scene->toolsettings;
+					if (BLI_listbase_is_empty(&ts->gp_brushes)) {
+						BKE_gpencil_brush_init_presets(ts);
+					}
+				}
+			}
+			/* Convert Grease Pencil to new palettes/brushes
+			 * Loop all strokes and create the palette and all colors
+			 */
+			for (bGPdata *gpd = main->gpencil.first; gpd; gpd = gpd->id.next) {
+				if (BLI_listbase_is_empty(&gpd->palettes)) {
+					/* create palette */
+					bGPDpalette *palette = BKE_gpencil_palette_addnew(gpd, "GP_Palette", true);
+					for (bGPDlayer *gpl = gpd->layers.first; gpl; gpl = gpl->next) {
+						/* create color using layer name */
+						bGPDpalettecolor *palcolor = BKE_gpencil_palettecolor_addnew(palette, gpl->info, true);
+						if (palcolor != NULL) {
+							/* set color attributes */
+							copy_v4_v4(palcolor->color, gpl->color);
+							copy_v4_v4(palcolor->fill, gpl->fill);
+							
+							if (gpl->flag & GP_LAYER_HIDE)       palcolor->flag |= PC_COLOR_HIDE;
+							if (gpl->flag & GP_LAYER_LOCKED)     palcolor->flag |= PC_COLOR_LOCKED;
+							if (gpl->flag & GP_LAYER_ONIONSKIN)  palcolor->flag |= PC_COLOR_ONIONSKIN;
+							if (gpl->flag & GP_LAYER_VOLUMETRIC) palcolor->flag |= PC_COLOR_VOLUMETRIC;
+							if (gpl->flag & GP_LAYER_HQ_FILL)    palcolor->flag |= PC_COLOR_HQ_FILL;
+							
+							/* set layer opacity to 1 */
+							gpl->opacity = 1.0f;
+							
+							/* set tint color */
+							ARRAY_SET_ITEMS(gpl->tintcolor, 0.0f, 0.0f, 0.0f, 0.0f);
+							
+							/* flush relevant layer-settings to strokes */
+							for (bGPDframe *gpf = gpl->frames.first; gpf; gpf = gpf->next) {
+								for (bGPDstroke *gps = gpf->strokes.first; gps; gps = gps->next) {
+									/* set stroke to palette and force recalculation */
+									BLI_strncpy(gps->colorname, gpl->info, sizeof(gps->colorname));
+									gps->palcolor = NULL;
+									gps->flag |= GP_STROKE_RECALC_COLOR;
+									gps->thickness = gpl->thickness;
+									
+									/* set alpha strength to 1 */
+									for (int i = 0; i < gps->totpoints; i++) {
+										gps->points[i].strength = 1.0f;
+									}
+								}
+							}
+						}
+						
+						/* set thickness to 0 (now it is a factor to override stroke thickness) */
+						gpl->thickness = 0.0f;
+					}
+					/* set first color as active */
+					if (palette->colors.first)
+						BKE_gpencil_palettecolor_setactive(palette, palette->colors.first);
+				}
+			}
+		}
+		/* ------- end of grease pencil initialization --------------- */
+	}
+
+	if (!MAIN_VERSION_ATLEAST(main, 278, 0)) {
+		if (!DNA_struct_elem_find(fd->filesdna, "MovieTrackingTrack", "float", "weight_stab")) {
+			MovieClip *clip;
+			for (clip = main->movieclip.first; clip; clip = clip->id.next) {
+				MovieTracking *tracking = &clip->tracking;
+				MovieTrackingObject *tracking_object;
+				for (tracking_object = tracking->objects.first;
+				     tracking_object != NULL;
+				     tracking_object = tracking_object->next)
+				{
+					ListBase *tracksbase = BKE_tracking_object_get_tracks(tracking, tracking_object);
+					MovieTrackingTrack *track;
+					for (track = tracksbase->first;
+					     track != NULL;
+					     track = track->next)
+					{
+						track->weight_stab = track->weight;
+					}
+				}
+			}
+		}
+
+		if (!DNA_struct_elem_find(fd->filesdna, "MovieTrackingStabilization", "int", "tot_rot_track")) {
+			MovieClip *clip;
+			for (clip = main->movieclip.first; clip != NULL; clip = clip->id.next) {
+				if (clip->tracking.stabilization.rot_track) {
+					migrate_single_rot_stabilization_track_settings(&clip->tracking.stabilization);
+				}
+				if (clip->tracking.stabilization.scale == 0.0f) {
+					/* ensure init.
+					 * Was previously used for autoscale only,
+					 * now used always (as "target scale") */
+					clip->tracking.stabilization.scale = 1.0f;
+				}
+				/* blender prefers 1-based frame counting;
+				 * thus using frame 1 as reference typically works best */
+				clip->tracking.stabilization.anchor_frame = 1;
+				/* by default show the track lists expanded, to improve "discoverability" */
+				clip->tracking.stabilization.flag |= TRACKING_SHOW_STAB_TRACKS;
+				/* deprecated, not used anymore */
+				clip->tracking.stabilization.ok = false;
+			}
+		}
+	}
+	if (!MAIN_VERSION_ATLEAST(main, 278, 2)) {
+		if (!DNA_struct_elem_find(fd->filesdna, "FFMpegCodecData", "int", "ffmpeg_preset")) {
+			for (Scene *scene = main->scene.first; scene; scene = scene->id.next) {
+				/* "medium" is the preset FFmpeg uses when no presets are given. */
+				scene->r.ffcodecdata.ffmpeg_preset = FFM_PRESET_MEDIUM;
+			}
+		}
+		if (!DNA_struct_elem_find(fd->filesdna, "FFMpegCodecData", "int", "constant_rate_factor")) {
+			for (Scene *scene = main->scene.first; scene; scene = scene->id.next) {
+				/* fall back to behaviour from before we introduced CRF for old files */
+				scene->r.ffcodecdata.constant_rate_factor = FFM_CRF_NONE;
+			}
+		}
+
+		if (!DNA_struct_elem_find(fd->filesdna, "SmokeModifierData", "float", "slice_per_voxel")) {
+			Object *ob;
+			ModifierData *md;
+
+			for (ob = main->object.first; ob; ob = ob->id.next) {
+				for (md = ob->modifiers.first; md; md = md->next) {
+					if (md->type == eModifierType_Smoke) {
+						SmokeModifierData *smd = (SmokeModifierData *)md;
+						if (smd->domain) {
+							smd->domain->slice_per_voxel = 5.0f;
+							smd->domain->slice_depth = 0.5f;
+							smd->domain->display_thickness = 1.0f;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if (!MAIN_VERSION_ATLEAST(main, 278, 3)) {
+		for (Scene *scene = main->scene.first; scene != NULL; scene = scene->id.next) {
+			if (scene->toolsettings != NULL) {
+				ToolSettings *ts = scene->toolsettings;
+				ParticleEditSettings *pset = &ts->particle;
+				for (int a = 0; a < PE_TOT_BRUSH; a++) {
+					if (pset->brush[a].count == 0) {
+						pset->brush[a].count = 10;
+					}
+				}
+			}
+		}
+
+		if (!DNA_struct_elem_find(fd->filesdna, "RigidBodyCon", "float", "spring_stiffness_ang_x")) {
+			Object *ob;
+			for (ob = main->object.first; ob; ob = ob->id.next) {
+				RigidBodyCon *rbc = ob->rigidbody_constraint;
+				if (rbc) {
+					rbc->spring_stiffness_ang_x = 10.0;
+					rbc->spring_stiffness_ang_y = 10.0;
+					rbc->spring_stiffness_ang_z = 10.0;
+					rbc->spring_damping_ang_x = 0.5;
+					rbc->spring_damping_ang_y = 0.5;
+					rbc->spring_damping_ang_z = 0.5;
+				}
+			}
+		}
+
+		/* constant detail for sculpting is now a resolution value instead of
+		 * a percentage, we reuse old DNA struct member but convert it */
+		for (Scene *scene = main->scene.first; scene != NULL; scene = scene->id.next) {
+			if (scene->toolsettings != NULL) {
+				ToolSettings *ts = scene->toolsettings;
+				if (ts->sculpt && ts->sculpt->constant_detail != 0.0f) {
+					ts->sculpt->constant_detail = 100.0f / ts->sculpt->constant_detail;
+				}
+			}
+		}
+	}
+
+	if (!MAIN_VERSION_ATLEAST(main, 278, 4)) {
+		const float sqrt_3 = (float)M_SQRT3;
+		for (Brush *br = main->brush.first; br; br = br->id.next) {
+			br->fill_threshold /= sqrt_3;
+		}
+	}
+
+	/* To be added to next subversion bump! */
+	{
+		/* Mask primitive adding code was not initializing correctly id_type of its points' parent. */
+		for (Mask *mask = main->mask.first; mask; mask = mask->id.next) {
+			for (MaskLayer *mlayer = mask->masklayers.first; mlayer; mlayer = mlayer->next) {
+				for (MaskSpline *mspline = mlayer->splines.first; mspline; mspline = mspline->next) {
+					int i = 0;
+					for (MaskSplinePoint *mspoint = mspline->points; i < mspline->tot_point; mspoint++, i++) {
+						if (mspoint->parent.id_type == 0) {
+							BKE_mask_parent_init(&mspoint->parent);
+						}
+					}
+				}
 			}
 		}
 	}

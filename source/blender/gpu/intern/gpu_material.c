@@ -270,6 +270,9 @@ static int GPU_material_construct_end(GPUMaterial *material, const char *passnam
 			material->partangvel = GPU_shader_get_uniform(shader, GPU_builtin_name(GPU_PARTICLE_ANG_VELOCITY));
 		return 1;
 	}
+	else {
+		GPU_pass_free_nodes(&material->nodes);
+	}
 
 	return 0;
 }
@@ -801,7 +804,7 @@ static void shade_light_textures(GPUMaterial *mat, GPULamp *lamp, GPUNodeLink **
 	for (int i = 0; i < MAX_MTEX; ++i) {
 		MTex *mtex = lamp->la->mtex[i];
 
-		if (mtex && mtex->tex->type & TEX_IMAGE && mtex->tex->ima) {
+		if (mtex && mtex->tex && (mtex->tex->type & TEX_IMAGE) && mtex->tex->ima) {
 			mat->dynproperty |= DYN_LAMP_PERSMAT;
 
 			float one = 1.0f;

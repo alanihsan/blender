@@ -821,10 +821,9 @@ static float calc_overlap(StrokeCache *cache, const char symm, const char axis, 
 	flip_v3_v3(mirror, cache->true_location, symm);
 
 	if (axis != 0) {
-		float mat[4][4];
-		unit_m4(mat);
-		rotate_m4(mat, axis, angle);
-		mul_m4_v3(mat, mirror);
+		float mat[3][3];
+		axis_angle_to_mat3_single(mat, axis, angle);
+		mul_m3_v3(mat, mirror);
 	}
 
 	/* distsq = len_squared_v3v3(mirror, cache->traced_location); */
@@ -1239,7 +1238,7 @@ static float brush_strength(
 
 /* Return a multiplier for brush strength on a particular vertex. */
 static float tex_strength(SculptSession *ss, Brush *br,
-                          const float point[3],
+                          const float brush_point[3],
                           const float len,
                           const short vno[3],
                           const float fno[3],
@@ -1251,6 +1250,9 @@ static float tex_strength(SculptSession *ss, Brush *br,
 	MTex *mtex = &br->mtex;
 	float avg = 1;
 	float rgba[4];
+	float point[3];
+
+	sub_v3_v3v3(point, brush_point, cache->plane_offset);
 
 	if (!mtex->tex) {
 		avg = 1;
@@ -4185,7 +4187,7 @@ static void sculpt_update_brush_delta(UnifiedPaintSettings *ups, Object *ob, Bru
 
 		/* compute 3d coordinate at same z from original location + mouse */
 		mul_v3_m4v3(loc, ob->obmat, cache->orig_grab_location);
-		ED_view3d_win_to_3d(cache->vc->ar, loc, mouse, grab_location);
+		ED_view3d_win_to_3d(cache->vc->v3d, cache->vc->ar, loc, mouse, grab_location);
 
 		/* compute delta to move verts by */
 		if (!cache->first_time) {
@@ -4685,7 +4687,7 @@ static void sculpt_stroke_update_step(bContext *C, struct PaintStroke *UNUSED(st
 	sculpt_restore_mesh(sd, ob);
 
 	if (sd->flags & SCULPT_DYNTOPO_DETAIL_CONSTANT) {
-		BKE_pbvh_bmesh_detail_size_set(ss->pbvh, sd->constant_detail / 100.0f);
+		BKE_pbvh_bmesh_detail_size_set(ss->pbvh, 1.0f / sd->constant_detail);
 	}
 	else if (sd->flags & SCULPT_DYNTOPO_DETAIL_BRUSH) {
 		BKE_pbvh_bmesh_detail_size_set(ss->pbvh, ss->cache->radius * sd->detail_percent / 100.0f);
@@ -5403,7 +5405,7 @@ static int sculpt_mode_toggle_exec(bContext *C, wmOperator *op)
 		if (!ts->sculpt->detail_percent)
 			ts->sculpt->detail_percent = 25;
 		if (ts->sculpt->constant_detail == 0.0f)
-			ts->sculpt->constant_detail = 30.0f;
+			ts->sculpt->constant_detail = 3.0f;
 
 		/* Set sane default tiling offsets */
 		if (!ts->sculpt->paint.tile_offset[0]) ts->sculpt->paint.tile_offset[0] = 1.0f;
@@ -5540,7 +5542,7 @@ static int sculpt_detail_flood_fill_exec(bContext *C, wmOperator *UNUSED(op))
 	size = max_fff(bb_max[0], bb_max[1], bb_max[2]);
 
 	/* update topology size */
-	BKE_pbvh_bmesh_detail_size_set(ss->pbvh, sd->constant_detail / 100.0f);
+	BKE_pbvh_bmesh_detail_size_set(ss->pbvh, 1.0f / sd->constant_detail);
 
 	sculpt_undo_push_begin("Dynamic topology flood fill");
 	sculpt_undo_push_node(ob, NULL, SCULPT_UNDO_COORDS);
@@ -5605,7 +5607,8 @@ static void sample_detail(bContext *C, int ss_co[2])
 	                 ray_start, ray_normal, false);
 
 	if (srd.hit) {
-		sd->constant_detail = srd.detail * 100.0f;
+		/* convert edge length to detail resolution */
+		sd->constant_detail = 1.0f / srd.detail;
 	}
 }
 

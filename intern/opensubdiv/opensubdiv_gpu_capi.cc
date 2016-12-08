@@ -49,7 +49,9 @@
 
 using OpenSubdiv::Osd::GLMeshInterface;
 
-extern "C" char datatoc_gpu_shader_opensubd_display_glsl[];
+extern "C" char datatoc_gpu_shader_opensubdiv_vertex_glsl[];
+extern "C" char datatoc_gpu_shader_opensubdiv_geometry_glsl[];
+extern "C" char datatoc_gpu_shader_opensubdiv_fragment_glsl[];
 
 /* TODO(sergey): This is bit of bad level calls :S */
 extern "C" {
@@ -100,6 +102,12 @@ static GLuint g_flat_fill_solid_program = 0;
 static GLuint g_flat_fill_texture2d_program = 0;
 static GLuint g_smooth_fill_solid_program = 0;
 static GLuint g_smooth_fill_texture2d_program = 0;
+
+static GLuint g_flat_fill_solid_shadeless_program = 0;
+static GLuint g_flat_fill_texture2d_shadeless_program = 0;
+static GLuint g_smooth_fill_solid_shadeless_program = 0;
+static GLuint g_smooth_fill_texture2d_shadeless_program = 0;
+
 static GLuint g_wireframe_program = 0;
 
 static GLuint g_lighting_ub = 0;
@@ -109,7 +117,7 @@ static Transform g_transform;
 struct OpenSubdiv_GLMeshFVarData
 {
 	OpenSubdiv_GLMeshFVarData() :
-		texture_buffer(0) {
+		texture_buffer(0), offset_buffer(0) {
 	}
 
 	~OpenSubdiv_GLMeshFVarData()
@@ -200,25 +208,23 @@ struct OpenSubdiv_GLMeshFVarData
 namespace {
 
 GLuint compileShader(GLenum shaderType,
-                     const char *section,
                      const char *version,
-                     const char *define)
+                     const char *define,
+                     const char *source)
 {
-	char sdefine[64];
-	sprintf(sdefine, "#define %s\n", section);
-
 	const char *sources[] = {
 		version,
 		define,
-		sdefine,
 #ifdef SUPPORT_COLOR_MATERIAL
 		"#define SUPPORT_COLOR_MATERIAL\n",
+#else
+		"",
 #endif
-		datatoc_gpu_shader_opensubd_display_glsl
+		source,
 	};
 
 	GLuint shader = glCreateShader(shaderType);
-	glShaderSource(shader, 5, sources, NULL);
+	glShaderSource(shader, 4, sources, NULL);
 	glCompileShader(shader);
 
 	GLint status;
@@ -226,10 +232,10 @@ GLuint compileShader(GLenum shaderType,
 	if (status == GL_FALSE) {
 		GLchar emsg[1024];
 		glGetShaderInfoLog(shader, sizeof(emsg), 0, emsg);
-		fprintf(stderr, "Error compiling GLSL %s: %s\n", section, emsg);
+		fprintf(stderr, "Error compiling GLSL: %s\n", emsg);
 		fprintf(stderr, "Version: %s\n", version);
 		fprintf(stderr, "Defines: %s\n", define);
-		fprintf(stderr, "Source: %s\n", datatoc_gpu_shader_opensubd_display_glsl);
+		fprintf(stderr, "Source: %s\n", source);
 		return 0;
 	}
 
@@ -239,23 +245,23 @@ GLuint compileShader(GLenum shaderType,
 GLuint linkProgram(const char *version, const char *define)
 {
 	GLuint vertexShader = compileShader(GL_VERTEX_SHADER,
-	                                    "VERTEX_SHADER",
 	                                    version,
-	                                    define);
+	                                    define,
+	                                    datatoc_gpu_shader_opensubdiv_vertex_glsl);
 	if (vertexShader == 0) {
 		return 0;
 	}
 	GLuint geometryShader = compileShader(GL_GEOMETRY_SHADER,
-	                                      "GEOMETRY_SHADER",
 	                                      version,
-	                                      define);
+	                                      define,
+	                                      datatoc_gpu_shader_opensubdiv_geometry_glsl);
 	if (geometryShader == 0) {
 		return 0;
 	}
 	GLuint fragmentShader = compileShader(GL_FRAGMENT_SHADER,
-	                                      "FRAGMENT_SHADER",
 	                                      version,
-	                                      define);
+	                                      define,
+	                                      datatoc_gpu_shader_opensubdiv_fragment_glsl );
 	if (fragmentShader == 0) {
 		return 0;
 	}
@@ -425,21 +431,45 @@ bool openSubdiv_osdGLDisplayInit(void)
 		g_flat_fill_solid_program = linkProgram(
 		        version,
 		        "#define USE_COLOR_MATERIAL\n"
+		        "#define USE_LIGHTING\n"
 		        "#define FLAT_SHADING\n");
 		g_flat_fill_texture2d_program = linkProgram(
 		        version,
 		        "#define USE_COLOR_MATERIAL\n"
+		        "#define USE_LIGHTING\n"
 		        "#define USE_TEXTURE_2D\n"
 		        "#define FLAT_SHADING\n");
 		g_smooth_fill_solid_program = linkProgram(
 		        version,
 		        "#define USE_COLOR_MATERIAL\n"
+		        "#define USE_LIGHTING\n"
 		        "#define SMOOTH_SHADING\n");
 		g_smooth_fill_texture2d_program = linkProgram(
 		        version,
 		        "#define USE_COLOR_MATERIAL\n"
+		        "#define USE_LIGHTING\n"
 		        "#define USE_TEXTURE_2D\n"
 		        "#define SMOOTH_SHADING\n");
+
+		g_flat_fill_solid_shadeless_program = linkProgram(
+		        version,
+		        "#define USE_COLOR_MATERIAL\n"
+		        "#define FLAT_SHADING\n");
+		g_flat_fill_texture2d_shadeless_program = linkProgram(
+		        version,
+		        "#define USE_COLOR_MATERIAL\n"
+		        "#define USE_TEXTURE_2D\n"
+		        "#define FLAT_SHADING\n");
+		g_smooth_fill_solid_shadeless_program = linkProgram(
+		        version,
+		        "#define USE_COLOR_MATERIAL\n"
+		        "#define SMOOTH_SHADING\n");
+		g_smooth_fill_texture2d_shadeless_program = linkProgram(
+		        version,
+		        "#define USE_COLOR_MATERIAL\n"
+		        "#define USE_TEXTURE_2D\n"
+		        "#define SMOOTH_SHADING\n");
+
 		g_wireframe_program = linkProgram(
 		        version,
 		        "#define WIREFRAME\n");
@@ -464,21 +494,24 @@ void openSubdiv_osdGLDisplayDeinit(void)
 	if (g_lighting_ub != 0) {
 		glDeleteBuffers(1, &g_lighting_ub);
 	}
-	if (g_flat_fill_solid_program) {
-		glDeleteProgram(g_flat_fill_solid_program);
-	}
-	if (g_flat_fill_texture2d_program) {
-		glDeleteProgram(g_flat_fill_texture2d_program);
-	}
-	if (g_smooth_fill_solid_program) {
-		glDeleteProgram(g_flat_fill_solid_program);
-	}
-	if (g_smooth_fill_texture2d_program) {
-		glDeleteProgram(g_smooth_fill_texture2d_program);
-	}
-	if (g_wireframe_program) {
-		glDeleteProgram(g_wireframe_program);
-	}
+#define SAFE_DELETE_PROGRAM(program) \
+	do { \
+		if (program) { \
+			glDeleteProgram(program); \
+		} \
+	} while (false)
+
+	SAFE_DELETE_PROGRAM(g_flat_fill_solid_program);
+	SAFE_DELETE_PROGRAM(g_flat_fill_texture2d_program);
+	SAFE_DELETE_PROGRAM(g_smooth_fill_solid_program);
+	SAFE_DELETE_PROGRAM(g_smooth_fill_texture2d_program);
+	SAFE_DELETE_PROGRAM(g_flat_fill_solid_shadeless_program);
+	SAFE_DELETE_PROGRAM(g_flat_fill_texture2d_shadeless_program);
+	SAFE_DELETE_PROGRAM(g_smooth_fill_solid_shadeless_program);
+	SAFE_DELETE_PROGRAM(g_smooth_fill_texture2d_shadeless_program);
+	SAFE_DELETE_PROGRAM(g_wireframe_program);
+
+#undef SAFE_DELETE_PROGRAM
 }
 
 void openSubdiv_osdGLMeshDisplayPrepare(int use_osd_glsl,
@@ -599,23 +632,32 @@ static GLuint prepare_patchDraw(OpenSubdiv_GLMesh *gl_mesh,
 
 	if (fill_quads) {
 		int model;
-		GLboolean use_texture_2d;
+		GLboolean use_texture_2d, use_lighting;
 		glGetIntegerv(GL_SHADE_MODEL, &model);
 		glGetBooleanv(GL_TEXTURE_2D, &use_texture_2d);
+		glGetBooleanv(GL_LIGHTING, &use_lighting);
 		if (model == GL_FLAT) {
 			if (use_texture_2d) {
-				program = g_flat_fill_texture2d_program;
+				program = use_lighting
+				                  ? g_flat_fill_texture2d_program
+				                  : g_flat_fill_texture2d_shadeless_program;
 			}
 			else {
-				program = g_flat_fill_solid_program;
+				program = use_lighting
+				                  ? g_flat_fill_solid_program
+				                  : g_flat_fill_solid_shadeless_program;
 			}
 		}
 		else {
 			if (use_texture_2d) {
-				program = g_smooth_fill_texture2d_program;
+				program = use_lighting
+				                  ? g_smooth_fill_texture2d_program
+				                  : g_smooth_fill_texture2d_shadeless_program;
 			}
 			else {
-				program = g_smooth_fill_solid_program;
+				program = use_lighting
+				                  ? g_smooth_fill_solid_program
+				                  : g_smooth_fill_solid_shadeless_program;
 			}
 		}
 	}
