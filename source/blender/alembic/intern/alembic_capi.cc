@@ -889,29 +889,33 @@ CacheReader *CacheReader_open_alembic_object(AbcArchiveHandle *handle, CacheRead
 /* ************************************************************************** */
 
 extern "C" {
+#include "BKE_lattice.h"
 #include "BKE_particle.h"
 }
 
 using Alembic::AbcGeom::OPoints;
 using Alembic::AbcGeom::OPointsSchema;
+using Alembic::AbcGeom::OXform;
+using Alembic::AbcGeom::kVertexScope;
+using Alembic::AbcGeom::kWrapExisting;
 
 int ABC_write_particles(Scene *scene, Object *object, ParticleSystem *psys, const char *filename, float time)
 {
 	Alembic::Abc::MetaData md;
 	ArchiveWriter *archive = new ArchiveWriter(filename, "", true, md);
 
-	Alembic::AbcGeom::OObject top = archive->getTop();
-	OPoints opoints;
+	Alembic::AbcGeom::OObject top = archive->archive().getTop();
+
+	Alembic::AbcGeom::OPointsSchema m_schema;
+	Alembic::AbcGeom::OPointsSchema::Sample m_sample;
 
 	if (top.getNumChildren() == 0) {
-		opoints = OPoints(parent->alembicXform(), psys->name, 0);
+		OPoints opoints = OPoints(OXform(top, "psys_xform", 0), psys->name, 0);
+		m_schema = opoints.getSchema();
 	}
 	else {
-		opoints = OPoints(top.getChild(0));
+		m_schema = top.getChild(0).getSchema();
 	}
-
-	Alembic::AbcGeom::OPointsSchema m_schema = points.getSchema();
-	Alembic::AbcGeom::OPointsSchema::Sample m_sample;
 
 	std::vector<Imath::V3f> points;
 	std::vector<Imath::V3f> velocities;
