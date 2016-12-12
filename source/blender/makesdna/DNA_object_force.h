@@ -189,7 +189,7 @@ typedef struct PointCache {
 	int editframe;	/* frame being edited (runtime only) */
 	int last_exact; /* last exact frame that's cached */
 	int last_valid; /* used for editing cache - what is the last baked frame */
-	int pad;
+	int file_type;
 
 	/* for external cache files */
 	int totpoint;   /* number of cached points */

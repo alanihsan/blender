@@ -112,6 +112,8 @@ struct CacheReader *CacheReader_open_alembic_object(struct AbcArchiveHandle *han
                                                     struct Object *object,
                                                     const char *object_path);
 
+int ABC_write_particles(struct ParticleSystem *psys, const char *filename, float time);
+
 #ifdef __cplusplus
 }
 #endif

@@ -84,6 +84,10 @@
 #include "openvdb_capi.h"
 #endif
 
+#ifdef WITH_ALEMBIC
+#include "ABC_alembic.h"
+#endif
+
 #ifdef WITH_LZO
 #  ifdef WITH_SYSTEM_LZO
 #    include <lzo/lzo1x.h>
@@ -281,6 +285,14 @@ static int  ptcache_particle_write(int index, void *psys_v, void **data, int cfr
 
 	/* return flag 1+1=2 for newly born particles to copy exact birth location to previously cached frame */
 	return 1 + (pa->state.time >= pa->time && pa->prev_state.time <= pa->time);
+}
+static int ptcache_particle_write_alembic(void *psys_v, const char *filename, int cfra)
+{
+	ParticleSystem *psys = psys_v;
+
+	ABC_write_particles(psys, filename, cfra / 24.0f);
+
+	return 1;
 }
 static void ptcache_particle_read(int index, void *psys_v, void **data, float cfra, float *old_data)
 {
@@ -1438,6 +1450,8 @@ void BKE_ptcache_id_from_particles(PTCacheID *pid, Object *ob, ParticleSystem *p
 	pid->read_point				= ptcache_particle_read;
 	pid->interpolate_point		= ptcache_particle_interpolate;
 
+	pid->write_alembic_stream   = ptcache_particle_write_alembic;
+
 	pid->write_stream			= NULL;
 	pid->read_stream			= NULL;
 
@@ -2523,6 +2537,32 @@ static int ptcache_read_openvdb_stream(PTCacheID *pid, int cfra)
 #endif
 }
 
+static int ptcache_read_alembic_stream(PTCacheID *pid, int cfra)
+{
+#ifdef WITH_ALEMBIC
+	char filename[FILE_MAX * 2];
+
+	/* save blend file before using disk pointcache */
+	if (!G.relbase_valid && (pid->cache->flag & PTCACHE_EXTERNAL) == 0)
+		return 0;
+
+	ptcache_filename(pid, filename, cfra, 1, 1);
+
+	if (!BLI_exists(filename)) {
+		return 0;
+	}
+
+	if (!pid->read_alembic_stream(pid->calldata)) {
+		return 0;
+	}
+
+	return 1;
+#else
+	UNUSED_VARS(pid, cfra);
+	return 0;
+#endif
+}
+
 static int ptcache_read(PTCacheID *pid, int cfra)
 {
 	PTCacheMem *pm = NULL;
@@ -2676,6 +2716,11 @@ int BKE_ptcache_read(PTCacheID *pid, float cfra, bool no_extrapolate_old)
 				return 0;
 			}
 		}
+		else if (pid->cache->file_type == PTCACHE_FILE_ALEMBIC && pid->read_alembic_stream) {
+			if (!ptcache_read_alembic_stream(pid, cfra1)) {
+				return 0;
+			}
+		}
 		else if (pid->read_stream) {
 			if (!ptcache_read_stream(pid, cfra1))
 				return 0;
@@ -2687,6 +2732,11 @@ int BKE_ptcache_read(PTCacheID *pid, float cfra, bool no_extrapolate_old)
 	if (cfra2) {
 		if (pid->file_type == PTCACHE_FILE_OPENVDB && pid->read_openvdb_stream) {
 			if (!ptcache_read_openvdb_stream(pid, cfra2)) {
+				return 0;
+			}
+		}
+		else if (pid->file_type == PTCACHE_FILE_ALEMBIC && pid->read_alembic_stream) {
+			if (!ptcache_read_alembic_stream(pid, cfra2)) {
 				return 0;
 			}
 		}

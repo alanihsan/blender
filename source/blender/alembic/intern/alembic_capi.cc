@@ -885,3 +885,90 @@ CacheReader *CacheReader_open_alembic_object(AbcArchiveHandle *handle, CacheRead
 
 	return reinterpret_cast<CacheReader *>(abc_reader);
 }
+
+/* ************************************************************************** */
+
+extern "C" {
+#include "BKE_particle.h"
+}
+
+using Alembic::AbcGeom::OPoints;
+using Alembic::AbcGeom::OPointsSchema;
+
+int ABC_write_particles(ParticleSystem *psys, const char *filename, float time)
+{
+	Alembic::Abc::MetaData md;
+	ArchiveWriter *archive = new ArchiveWriter(filename, "", true, md);
+
+	Alembic::AbcGeom::OObject top = archive->getTop();
+	OPoints opoints;
+
+	if (top.getNumChildren() == 0) {
+		opoints = OPoints(parent->alembicXform(), psys->name, 0);
+	}
+	else {
+		opoints = OPoints(top.getChild(0));
+	}
+
+	Alembic::AbcGeom::OPointsSchema m_schema = points.getSchema();
+	Alembic::AbcGeom::OPointsSchema::Sample m_sample;
+
+	std::vector<Imath::V3f> points;
+	std::vector<Imath::V3f> velocities;
+	std::vector<float> widths;
+	std::vector<uint64_t> ids;
+
+	ParticleKey state;
+
+	ParticleSimulationData sim;
+	sim.scene = m_scene;
+	sim.ob = m_object;
+	sim.psys = psys;
+
+	psys->lattice_deform_data = psys_create_lattice_deform_data(&sim);
+
+	uint64_t index = 0;
+	for (int p = 0; p < psys->totpart; p++) {
+		float pos[3], vel[3];
+
+		if (psys->particles[p].flag & (PARS_NO_DISP | PARS_UNEXIST)) {
+			continue;
+		}
+
+		state.time = BKE_scene_frame_get(m_scene);
+
+		if (psys_get_particle_state(&sim, p, &state, 0) == 0) {
+			continue;
+		}
+
+		/* location */
+		mul_v3_m4v3(pos, m_object->imat, state.co);
+
+		/* velocity */
+		sub_v3_v3v3(vel, state.co, psys->particles[p].prev_state.co);
+
+		/* Convert Z-up to Y-up. */
+		points.push_back(Imath::V3f(pos[0], pos[2], -pos[1]));
+		velocities.push_back(Imath::V3f(vel[0], vel[2], -vel[1]));
+		widths.push_back(psys->particles[p].size);
+		ids.push_back(index++);
+	}
+
+	if (psys->lattice_deform_data) {
+		end_latt_deform(psys->lattice_deform_data);
+		psys->lattice_deform_data = NULL;
+	}
+
+	Alembic::Abc::P3fArraySample psample(points);
+	Alembic::Abc::UInt64ArraySample idsample(ids);
+	Alembic::Abc::V3fArraySample vsample(velocities);
+	Alembic::Abc::FloatArraySample wsample_array(widths);
+	Alembic::AbcGeom::OFloatGeomParam::Sample wsample(wsample_array, kVertexScope);
+
+	m_sample = OPointsSchema::Sample(psample, idsample, vsample, wsample);
+	m_schema.set(m_sample);
+
+	delete archive;
+
+	return 0;
+}

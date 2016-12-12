@@ -38,6 +38,8 @@
 
 #include "rna_internal.h"
 
+#include "BKE_pointcache.h"
+
 #include "WM_api.h"
 #include "WM_types.h"
 
@@ -802,6 +804,12 @@ static void rna_def_pointcache(BlenderRNA *brna)
 		{0, NULL, 0, NULL, NULL}
 	};
 
+	static EnumPropertyItem point_cache_type_items[] = {
+		{PTCACHE_FILE_PTCACHE, "PTCACHE", 0, "Point Cache", "Blender specific point cache file format"},
+		{PTCACHE_FILE_ALEMBIC, "ALEMBIC", 0, "Alembic", "Alembic file format"},
+		{0, NULL, 0, NULL, NULL}
+	};
+
 	srna = RNA_def_struct(brna, "PointCache", NULL);
 	RNA_def_struct_ui_text(srna, "Point Cache", "Point cache for physics simulations");
 	RNA_def_struct_ui_icon(srna, ICON_PHYSICS);
@@ -832,6 +840,10 @@ static void rna_def_pointcache(BlenderRNA *brna)
 
 	prop = RNA_def_property(srna, "compression", PROP_ENUM, PROP_NONE);
 	RNA_def_property_enum_items(prop, point_cache_compress_items);
+	RNA_def_property_ui_text(prop, "Cache Compression", "Compression method to be used");
+
+	prop = RNA_def_property(srna, "file_type", PROP_ENUM, PROP_NONE);
+	RNA_def_property_enum_items(prop, point_cache_type_items);
 	RNA_def_property_ui_text(prop, "Cache Compression", "Compression method to be used");
 
 	/* flags */

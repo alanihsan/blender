@@ -125,6 +125,7 @@ typedef struct PTCacheFile {
 enum {
 	PTCACHE_FILE_PTCACHE = 0,
 	PTCACHE_FILE_OPENVDB = 1,
+	PTCACHE_FILE_ALEMBIC = 2,
 };
 
 typedef struct PTCacheID {
@@ -159,6 +160,11 @@ typedef struct PTCacheID {
 	int (*write_openvdb_stream)(struct OpenVDBWriter *writer, void *calldata);
 	/* copies cache cata to point data */
 	int (*read_openvdb_stream)(struct OpenVDBReader *reader, void *calldata);
+
+	/* copies point data to cache data */
+	int (*write_alembic_stream)(void *calldata, const char *filename, int cfra);
+	/* copies cache cata to point data */
+	int (*read_alembic_stream)(void *calldata);
 
 	/* copies custom extradata to cache data */
 	void (*write_extra_data)(void *calldata, struct PTCacheMem *pm, int cfra);
