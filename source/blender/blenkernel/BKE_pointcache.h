@@ -162,7 +162,7 @@ typedef struct PTCacheID {
 	int (*read_openvdb_stream)(struct OpenVDBReader *reader, void *calldata);
 
 	/* copies point data to cache data */
-	int (*write_alembic_stream)(void *calldata, const char *filename, int cfra);
+	int (*write_alembic_stream)(struct Scene *scene, struct Object *ob, void *calldata, const char *filename, int cfra);
 	/* copies cache cata to point data */
 	int (*read_alembic_stream)(void *calldata);
 
@@ -276,7 +276,7 @@ void BKE_ptcache_make_particle_key(struct ParticleKey *key, int index, void **da
 
 /**************** Creating ID's ****************************/
 void BKE_ptcache_id_from_softbody(PTCacheID *pid, struct Object *ob, struct SoftBody *sb);
-void BKE_ptcache_id_from_particles(PTCacheID *pid, struct Object *ob, struct ParticleSystem *psys);
+void BKE_ptcache_id_from_particles(PTCacheID *pid, struct Object *ob, struct ParticleSystem *psys, struct Scene *scene);
 void BKE_ptcache_id_from_cloth(PTCacheID *pid, struct Object *ob, struct ClothModifierData *clmd);
 void BKE_ptcache_id_from_smoke(PTCacheID *pid, struct Object *ob, struct SmokeModifierData *smd);
 void BKE_ptcache_id_from_dynamicpaint(PTCacheID *pid, struct Object *ob, struct DynamicPaintSurface *surface);

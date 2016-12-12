@@ -1765,7 +1765,7 @@ static int render_new_particle_system(Render *re, ObjectRen *obr, ParticleSystem
 				float dt = length / (trail_count ? (float)trail_count : 1.0f);
 
 				/* make sure we have pointcache in memory before getting particle on path */
-				psys_make_temp_pointcache(ob, psys);
+				psys_make_temp_pointcache(ob, psys, sim.scene);
 
 				for (i=0; i < trail_count; i++, ct -= dt) {
 					if (part->draw & PART_ABS_PATH_TIME) {

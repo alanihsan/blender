@@ -5202,7 +5202,7 @@ static void draw_new_particle_system(Scene *scene, View3D *v3d, RegionView3D *rv
 
 		if (part->draw_as == PART_DRAW_REND && part->trail_count > 1) {
 			tot_vec_size *= part->trail_count;
-			psys_make_temp_pointcache(ob, psys);
+			psys_make_temp_pointcache(ob, psys, scene);
 		}
 
 		switch (draw_as) {

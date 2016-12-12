@@ -286,11 +286,11 @@ static int  ptcache_particle_write(int index, void *psys_v, void **data, int cfr
 	/* return flag 1+1=2 for newly born particles to copy exact birth location to previously cached frame */
 	return 1 + (pa->state.time >= pa->time && pa->prev_state.time <= pa->time);
 }
-static int ptcache_particle_write_alembic(void *psys_v, const char *filename, int cfra)
+static int ptcache_particle_write_alembic(Scene *scene, Object *ob, void *psys_v, const char *filename, int cfra)
 {
 	ParticleSystem *psys = psys_v;
 
-	ABC_write_particles(psys, filename, cfra / 24.0f);
+	ABC_write_particles(scene, ob, psys, filename, cfra / 24.0f);
 
 	return 1;
 }
@@ -1427,12 +1427,13 @@ void BKE_ptcache_id_from_softbody(PTCacheID *pid, Object *ob, SoftBody *sb)
 	pid->max_step = 20;
 	pid->file_type = PTCACHE_FILE_PTCACHE;
 }
-void BKE_ptcache_id_from_particles(PTCacheID *pid, Object *ob, ParticleSystem *psys)
+void BKE_ptcache_id_from_particles(PTCacheID *pid, Object *ob, ParticleSystem *psys, Scene *scene)
 {
 	memset(pid, 0, sizeof(PTCacheID));
 
 	pid->ob= ob;
 	pid->calldata= psys;
+	pid->scene= scene;
 	pid->type= PTCACHE_TYPE_PARTICLES;
 	pid->stack_index= psys->pointcache->index;
 	pid->cache= psys->pointcache;
@@ -1690,7 +1691,7 @@ void BKE_ptcache_ids_from_object(ListBase *lb, Object *ob, Scene *scene, int dup
 			continue;
 
 		pid= MEM_callocN(sizeof(PTCacheID), "PTCacheID");
-		BKE_ptcache_id_from_particles(pid, ob, psys);
+		BKE_ptcache_id_from_particles(pid, ob, psys, scene);
 		BLI_addtail(lb, pid);
 	}
 
@@ -3364,7 +3365,7 @@ int  BKE_ptcache_object_reset(Scene *scene, Object *ob, int mode)
 		}
 
 		if (skip == 0 && psys->part) {
-			BKE_ptcache_id_from_particles(&pid, ob, psys);
+			BKE_ptcache_id_from_particles(&pid, ob, psys, scene);
 			reset |= BKE_ptcache_id_reset(scene, &pid, mode);
 		}
 	}

@@ -1197,13 +1197,13 @@ static void set_keyed_keys(ParticleSimulationData *sim)
 /************************************************/
 /*			Point Cache							*/
 /************************************************/
-void psys_make_temp_pointcache(Object *ob, ParticleSystem *psys)
+void psys_make_temp_pointcache(Object *ob, ParticleSystem *psys, Scene *scene)
 {
 	PointCache *cache = psys->pointcache;
 
 	if (cache->flag & PTCACHE_DISK_CACHE && BLI_listbase_is_empty(&cache->mem_cache)) {
 		PTCacheID pid;
-		BKE_ptcache_id_from_particles(&pid, ob, psys);
+		BKE_ptcache_id_from_particles(&pid, ob, psys, scene);
 		cache->flag &= ~PTCACHE_DISK_CACHE;
 		BKE_ptcache_disk_to_mem(&pid);
 		cache->flag |= PTCACHE_DISK_CACHE;
@@ -3887,7 +3887,7 @@ static void system_step(ParticleSimulationData *sim, float cfra, const bool use_
 			psys_get_pointcache_start_end(sim->scene, psys, &cache->startframe, &cache->endframe);
 
 		pid = &ptcacheid;
-		BKE_ptcache_id_from_particles(pid, sim->ob, psys);
+		BKE_ptcache_id_from_particles(pid, sim->ob, psys, sim->scene);
 		
 		BKE_ptcache_id_time(pid, sim->scene, 0.0f, &startframe, &endframe, NULL);
 
@@ -4024,12 +4024,12 @@ static void system_step(ParticleSimulationData *sim, float cfra, const bool use_
 }
 
 /* system type has changed so set sensible defaults and clear non applicable flags */
-void psys_changed_type(Object *ob, ParticleSystem *psys)
+void psys_changed_type(Object *ob, ParticleSystem *psys, Scene *scene)
 {
 	ParticleSettings *part = psys->part;
 	PTCacheID pid;
 
-	BKE_ptcache_id_from_particles(&pid, ob, psys);
+	BKE_ptcache_id_from_particles(&pid, ob, psys, scene);
 
 	if (part->phystype != PART_PHYS_KEYED)
 		psys->flag &= ~PSYS_KEYED;
@@ -4107,7 +4107,7 @@ static void psys_prepare_physics(ParticleSimulationData *sim)
 
 	if (ELEM(part->phystype, PART_PHYS_NO, PART_PHYS_KEYED)) {
 		PTCacheID pid;
-		BKE_ptcache_id_from_particles(&pid, sim->ob, sim->psys);
+		BKE_ptcache_id_from_particles(&pid, sim->ob, sim->psys, sim->scene);
 		BKE_ptcache_id_clear(&pid, PTCACHE_CLEAR_ALL, 0);
 	}
 	else {
@@ -4191,7 +4191,7 @@ void particle_system_update(Scene *scene, Object *ob, ParticleSystem *psys, cons
 	psys->flag &= ~PSYS_OB_ANIM_RESTORE;
 
 	if (psys->recalc & PSYS_RECALC_TYPE)
-		psys_changed_type(sim.ob, sim.psys);
+		psys_changed_type(sim.ob, sim.psys, sim.scene);
 
 	if (psys->recalc & PSYS_RECALC_RESET)
 		psys->totunexist = 0;

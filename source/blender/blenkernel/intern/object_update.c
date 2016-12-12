@@ -266,7 +266,7 @@ void BKE_object_handle_data_update(EvaluationContext *eval_ctx,
 		while (psys) {
 			/* ensure this update always happens even if psys is disabled */
 			if (psys->recalc & PSYS_RECALC_TYPE) {
-				psys_changed_type(ob, psys);
+				psys_changed_type(ob, psys, scene);
 			}
 
 			if (psys_check_enabled(ob, psys, eval_ctx->mode == DAG_EVAL_RENDER)) {

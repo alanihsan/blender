@@ -895,7 +895,7 @@ extern "C" {
 using Alembic::AbcGeom::OPoints;
 using Alembic::AbcGeom::OPointsSchema;
 
-int ABC_write_particles(ParticleSystem *psys, const char *filename, float time)
+int ABC_write_particles(Scene *scene, Object *object, ParticleSystem *psys, const char *filename, float time)
 {
 	Alembic::Abc::MetaData md;
 	ArchiveWriter *archive = new ArchiveWriter(filename, "", true, md);
@@ -921,8 +921,8 @@ int ABC_write_particles(ParticleSystem *psys, const char *filename, float time)
 	ParticleKey state;
 
 	ParticleSimulationData sim;
-	sim.scene = m_scene;
-	sim.ob = m_object;
+	sim.scene = scene;
+	sim.ob = object;
 	sim.psys = psys;
 
 	psys->lattice_deform_data = psys_create_lattice_deform_data(&sim);
@@ -935,14 +935,14 @@ int ABC_write_particles(ParticleSystem *psys, const char *filename, float time)
 			continue;
 		}
 
-		state.time = BKE_scene_frame_get(m_scene);
+		state.time = BKE_scene_frame_get(scene);
 
 		if (psys_get_particle_state(&sim, p, &state, 0) == 0) {
 			continue;
 		}
 
 		/* location */
-		mul_v3_m4v3(pos, m_object->imat, state.co);
+		mul_v3_m4v3(pos, object->imat, state.co);
 
 		/* velocity */
 		sub_v3_v3v3(vel, state.co, psys->particles[p].prev_state.co);
